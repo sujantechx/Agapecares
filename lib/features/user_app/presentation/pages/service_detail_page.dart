@@ -83,12 +83,11 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
         ),
       ),
       flexibleSpace: FlexibleSpaceBar(
-        background: Image.network(
+        background: Image.asset(
           // 🎯 Using the higher quality detailImageUrl for the header.
           widget.service.iconUrl,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) =>
-          const Icon(Icons.error, size: 100, color: Colors.red),
+
         ),
       ),
     );

@@ -8,11 +8,11 @@ import 'package:flutter/material.dart';
 void main() {
   // In a real app, you would initialize services here
   // like Firebase, Dependency Injection, etc.
-  runApp(const App());
+  runApp(const MyApp());
 }
 
-class App extends StatelessWidget {
-  const App({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {

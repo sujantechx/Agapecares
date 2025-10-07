@@ -131,9 +131,9 @@ Widget _buildTopServicesGrid(BuildContext context,List<ServiceModel> topServices
     shrinkWrap: true, // Important for GridView inside SingleChildScrollView
     physics: const NeverScrollableScrollPhysics(), // GridView should not scroll itself
     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 3,
-      crossAxisSpacing: 12.0,
-      mainAxisSpacing: 12.0,
+      crossAxisCount: 2,
+      crossAxisSpacing: 5.0,
+      mainAxisSpacing: 5.0,
       childAspectRatio: 0.9, // Adjust ratio for better layout
     ),
     itemCount: topServices.length,
@@ -153,15 +153,10 @@ Widget _buildTopServicesGrid(BuildContext context,List<ServiceModel> topServices
           child: Column(
             children: [
               Expanded(
-                child: Image.network(
+                child: Image.asset(
                   service.iconUrl,
                   fit: BoxFit.cover,
                   width: double.infinity,
-                  // Add loading and error builders for a better user experience
-                  // loadingBuilder: (context, child, progress) =>
-                  // progress == null ? child : const Center(child: CircularProgressIndicator()),
-                  errorBuilder: (context, error, stackTrace) =>
-                  const Icon(Icons.error, color: Colors.red),
                 ),
               ),
               Padding(
@@ -211,14 +206,10 @@ Widget _buildPopularCleaningGrid(BuildContext context,List<ServiceModel> popular
           child: Column(
             children: [
               Expanded(
-                  child: Image.network(
+                  child: Image.asset(
                     service.iconUrl,
                     fit: BoxFit.cover,
                     width: double.infinity,
-                    loadingBuilder: (context, child, progress) =>
-                    progress == null ? child : const Center(child: CircularProgressIndicator()),
-                    errorBuilder: (context, error, stackTrace) =>
-                    const Icon(Icons.error, color: Colors.red),
                   )
               ),
               Padding(

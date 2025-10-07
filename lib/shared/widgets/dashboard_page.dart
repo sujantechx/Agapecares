@@ -47,7 +47,7 @@ class DashboardPage extends StatelessWidget {
         }
 
       ),
-      title: Image.network(
+      title: Image.asset(
         "assets/logos/ap_logo.png", // Replace with your actual logo URL
       fit: BoxFit.contain,
         height: 152,

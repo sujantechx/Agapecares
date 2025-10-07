@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1040620901",
+    "project_id": "agapecarecb-e1be4",
+    "storage_bucket": "agapecarecb-e1be4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1040620901:android:7e3ffcbd8f82052c4ed58c",
+        "android_client_info": {
+          "package_name": "com.example.agapecares"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBFVPUIo_F3ipPp4nGuTzxqLtZD4mU4E0o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

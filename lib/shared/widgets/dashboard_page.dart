@@ -54,7 +54,7 @@ class DashboardPage extends StatelessWidget {
         title: Image.asset( // 🎯 Use Image.asset for local assets
           "assets/logos/ap_logo.png",
           fit: BoxFit.contain,
-          height: 32, // Adjusted height for a standard AppBar
+          height:140, // Adjusted height for a standard AppBar
         ),
         centerTitle: true,
       ),

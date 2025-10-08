@@ -34,9 +34,10 @@ class UserHomePage extends StatelessWidget {
    Offer(
    imageUrl: "assets/images/off2.png"
    ),
-   Offer(
-   imageUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTATZQQ41cIUbLcvF14Lf-I_tQ5cH37pA5AcQ&s"
-   ),
+/*   Offer(
+   imageUrl:
+   ""
+   ),*/
    ];
 final List<Map<String, dynamic>> whyUsData = [
   {'icon': Icons.people_alt, 'text': 'All Services in Single Umbrella'},
@@ -254,7 +255,7 @@ Widget _buildWhyUsGrid() {
           Text(
             item['text'],
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
           ),
         ],
       );
@@ -310,7 +311,7 @@ Widget _buildTestimonialCard() {
                    height: 200,
                    decoration: BoxDecoration(
                        borderRadius: BorderRadius.circular(12),
-                       image: DecorationImage(image: NetworkImage(_offers[index].imageUrl), fit: BoxFit.cover)
+                       image: DecorationImage(image: AssetImage(_offers[index].imageUrl), fit: BoxFit.cover)
                    ),
                );
              },

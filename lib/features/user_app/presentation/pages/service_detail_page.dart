@@ -134,7 +134,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
       ),
       flexibleSpace: FlexibleSpaceBar(
         background: Image.asset(
-          widget.service.detailImageUrl,
+          widget.service.iconUrl,
           fit: BoxFit.cover,
           errorBuilder: (context, error, stackTrace) =>
           const Icon(Icons.error, size: 100, color: Colors.red),

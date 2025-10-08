@@ -151,22 +151,61 @@ class CartPage extends StatelessWidget {
     );
   }
 // The _priceRow helper remains the same.
-
   Widget _priceRow(String title, String amount, {Color? color, bool isTotal = false}) {
     final style = TextStyle(
       fontSize: isTotal ? 20 : 16,
       fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
-      color: color,
+      color: color ?? Colors.black,
     );
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: style),
-          Text(amount, style: style),
+          // Let the title expand and wrap if needed
+          Expanded(
+            child: Text(
+              title,
+              style: style,
+              softWrap: true,
+              overflow: TextOverflow.visible,
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Keep the amount aligned right
+          Text(
+            amount,
+            style: style,
+            textAlign: TextAlign.right,
+          ),
         ],
       ),
     );
   }
+  /// auto scroll
+/*
+  Widget _priceRow(String title, String amount, {Color? color, bool isTotal = false}) {
+    final style = TextStyle(
+      fontSize: isTotal ? 20 : 16,
+      fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+      color: color ?? Colors.black,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            Text(title, style: style),
+            const SizedBox(width: 8),
+            Text(amount, style: style),
+          ],
+        ),
+      ),
+    );
+  }
+*/
+
 }

@@ -39,7 +39,7 @@ class OfferRepository {
         code: 'EXTRA5',
         type: OfferType.percentage,
         value: 5, // 5%
-        description: 'Extra 5% off for orders above ₹2000!',
+        description: 'Extra 5% off for orders\n above ₹2000!',
       );
     }
     return null;

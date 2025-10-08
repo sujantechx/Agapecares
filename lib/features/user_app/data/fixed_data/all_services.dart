@@ -2,6 +2,7 @@
 
 import '../../../../shared/models/service_list_model.dart';
 import '../../../../shared/models/service_option_model.dart';
+import '../../../../shared/models/subscription_plan_model.dart';
 
 final List<ServiceModel> allServices = const [
   ServiceModel(
@@ -24,6 +25,12 @@ final List<ServiceModel> allServices = const [
       ServiceOption(id: 'h3', name: '3 BHK Home', price: 4499),
       ServiceOption(id: 'h4', name: '4 BHK / Villa', price: 5999),
     ],
+    // 🎯 Subscription plans for recurring home cleaning
+    subscriptionPlans: [
+      SubscriptionPlan(id: 'h-sub1', name: 'Monthly Plan', frequencyDetails: '1 cleaning per month', durationInMonths: 1, discount: 10),
+      SubscriptionPlan(id: 'h-sub2', name: '3-Month Plan', frequencyDetails: '1 cleaning per month', durationInMonths: 3, discount: 15),
+      SubscriptionPlan(id: 'h-sub3', name: '6-Month Plan', frequencyDetails: '1 cleaning per month', durationInMonths: 6, discount: 20),
+    ],
   ),
   ServiceModel(
     id: '2',
@@ -43,6 +50,11 @@ final List<ServiceModel> allServices = const [
       ServiceOption(id: 'cs1', name: 'Upto 500 sq. ft.', price: 3999),
       ServiceOption(id: 'cs2', name: '501 - 1000 sq. ft.', price: 5999),
       ServiceOption(id: 'cs3', name: '1001 - 1500 sq. ft.', price: 7999),
+    ],
+    // 🎯 Subscription plans for regular office maintenance
+    subscriptionPlans: [
+      SubscriptionPlan(id: 'cs-sub1', name: 'Monthly Contract', frequencyDetails: '2 cleanings per month', durationInMonths: 1, discount: 10),
+      SubscriptionPlan(id: 'cs-sub2', name: 'Quarterly Contract', frequencyDetails: '2 cleanings per month', durationInMonths: 3, discount: 18),
     ],
   ),
   ServiceModel(
@@ -104,6 +116,11 @@ final List<ServiceModel> allServices = const [
       ServiceOption(id: 'k2', name: 'Standard Kitchen (51-100 sq. ft.)', price: 1299),
       ServiceOption(id: 'k3', name: 'Large Kitchen (101-150 sq. ft.)', price: 1599),
     ],
+    // 🎯 Subscription plans for regular kitchen maintenance
+    subscriptionPlans: [
+      SubscriptionPlan(id: 'k-sub1', name: 'Monthly Plan', frequencyDetails: '1 cleaning per month', durationInMonths: 1, discount: 5),
+      SubscriptionPlan(id: 'k-sub2', name: '3-Month Plan', frequencyDetails: '1 cleaning per month', durationInMonths: 3, discount: 12),
+    ],
   ),
   ServiceModel(
     id: '6',
@@ -123,6 +140,12 @@ final List<ServiceModel> allServices = const [
       ServiceOption(id: 'b1', name: '1 Bathroom', price: 699),
       ServiceOption(id: 'b2', name: '2 Bathrooms Combo', price: 1299),
       ServiceOption(id: 'b3', name: '3 Bathrooms Combo', price: 1799),
+    ],
+    // 🎯 Multiple frequency options for bathroom cleaning as requested
+    subscriptionPlans: [
+      SubscriptionPlan(id: 'b-sub1', name: 'Monthly Basic', frequencyDetails: '1 cleaning per month', durationInMonths: 1, discount: 10),
+      SubscriptionPlan(id: 'b-sub2', name: 'Monthly Pro', frequencyDetails: '2 cleanings per month', durationInMonths: 1, discount: 15),
+      SubscriptionPlan(id: 'b-sub3', name: '3-Month Saver', frequencyDetails: '1 cleaning per month', durationInMonths: 3, discount: 20),
     ],
   ),
   ServiceModel(
@@ -184,6 +207,11 @@ final List<ServiceModel> allServices = const [
       ServiceOption(id: 'wt1', name: 'Upto 500L Tank', price: 599),
       ServiceOption(id: 'wt2', name: '501L - 1000L Tank', price: 799),
       ServiceOption(id: 'wt3', name: '1001L - 1500L Tank', price: 999),
+    ],
+    // 🎯 Subscriptions for mandatory periodic cleaning
+    subscriptionPlans: [
+      SubscriptionPlan(id: 'wt-sub1', name: '3-Month Plan', frequencyDetails: '1 cleaning every 3 months', durationInMonths: 3, discount: 10),
+      SubscriptionPlan(id: 'wt-sub2', name: '6-Month Plan', frequencyDetails: '1 cleaning every 3 months', durationInMonths: 6, discount: 15),
     ],
   ),
 ];

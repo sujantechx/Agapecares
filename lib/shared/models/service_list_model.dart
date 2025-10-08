@@ -1,61 +1,38 @@
-// lib/shared/models/service_list_model.dart
+// lib/shared/models/service_list_model.dart (Updated)
 
+import './service_option_model.dart';
+import './subscription_plan_model.dart'; // <-- Import the new model
 
-
-import 'package:agapecares/shared/models/service_option_model.dart';
-import 'package:equatable/equatable.dart';
-
-/// Represents a single service that can be booked.
-class ServiceModel extends Equatable {
-
+class ServiceModel {
   final String id;
   final String name;
-  final String description; // Used for card on home page
+  final String description;
   final double price;
-  final String iconUrl; // Used for card on home page
-
-  // 🎯 NEW FIELDS FOR DETAIL PAGE
+  final double originalPrice;
+  final String iconUrl;
   final String detailImageUrl;
   final String vendorName;
-  final double originalPrice;
   final String estimatedTime;
   final String offer;
   final List<String> inclusions;
   final List<String> exclusions;
-  final List<ServiceOption>? options; // 🎯 ADD THIS FIELD (make it nullable)
+  final List<ServiceOption> options;
+  final List<SubscriptionPlan>? subscriptionPlans; // <-- ADD THIS LINE
 
   const ServiceModel({
     required this.id,
     required this.name,
     required this.description,
     required this.price,
+    required this.originalPrice,
     required this.iconUrl,
-    // 🎯 NEW FIELDS
     required this.detailImageUrl,
     required this.vendorName,
-    required this.originalPrice,
     required this.estimatedTime,
     required this.offer,
     required this.inclusions,
     required this.exclusions,
-    this.options, // 🎯 ADD THIS FIELD
+    required this.options,
+    this.subscriptionPlans, // <-- ADD THIS LINE to the constructor
   });
-
-  @override
-  List<Object?> get props => [
-    id,
-    name,
-    description,
-    price,
-    iconUrl,
-    // 🎯 NEW FIELDS
-    detailImageUrl,
-    vendorName,
-    originalPrice,
-    estimatedTime,
-    offer,
-    inclusions,
-    exclusions,
-    options,
-  ];
 }

@@ -1,12 +1,12 @@
-// lib/features/user_app/presentation/pages/user_home_page.dart
+// dart
+// File: `lib/features/user_app/presentation/pages/user_home_page.dart`
 
-import 'package:agapecares/features/user_app/data/fixed_data/all_services.dart';
+import 'package:agapecares/features/user_app/data/fixed_data/all_services.dart' as all_services;
 import 'package:agapecares/shared/models/service_list_model.dart';
 import 'package:carousel_slider/carousel_options.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/location_search.dart';
 
@@ -16,98 +16,103 @@ class Offer {
 }
 
 class UserHomePage extends StatelessWidget {
-   UserHomePage({super.key});
+  UserHomePage({super.key});
 
   // --- DUMMY DATA SETS ---
-  // Using a List of Maps as requested, which is great for parsing from JSON later.
-   //  Data using the models
-   // Define the Offer model if not already defined
+  final List<Offer> _offers = const [
+    Offer(imageUrl: "assets/images/off1.png"),
+    Offer(imageUrl: "assets/images/off3.png"),
+    Offer(imageUrl: "assets/images/off2.png"),
+  ];
 
+  final List<Map<String, dynamic>> whyUsData = [
+    {'icon': Icons.people_alt, 'text': 'All Services in Single Umbrella'},
+    {'icon': Icons.currency_rupee, 'text': 'Lower Rates using Bidding'},
+    {'icon': Icons.verified_user, 'text': 'Trusted Experienced Staff'},
+    {'icon': Icons.build_circle, 'text': 'Advance Technology & Equipments'},
+    {'icon': Icons.thumb_up, 'text': '100% Quality Guaranteed'},
+    {'icon': Icons.dashboard_customize, 'text': 'Customized Services'},
+  ];
 
-   final List<Offer> _offers = [
-   Offer(
-   imageUrl: "assets/images/off1.png"
-   ),
-   Offer(
-   imageUrl: "assets/images/off3.png"
-   ),
-   Offer(
-   imageUrl: "assets/images/off2.png"
-   ),
-/*   Offer(
-   imageUrl:
-   ""
-   ),*/
-   ];
-final List<Map<String, dynamic>> whyUsData = [
-  {'icon': Icons.people_alt, 'text': 'All Services in Single Umbrella'},
-  {'icon': Icons.currency_rupee, 'text': 'Lower Rates using Bidding'},
-  {'icon': Icons.verified_user, 'text': 'Trusted Experienced Staff'},
-  {'icon': Icons.build_circle, 'text': 'Advance Technology & Equipments'},
-  {'icon': Icons.thumb_up, 'text': '100% Quality Guaranteed'},
-  {'icon': Icons.dashboard_customize, 'text': 'Customized Services'},
-];
-@override
-Widget build(BuildContext context) {
+  // fetch once per widget instance
+  final Future<List<ServiceModel>> _servicesFuture = all_services.ServiceStore.instance.fetchAll();
 
-  // 👇 2. USE THE IMPORTED LIST DIRECTLY
-  final popularServices=allServices.where((s) => ['9', '5', '6', '4', '7'].contains(s.id)).toList();
-  final  topServices=   allServices.take(8).toList();
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<ServiceModel>>(
+      future: _servicesFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
+        final services = snapshot.data ?? <ServiceModel>[];
+        // compute lists from fetched services
+        final popularServices = services.where((s) => ['9', '5', '6', '4', '7'].contains(s.id)).toList();
+        final topServices = services.take(8).toList();
 
-  return Scaffold(
-   /* appBar: AppBar(
-      leading: IconButton(
-        icon: const Icon(Icons.menu),
-        onPressed: () {
-          // Handle drawer opening
+        return Scaffold(
+          body: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 5),
+                _buildOfferCarousel(),
+                const SizedBox(height: 10),
+                const LocationSearchBar(),
+                const Divider(height: 1, thickness: 1),
+                _buildSectionTitle('Services'),
+                _buildTopServicesGrid(context, topServices),
+                const SizedBox(height: 24),
+                _buildSectionTitle('Popular Cleaning Services'),
+                _buildPopularCleaningGrid(context, popularServices),
+                const SizedBox(height: 24),
+                _buildSectionTitle('Why Agapecares Cleaning Services?'),
+                _buildWhyUsGrid(),
+                const SizedBox(height: 24),
+                _buildTestimonialCard(),
+                const SizedBox(height: 24),
+                _buildSectionTitle('Our Client and Partners'),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOfferCarousel() {
+    return SizedBox(
+      width: double.infinity,
+      height: 180,
+      child: CarouselSlider.builder(
+        itemCount: _offers.length,
+        itemBuilder: (_, index, __) {
+          return Container(
+            margin: const EdgeInsets.only(left: 11),
+            width: double.infinity,
+            height: 200,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              image: DecorationImage(
+                image: AssetImage(_offers[index].imageUrl),
+                fit: BoxFit.cover,
+              ),
+            ),
+          );
         },
+        options: CarouselOptions(
+          autoPlay: true,
+          viewportFraction: 1,
+          autoPlayInterval: const Duration(seconds: 3),
+          autoPlayCurve: Curves.fastOutSlowIn,
+        ),
       ),
-      title: Image.network(
-        "assets/logos/ap_logo.png", // Replace with your actual logo URL
-      fit: BoxFit.contain,
-        height: 152,
-      ),
-      centerTitle: true,
-    ),*/
-    // The main content is scrollable to accommodate all sections.
-
-    body: SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 5,),
-         _buildOfferCarousel(),
-          SizedBox(height: 10,),
-          // Container(height: 150,
-          //   width: double.infinity,
-          // color: Colors.yellow,),
-          // 🎯 ADD THE NEW WIDGETS AT THE TOP
-          // const PromoBannerCarousel(),
-          const LocationSearchBar(),
-          const Divider(height: 1, thickness: 1),
-          _buildSectionTitle('Services'),
-          _buildTopServicesGrid(context,topServices),
-          const SizedBox(height: 24),
-
-          _buildSectionTitle('Popular Cleaning Services'),
-          _buildPopularCleaningGrid(context,popularServices),
-          const SizedBox(height: 24),
-
-          _buildSectionTitle('Why Agapecares Cleaning Services?'),
-          _buildWhyUsGrid(),
-          const SizedBox(height: 24),
-
-          _buildTestimonialCard(),
-          const SizedBox(height: 24),
-
-          _buildSectionTitle('Our Client and Partners'),
-          // _buildPartnersGrid(),
-          const SizedBox(height: 24),
-        ],
-      ),
-    ),
-  );
+    );
+  }
 }
 
 /// A helper widget to create consistent section titles.
@@ -126,31 +131,26 @@ Widget _buildSectionTitle(String title) {
 }
 
 /// Builds the top 3x2 grid of main services.
-Widget _buildTopServicesGrid(BuildContext context,List<ServiceModel> topServices) {
+Widget _buildTopServicesGrid(BuildContext context, List<ServiceModel> topServices) {
   return GridView.builder(
     padding: const EdgeInsets.symmetric(horizontal: 16.0),
-    shrinkWrap: true, // Important for GridView inside SingleChildScrollView
-    physics: const NeverScrollableScrollPhysics(), // GridView should not scroll itself
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
       crossAxisCount: 2,
       crossAxisSpacing: 5.0,
       mainAxisSpacing: 5.0,
-      childAspectRatio: 0.9, // Adjust ratio for better layout
+      childAspectRatio: 0.9,
     ),
     itemCount: topServices.length,
     itemBuilder: (context, index) {
       final service = topServices[index];
       return GestureDetector(
-        onTap: () {
-          context.push('/service-details', extra: service);
-
-        },
+        onTap: () => context.push('/service-details', extra: service),
         child: Card(
           elevation: 2,
-          clipBehavior: Clip.antiAlias, // Ensures the image respects the border radius
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12.0),
-          ),
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
           child: Column(
             children: [
               Expanded(
@@ -177,9 +177,7 @@ Widget _buildTopServicesGrid(BuildContext context,List<ServiceModel> topServices
 }
 
 /// Builds the 3x2 grid for popular cleaning services.
-Widget _buildPopularCleaningGrid(BuildContext context,List<ServiceModel> popularCleaningServices) {
-  // This grid is visually similar to the top services, so we can reuse the logic.
-  // In a real app, you might make a reusable grid widget.
+Widget _buildPopularCleaningGrid(BuildContext context, List<ServiceModel> popularCleaningServices) {
   return GridView.builder(
     padding: const EdgeInsets.symmetric(horizontal: 16.0),
     shrinkWrap: true,
@@ -193,13 +191,8 @@ Widget _buildPopularCleaningGrid(BuildContext context,List<ServiceModel> popular
     itemCount: popularCleaningServices.length,
     itemBuilder: (context, index) {
       final service = popularCleaningServices[index];
-      // Reusing the same card structure
       return GestureDetector(
-        onTap: () {
-          // This is the navigation logic. It sends the tapped `service` object
-          // to the detail page.
-          context.push('/service-details', extra: service);
-        },
+        onTap: () => context.push('/service-details', extra: service),
         child: Card(
           elevation: 2,
           clipBehavior: Clip.antiAlias,
@@ -207,11 +200,11 @@ Widget _buildPopularCleaningGrid(BuildContext context,List<ServiceModel> popular
           child: Column(
             children: [
               Expanded(
-                  child: Image.asset(
-                    service.iconUrl,
-                    fit: BoxFit.cover,
-                    width: double.infinity,
-                  )
+                child: Image.asset(
+                  service.iconUrl,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                ),
               ),
               Padding(
                 padding: const EdgeInsets.all(8.0),
@@ -231,6 +224,7 @@ Widget _buildPopularCleaningGrid(BuildContext context,List<ServiceModel> popular
 
 /// Builds the grid for the "Why Us" section.
 Widget _buildWhyUsGrid() {
+  // Access to whyUsData is via closure in this file; fine as top-level.
   return GridView.builder(
     padding: const EdgeInsets.symmetric(horizontal: 16.0),
     shrinkWrap: true,
@@ -240,9 +234,9 @@ Widget _buildWhyUsGrid() {
       crossAxisSpacing: 16.0,
       mainAxisSpacing: 16.0,
     ),
-    itemCount: whyUsData.length,
+    itemCount: 6,
     itemBuilder: (context, index) {
-      final item = whyUsData[index];
+      final item = (context.findAncestorWidgetOfExactType<UserHomePage>()! as UserHomePage).whyUsData[index];
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -287,41 +281,11 @@ Widget _buildTestimonialCard() {
               children: List.generate(5, (index) => const Icon(Icons.star, color: Colors.amber)),
             ),
             const SizedBox(height: 16),
-            Text(
-              'Jyothi Madre',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
+            const Text('Jyothi Madre', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const Text('Chennai', style: TextStyle(color: AppTheme.subtitleColor)),
           ],
         ),
       ),
     ),
   );
-}
-   Widget _buildOfferCarousel() {
-     return SizedBox(
-         width: double.infinity,
-         height: 180,
-         child: CarouselSlider.builder(
-             itemCount: _offers.length,
-             itemBuilder: (_, index, __){
-               return Container(
-                   margin: EdgeInsets.only(left: 11),
-                   width: double.infinity,
-                   height: 200,
-                   decoration: BoxDecoration(
-                       borderRadius: BorderRadius.circular(12),
-                       image: DecorationImage(image: AssetImage(_offers[index].imageUrl), fit: BoxFit.cover)
-                   ),
-               );
-             },
-             options: CarouselOptions(
-                 autoPlay: true,
-                 viewportFraction: 1,
-                 autoPlayInterval: Duration(seconds: 3),
-                 autoPlayCurve: Curves.fastOutSlowIn
-             )),
-     );
-   }
-
 }

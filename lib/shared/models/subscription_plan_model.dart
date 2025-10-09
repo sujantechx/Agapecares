@@ -23,4 +23,8 @@ class SubscriptionPlan {
     required this.durationInMonths,
     required this.discount,
   });
+
+  toMap() {}
+
+  static fromMap(Map<String, dynamic> map) {}
 }

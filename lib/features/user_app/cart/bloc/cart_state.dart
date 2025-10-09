@@ -5,7 +5,7 @@ import '../../../../shared/models/offer_model.dart';
 import '../data/models/cart_item_model.dart';
 
 class CartState extends Equatable {
-  final List<CartItem> items;
+  final List<CartItemModel> items;
   final double subtotal;
   final Offer? appliedCoupon;
   final double couponDiscount;

@@ -1,53 +1,97 @@
+import 'dart:ui';
+
+import 'package:agapecares/firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:agapecares/routes/app_router.dart';
-import 'package:agapecares/shared/theme/app_theme.dart';
+import 'package:firebase_core/firebase_core.dart';
 
-import 'features/user_app/cart/bloc/cart_bloc.dart';
-import 'features/user_app/cart/bloc/cart_event.dart';
-import 'features/user_app/cart/data/repository/cart_repository.dart';
-import 'features/user_app/data/repositories/offer_repository.dart';
+import 'injection_container.dart';
+import 'routes/app_router.dart';
+import 'shared/theme/app_theme.dart';
 
+/// App entrypoint
+/// - Initializes DI (repositories/services), Firebase and global error handlers.
+/// - Passes repository providers into the widget tree, then builds BLoCs from those providers.
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
+  // Initialize Firebase first so any repository that depends on Firestore
+  // (created during `init()`) will have a Firebase App available.
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e, stack) {
+    // If Firebase fails to initialize, it's unsafe to create repositories
+    // that depend on Firestore. Re-throw or exit early depending on desired
+    // behavior; here we rethrow to avoid creating repos that call
+    // `FirebaseFirestore.instance` before Firebase is ready.
+    // ignore: avoid_print
+    print('Firebase initialization error: $e\n$stack');
+    rethrow;
+  }
 
-void main() {
-  // Create single instances of your repositories.
-  final CartRepository cartRepository = CartRepository();
-  final OfferRepository offerRepository = OfferRepository(); // 🎯 Create OfferRepository
+  // Initialize dependency injection and receive repository providers
+  final repoProviders = await init();
 
-  runApp(
-    // 🎯 Use MultiRepositoryProvider for multiple repositories
-    MultiRepositoryProvider(
-      providers: [
-        RepositoryProvider.value(value: cartRepository),
-        RepositoryProvider.value(value: offerRepository),
-      ],
-      child: BlocProvider(
-        create: (context) => CartBloc(
-          // BLoC can now read both repositories from the context
-          cartRepository: context.read<CartRepository>(),
-          offerRepository: context.read<OfferRepository>(),
-        )..add(CartStarted()),
-        child: const MyApp(),
-      ),
-    ),
-  );
+  // Basic error handlers
+  FlutterError.onError = (details) {
+    // ignore: avoid_print
+    print('FlutterError: ${details.exceptionAsString()}');
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    // ignore: avoid_print
+    print('Uncaught error: $error\n$stack');
+    return true;
+  };
+
+  runApp(MyApp(repositoryProviders: repoProviders));
 }
 
-// ... MyApp class remains the same
-
+/// MyApp is intentionally simple and scalable:
+/// - Accepts `RepositoryProvider`s created at startup.
+/// - Mounts them at the top of the widget tree so any child can `context.read<T>()`.
+/// - Builds BLoCs using `buildBlocs(context)` after the repositories are mounted.
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final List<RepositoryProvider> repositoryProviders;
+
+  // Make repositoryProviders optional for tests and simple runs. If not provided,
+  // an empty list is used (no repositories mounted).
+  const MyApp({super.key, List<RepositoryProvider>? repositoryProviders})
+      : repositoryProviders = repositoryProviders ?? const [];
 
   @override
   Widget build(BuildContext context) {
-    // MaterialApp.router is used to integrate a routing package like go_router.
-    return MaterialApp.router(
-      title: 'Agape Cares',
-      theme: AppTheme.lightTheme,
-      debugShowCheckedModeBanner: false,
-      // The routerConfig from your refactored AppRouter is used here.
-      routerConfig: AppRouter.router,
+    // If no repository providers are provided (e.g. during lightweight tests),
+    // skip wrapping with MultiRepositoryProvider and MultiBlocProvider to
+    // avoid provider assertion errors. This keeps `MyApp()` simple and
+    // usable in unit/widget tests without full DI wiring.
+    if (repositoryProviders.isEmpty) {
+      return MaterialApp.router(
+        title: 'Agape Cares',
+        theme: AppTheme.lightTheme,
+        themeMode: ThemeMode.system,
+        routerConfig: AppRouter.router,
+        debugShowCheckedModeBanner: false,
+      );
+    }
+
+    return MultiRepositoryProvider(
+      providers: repositoryProviders,
+      // Use a Builder so the inner context can `read` repositories and build BLoCs.
+      child: Builder(builder: (context) {
+        return MultiBlocProvider(
+          providers: buildBlocs(context),
+          child: MaterialApp.router(
+            title: 'Agape Cares',
+            theme: AppTheme.lightTheme,
+            // darkTheme: AppTheme.darkTheme,
+            themeMode: ThemeMode.system,
+            routerConfig: AppRouter.router,
+            debugShowCheckedModeBanner: false,
+          ),
+        );
+      }),
     );
   }
 }

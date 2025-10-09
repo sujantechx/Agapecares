@@ -15,6 +15,12 @@ class CartPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final TextEditingController couponController = TextEditingController();
 
+    // Ensure cart is loaded when the page is displayed
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Safe to call repeatedly; CartStarted simply recalculates state from repository
+      context.read<CartBloc>().add(CartStarted());
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Cart'),
@@ -75,7 +81,7 @@ class CartPage extends StatelessWidget {
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
         color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.2), spreadRadius: 1, blurRadius: 5)],
+        boxShadow: [BoxShadow(color: Color.fromRGBO(128,128,128,0.2), spreadRadius: 1, blurRadius: 5)],
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: Column(

@@ -1,9 +1,9 @@
-import 'package:dartz/dartz_streaming.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:go_router/go_router.dart';
 
-import '../features/user_app/cart/presentation/cart_page.dart';
 import '../features/user_app/presentation/pages/about_us_page.dart';
+
+import '../features/user_app/presentation/pages/checkout_page.dart';
 import '../features/user_app/presentation/pages/cleaning_services_page.dart';
 import '../features/user_app/presentation/pages/contact_us_page.dart';
 import '../features/user_app/presentation/pages/our_blog_page.dart';
@@ -16,6 +16,13 @@ import 'app_routes.dart';
 /// Defines the top-level routes that do not belong to a specific shell or flow.
 final List<RouteBase> mainRoutes = [
   GoRoute(
+    path: AppRoutes.checkout,
+    builder: (context, state) {
+      final extra = state.extra;
+      return CheckoutPage(serviceData: extra as Map<String, dynamic>?);
+    },
+  ),
+  GoRoute(
     path: AppRoutes.serviceDetails,
     builder: (context, state) {
       // Ensure the 'extra' is the correct type before casting.
@@ -25,10 +32,6 @@ final List<RouteBase> mainRoutes = [
       // Return an error page or a default state if the data is incorrect.
       return Container();
     },
-  ),
-  GoRoute(
-    path: AppRoutes.cart, // Added from our cart implementation
-    builder: (context, state) => const CartPage(),
   ),
   GoRoute(
     path: AppRoutes.aboutUs,

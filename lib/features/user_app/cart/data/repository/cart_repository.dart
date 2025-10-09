@@ -1,17 +1,17 @@
 import '../models/cart_item_model.dart';
 
 class CartRepository {
-  final List<CartItem> _cartItems = [];
+  final List<CartItemModel> _cartItems = [];
 
   // Fetch all items from the cart
-  Future<List<CartItem>> getCartItems() async {
+  Future<List<CartItemModel>> getCartItems() async {
     // In a real app, you might fetch this from a database or SharedPreferences.
     await Future.delayed(const Duration(milliseconds: 200)); // Simulate network delay
     return List.from(_cartItems);
   }
 
   // Add an item to the cart. If it already exists, increment the quantity.
-  Future<void> addItemToCart(CartItem item) async {
+  Future<void> addItemToCart(CartItemModel item) async {
     final existingItemIndex = _cartItems.indexWhere((i) => i.id == item.id);
 
     if (existingItemIndex != -1) {

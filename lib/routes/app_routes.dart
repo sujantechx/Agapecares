@@ -20,4 +20,6 @@ class AppRoutes {
   static const String pestControl = '/pest-control';
   static const String blog = '/blog';
   static const String terms = '/terms';
+  // Checkout route for placing orders
+  static const String checkout = '/checkout';
 }

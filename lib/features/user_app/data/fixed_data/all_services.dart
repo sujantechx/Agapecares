@@ -1,14 +1,44 @@
-// lib/shared/data/dummy_services.dart
+// lib/features/user_app/data/fixed_data/all_services.dart
 
 import '../../../../shared/models/service_list_model.dart';
 import '../../../../shared/models/service_option_model.dart';
 import '../../../../shared/models/subscription_plan_model.dart';
 
-final List<ServiceModel> allServices = const [
+/// Local store provider for services (replaces Firebase-based fetches).
+/// Use `ServiceStore.instance` to access methods.
+class ServiceStore {
+  ServiceStore._();
+  static final ServiceStore instance = ServiceStore._();
+
+  Future<List<ServiceModel>> fetchAll() async {
+    return Future.value(_allServices);
+  }
+
+  Future<ServiceModel?> fetchById(String id) async {
+    try {
+      return Future.value(_allServices.firstWhere((s) => s.id == id));
+    } catch (_) {
+      return Future.value(null);
+    }
+  }
+
+  Future<List<ServiceModel>> search(String query) async {
+    final q = query.toLowerCase();
+    final results = _allServices.where((s) {
+      return s.name.toLowerCase().contains(q) ||
+          s.description.toLowerCase().contains(q) ||
+          s.vendorName.toLowerCase().contains(q);
+    }).toList();
+    return Future.value(results);
+  }
+}
+
+final List<ServiceModel> _allServices = const [
   ServiceModel(
     id: '1',
     name: 'Full Home Cleaning',
-    description: 'A complete and thorough cleaning of your entire home, covering all rooms, surfaces, and floors to make it spotless and hygienic.',
+    description:
+    'A complete and thorough cleaning of your entire home, covering all rooms, surfaces, and floors to make it spotless and hygienic.',
     price: 2499,
     originalPrice: 3000,
     iconUrl: 'assets/images/Home_C.png',
@@ -16,26 +46,49 @@ final List<ServiceModel> allServices = const [
     vendorName: 'Agape Cleaning Co.',
     estimatedTime: '4-5 Hours',
     offer: '15% off for first-time users. Use AGAPE15',
-    inclusions: ['Deep cleaning of all rooms', 'Floor scrubbing and polishing', 'Window and grill cleaning', 'Cobweb removal'],
-    exclusions: ['Exterior area cleaning', 'Heavy furniture moving', 'Appliance interior cleaning'],
-    // 🎯 Options based on home size
+    inclusions: [
+      'Deep cleaning of all rooms',
+      'Floor scrubbing and polishing',
+      'Window and grill cleaning',
+      'Cobweb removal'
+    ],
+    exclusions: [
+      'Exterior area cleaning',
+      'Heavy furniture moving',
+      'Appliance interior cleaning'
+    ],
     options: [
       ServiceOption(id: 'h1', name: '1 BHK Home', price: 2499),
       ServiceOption(id: 'h2', name: '2 BHK Home', price: 3499),
       ServiceOption(id: 'h3', name: '3 BHK Home', price: 4499),
       ServiceOption(id: 'h4', name: '4 BHK / Villa', price: 5999),
     ],
-    // 🎯 Subscription plans for recurring home cleaning
     subscriptionPlans: [
-      SubscriptionPlan(id: 'h-sub1', name: 'Monthly Plan', frequencyDetails: '1 cleaning per month', durationInMonths: 1, discount: 10),
-      SubscriptionPlan(id: 'h-sub2', name: '3-Month Plan', frequencyDetails: '1 cleaning per month', durationInMonths: 3, discount: 15),
-      SubscriptionPlan(id: 'h-sub3', name: '6-Month Plan', frequencyDetails: '1 cleaning per month', durationInMonths: 6, discount: 20),
+      SubscriptionPlan(
+          id: 'h-sub1',
+          name: 'Monthly Plan',
+          frequencyDetails: '1 cleaning per month',
+          durationInMonths: 1,
+          discount: 10),
+      SubscriptionPlan(
+          id: 'h-sub2',
+          name: '3-Month Plan',
+          frequencyDetails: '1 cleaning per month',
+          durationInMonths: 3,
+          discount: 15),
+      SubscriptionPlan(
+          id: 'h-sub3',
+          name: '6-Month Plan',
+          frequencyDetails: '1 cleaning per month',
+          durationInMonths: 6,
+          discount: 20),
     ],
   ),
   ServiceModel(
     id: '2',
     name: 'Commercial Space Cleaning',
-    description: 'Professional and reliable cleaning services for offices, retail stores, and other commercial establishments.',
+    description:
+    'Professional and reliable cleaning services for offices, retail stores, and other commercial establishments.',
     price: 3999,
     originalPrice: 4500,
     iconUrl: 'assets/images/Office_C.png',
@@ -43,24 +96,41 @@ final List<ServiceModel> allServices = const [
     vendorName: 'Corporate Cleaners',
     estimatedTime: 'Varies by space',
     offer: '10% off on monthly contracts',
-    inclusions: ['Cubicle and desk cleaning', 'Common area sanitization', 'Restroom cleaning and restocking', 'Trash removal'],
-    exclusions: ['Window exterior cleaning above ground floor', 'Specialized equipment cleaning'],
-    // 🎯 Options based on area
+    inclusions: [
+      'Cubicle and desk cleaning',
+      'Common area sanitization',
+      'Restroom cleaning and restocking',
+      'Trash removal'
+    ],
+    exclusions: [
+      'Window exterior cleaning above ground floor',
+      'Specialized equipment cleaning'
+    ],
     options: [
       ServiceOption(id: 'cs1', name: 'Upto 500 sq. ft.', price: 3999),
       ServiceOption(id: 'cs2', name: '501 - 1000 sq. ft.', price: 5999),
       ServiceOption(id: 'cs3', name: '1001 - 1500 sq. ft.', price: 7999),
     ],
-    // 🎯 Subscription plans for regular office maintenance
     subscriptionPlans: [
-      SubscriptionPlan(id: 'cs-sub1', name: 'Monthly Contract', frequencyDetails: '2 cleanings per month', durationInMonths: 1, discount: 10),
-      SubscriptionPlan(id: 'cs-sub2', name: 'Quarterly Contract', frequencyDetails: '2 cleanings per month', durationInMonths: 3, discount: 18),
+      SubscriptionPlan(
+          id: 'cs-sub1',
+          name: 'Monthly Contract',
+          frequencyDetails: '2 cleanings per month',
+          durationInMonths: 1,
+          discount: 10),
+      SubscriptionPlan(
+          id: 'cs-sub2',
+          name: 'Quarterly Contract',
+          frequencyDetails: '2 cleanings per month',
+          durationInMonths: 3,
+          discount: 18),
     ],
   ),
   ServiceModel(
     id: '3',
     name: 'Carpet & Mattress Cleaning',
-    description: 'Deep shampooing and extraction process to remove embedded dust, stains, and allergens from carpets and mattresses.',
+    description:
+    'Deep shampooing and extraction process to remove embedded dust, stains, and allergens from carpets and mattresses.',
     price: 1499,
     originalPrice: 1800,
     iconUrl: 'assets/images/Carpet_Matters_C.png',
@@ -68,7 +138,12 @@ final List<ServiceModel> allServices = const [
     vendorName: 'Agape Cleaning Co.',
     estimatedTime: '2-3 Hours',
     offer: 'Combo offer with sofa cleaning',
-    inclusions: ['Thorough vacuuming', 'Stain removal and spot treatment', 'Dust mite treatment', 'Deodorization'],
+    inclusions: [
+      'Thorough vacuuming',
+      'Stain removal and spot treatment',
+      'Dust mite treatment',
+      'Deodorization'
+    ],
     exclusions: ['Pet urine treatment (specialized)', 'Torn carpet or mattress repair'],
     options: [
       ServiceOption(id: 'c1', name: 'Single Mattress', price: 599),
@@ -80,7 +155,8 @@ final List<ServiceModel> allServices = const [
   ServiceModel(
     id: '4',
     name: 'Sofa Deep Cleaning',
-    description: 'Revitalize your fabric and leather sofas with our specialized deep cleaning and sanitization process.',
+    description:
+    'Revitalize your fabric and leather sofas with our specialized deep cleaning and sanitization process.',
     price: 799,
     originalPrice: 999,
     iconUrl: 'assets/images/Sofa_C.png',
@@ -88,7 +164,12 @@ final List<ServiceModel> allServices = const [
     vendorName: 'Pro Cleaners',
     estimatedTime: '60-90 Mins',
     offer: 'Discount on cleaning more than 5 seats',
-    inclusions: ['Dry vacuuming to remove dust', 'Shampooing and spot treatment', 'Leather conditioning (for leather sofas)', 'Sanitization'],
+    inclusions: [
+      'Dry vacuuming to remove dust',
+      'Shampooing and spot treatment',
+      'Leather conditioning (for leather sofas)',
+      'Sanitization'
+    ],
     exclusions: ['Cushion cover laundry', 'Tear and damage repair'],
     options: [
       ServiceOption(id: 's1', name: '3 Seater Sofa', price: 799),
@@ -100,7 +181,8 @@ final List<ServiceModel> allServices = const [
   ServiceModel(
     id: '5',
     name: 'Kitchen Deep Cleaning',
-    description: 'A comprehensive cleaning to remove tough oil, grease, and grime from all kitchen surfaces for a sparkling finish.',
+    description:
+    'A comprehensive cleaning to remove tough oil, grease, and grime from all kitchen surfaces for a sparkling finish.',
     price: 999,
     originalPrice: 1250,
     iconUrl: 'assets/images/Kitchen_C.png',
@@ -108,24 +190,38 @@ final List<ServiceModel> allServices = const [
     vendorName: 'Agape Cleaning Co.',
     estimatedTime: '2-3 Hours',
     offer: '₹200 off on weekdays',
-    inclusions: ['Oil and grease stain removal', 'Cabinet cleaning (exterior)', 'Sink, faucet and countertop scrubbing', 'Floor cleaning'],
+    inclusions: [
+      'Oil and grease stain removal',
+      'Cabinet cleaning (exterior)',
+      'Sink, faucet and countertop scrubbing',
+      'Floor cleaning'
+    ],
     exclusions: ['Appliance interior cleaning (e.g., oven, fridge)', 'Utensil cleaning'],
-    // 🎯 Options based on kitchen size
     options: [
       ServiceOption(id: 'k1', name: 'Small Kitchen (Upto 50 sq. ft.)', price: 999),
       ServiceOption(id: 'k2', name: 'Standard Kitchen (51-100 sq. ft.)', price: 1299),
       ServiceOption(id: 'k3', name: 'Large Kitchen (101-150 sq. ft.)', price: 1599),
     ],
-    // 🎯 Subscription plans for regular kitchen maintenance
     subscriptionPlans: [
-      SubscriptionPlan(id: 'k-sub1', name: 'Monthly Plan', frequencyDetails: '1 cleaning per month', durationInMonths: 1, discount: 5),
-      SubscriptionPlan(id: 'k-sub2', name: '3-Month Plan', frequencyDetails: '1 cleaning per month', durationInMonths: 3, discount: 12),
+      SubscriptionPlan(
+          id: 'k-sub1',
+          name: 'Monthly Plan',
+          frequencyDetails: '1 cleaning per month',
+          durationInMonths: 1,
+          discount: 5),
+      SubscriptionPlan(
+          id: 'k-sub2',
+          name: '3-Month Plan',
+          frequencyDetails: '1 cleaning per month',
+          durationInMonths: 3,
+          discount: 12),
     ],
   ),
   ServiceModel(
     id: '6',
     name: 'Bathroom Deep Cleaning',
-    description: 'Intensive cleaning and disinfection of your bathroom to remove hard water stains, soap scum, and germs.',
+    description:
+    'Intensive cleaning and disinfection of your bathroom to remove hard water stains, soap scum, and germs.',
     price: 699,
     originalPrice: 850,
     iconUrl: 'assets/images/Bathroom_C.png',
@@ -133,25 +229,44 @@ final List<ServiceModel> allServices = const [
     vendorName: 'Hygiene Experts',
     estimatedTime: '90 Mins',
     offer: 'Free floor sanitization included',
-    inclusions: ['Tile and grout scrubbing', 'Toilet bowl and basin descaling', 'Mirror and fixture polishing', 'Disinfection of all surfaces'],
-    exclusions: ['Mold removal (specialized service)', 'Plumbing repairs'],
-    // 🎯 Options for multiple bathrooms
+    inclusions: [
+      'Tile and grout scrubbing',
+      'Toilet bowl and basin descaling',
+      'Mirror and fixture polishing',
+      'Disinfection of all surfaces'
+    ],
+    exclusions: ['Mold removal (specialized)', 'Plumbing repairs'],
     options: [
       ServiceOption(id: 'b1', name: '1 Bathroom', price: 699),
       ServiceOption(id: 'b2', name: '2 Bathrooms Combo', price: 1299),
       ServiceOption(id: 'b3', name: '3 Bathrooms Combo', price: 1799),
     ],
-    // 🎯 Multiple frequency options for bathroom cleaning as requested
     subscriptionPlans: [
-      SubscriptionPlan(id: 'b-sub1', name: 'Monthly Basic', frequencyDetails: '1 cleaning per month', durationInMonths: 1, discount: 10),
-      SubscriptionPlan(id: 'b-sub2', name: 'Monthly Pro', frequencyDetails: '2 cleanings per month', durationInMonths: 1, discount: 15),
-      SubscriptionPlan(id: 'b-sub3', name: '3-Month Saver', frequencyDetails: '1 cleaning per month', durationInMonths: 3, discount: 20),
+      SubscriptionPlan(
+          id: 'b-sub1',
+          name: 'Monthly Basic',
+          frequencyDetails: '1 cleaning per month',
+          durationInMonths: 1,
+          discount: 10),
+      SubscriptionPlan(
+          id: 'b-sub2',
+          name: 'Monthly Pro',
+          frequencyDetails: '2 cleanings per month',
+          durationInMonths: 1,
+          discount: 15),
+      SubscriptionPlan(
+          id: 'b-sub3',
+          name: '3-Month Saver',
+          frequencyDetails: '1 cleaning per month',
+          durationInMonths: 3,
+          discount: 20),
     ],
   ),
   ServiceModel(
     id: '7',
     name: 'Glass Cleaning',
-    description: 'Streak-free professional cleaning for windows, glass partitions, and mirrors to enhance clarity and brightness.',
+    description:
+    'Streak-free professional cleaning for windows, glass partitions, and mirrors to enhance clarity and brightness.',
     price: 499,
     originalPrice: 600,
     iconUrl: 'assets/images/Glass_C.png',
@@ -159,9 +274,12 @@ final List<ServiceModel> allServices = const [
     vendorName: 'Crystal Clear Windows',
     estimatedTime: '45-60 Mins',
     offer: 'Included free with Full Home Cleaning',
-    inclusions: ['Interior and exterior window cleaning (ground floor)', 'Glass door and panel cleaning', 'Mirror shining'],
+    inclusions: [
+      'Interior and exterior window cleaning (ground floor)',
+      'Glass door and panel cleaning',
+      'Mirror shining'
+    ],
     exclusions: ['Skyscraper or high-rise windows', 'Hard water stain removal (extra charge)'],
-    // 🎯 Options based on number of windows
     options: [
       ServiceOption(id: 'g1', name: 'Upto 5 Windows', price: 499),
       ServiceOption(id: 'g2', name: 'Upto 10 Windows', price: 899),
@@ -171,7 +289,8 @@ final List<ServiceModel> allServices = const [
   ServiceModel(
     id: '8',
     name: 'Chair Cleaning',
-    description: 'Specialized cleaning for office, dining, and accent chairs to remove stains and restore freshness.',
+    description:
+    'Specialized cleaning for office, dining, and accent chairs to remove stains and restore freshness.',
     price: 199,
     originalPrice: 250,
     iconUrl: 'assets/images/Chair_C.png',
@@ -181,7 +300,6 @@ final List<ServiceModel> allServices = const [
     offer: 'Discount on 6+ chairs',
     inclusions: ['Fabric/leather shampooing', 'Spot treatment', 'Armrest and leg cleaning', 'Sanitization'],
     exclusions: ['Repair of broken parts', 'Reupholstering'],
-    // 🎯 Options for different chair types and bundles
     options: [
       ServiceOption(id: 'ch1', name: 'Dining Chair', price: 199),
       ServiceOption(id: 'ch2', name: 'Office Chair', price: 249),
@@ -192,7 +310,8 @@ final List<ServiceModel> allServices = const [
   ServiceModel(
     id: '9',
     name: 'Water Tank Cleaning',
-    description: 'Mechanized 6-stage cleaning process for overhead and underground water tanks to ensure safe and clean water.',
+    description:
+    'Mechanized 6-stage cleaning process for overhead and underground water tanks to ensure safe and clean water.',
     price: 599,
     originalPrice: 750,
     iconUrl: 'assets/images/Water_Tank_C.png',
@@ -200,18 +319,32 @@ final List<ServiceModel> allServices = const [
     vendorName: 'Hygiene Experts',
     estimatedTime: '60-90 Mins',
     offer: 'Free anti-bacterial spray with every clean',
-    inclusions: ['Mechanized dewatering', 'Sludge removal', 'High-pressure wall cleaning', 'Industrial vacuum cleaning', 'Anti-bacterial spray'],
+    inclusions: [
+      'Mechanized dewatering',
+      'Sludge removal',
+      'High-pressure wall cleaning',
+      'Industrial vacuum cleaning',
+      'Anti-bacterial spray'
+    ],
     exclusions: ['Major leakage repair', 'Tank structural damage repair'],
-    // 🎯 Options based on tank capacity
     options: [
       ServiceOption(id: 'wt1', name: 'Upto 500L Tank', price: 599),
       ServiceOption(id: 'wt2', name: '501L - 1000L Tank', price: 799),
       ServiceOption(id: 'wt3', name: '1001L - 1500L Tank', price: 999),
     ],
-    // 🎯 Subscriptions for mandatory periodic cleaning
     subscriptionPlans: [
-      SubscriptionPlan(id: 'wt-sub1', name: '3-Month Plan', frequencyDetails: '1 cleaning every 3 months', durationInMonths: 3, discount: 10),
-      SubscriptionPlan(id: 'wt-sub2', name: '6-Month Plan', frequencyDetails: '1 cleaning every 3 months', durationInMonths: 6, discount: 15),
+      SubscriptionPlan(
+          id: 'wt-sub1',
+          name: '3-Month Plan',
+          frequencyDetails: '1 cleaning every 3 months',
+          durationInMonths: 3,
+          discount: 10),
+      SubscriptionPlan(
+          id: 'wt-sub2',
+          name: '6-Month Plan',
+          frequencyDetails: '1 cleaning every 3 months',
+          durationInMonths: 6,
+          discount: 15),
     ],
   ),
 ];

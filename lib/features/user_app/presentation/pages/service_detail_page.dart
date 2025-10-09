@@ -272,7 +272,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
                 '${widget.service.id}_${_selectedOption.id}_${_selectedSubscription?.id ?? 'onetime'}';
 
             // 2. Create the CartItem object
-            final cartItem = CartItem(
+            final cartItem = CartItemModel(
               id: cartItemId,
               service: widget.service,
               selectedOption: _selectedOption,

@@ -13,7 +13,7 @@ class CartStarted extends CartEvent {}
 
 // Event to add an item.
 class CartItemAdded extends CartEvent {
-  final CartItem item;
+  final CartItemModel item;
   const CartItemAdded(this.item);
   @override
   List<Object> get props => [item];

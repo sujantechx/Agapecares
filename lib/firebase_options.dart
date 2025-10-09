@@ -85,4 +85,5 @@ class DefaultFirebaseOptions {
     storageBucket: 'agapecarecb-e1be4.firebasestorage.app',
     measurementId: 'G-H9E426RBRC',
   );
+
 }

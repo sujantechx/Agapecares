@@ -282,6 +282,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
 
             // 3. Add the event to the CartBloc
             context.read<CartBloc>().add(CartItemAdded(cartItem));
+            // Ensure cart is reloaded so UI updates immediately
+            context.read<CartBloc>().add(CartStarted());
 
             // 4. Show a confirmation message
             ScaffoldMessenger.of(context).showSnackBar(

@@ -1,4 +1,3 @@
-
 import 'package:equatable/equatable.dart';
 import '../../../../../shared/models/service_list_model.dart';
 import '../../../../../shared/models/service_option_model.dart';
@@ -57,14 +56,11 @@ List<Object?> get props => [id, service, selectedOption, subscription, quantity]
   factory CartItemModel.fromJson(Map<String, dynamic> json) {
     return CartItemModel(
       id: json['id'] as String? ?? '',
-      service: ServiceModel.fromMap(json['service'] as Map<String, dynamic>),
-      selectedOption:
-      ServiceOption.fromMap(json['selectedOption'] as Map<String, dynamic>),
-      subscription: json['subscription'] != null
-          ? SubscriptionPlan.fromMap(json['subscription'] as Map<String, dynamic>)
-          : null,
+      // Nested maps may be null; our fromMap constructors accept nullable maps.
+      service: ServiceModel.fromMap(json['service'] as Map<String, dynamic>?),
+      selectedOption: ServiceOption.fromMap(json['selectedOption'] as Map<String, dynamic>?),
+      subscription: SubscriptionPlan.fromMap(json['subscription'] as Map<String, dynamic>?),
       quantity: (json['quantity'] as int?) ?? 1,
     );
   }
 }
-

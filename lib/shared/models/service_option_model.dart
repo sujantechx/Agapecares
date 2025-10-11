@@ -15,7 +15,11 @@ class ServiceOption extends Equatable {
     required this.price,
   });
 
-  factory ServiceOption.fromMap(Map<String, dynamic> map) {
+  factory ServiceOption.fromMap(Map<String, dynamic>? map) {
+    if (map == null) {
+      return const ServiceOption(id: '', name: '', price: 0.0);
+    }
+
     final dynamic priceValue = map['price'];
     double parsedPrice;
     if (priceValue is int) {
@@ -44,7 +48,7 @@ class ServiceOption extends Equatable {
   }
 
   factory ServiceOption.fromJson(String source) =>
-      ServiceOption.fromMap(json.decode(source) as Map<String, dynamic>);
+      ServiceOption.fromMap(json.decode(source) as Map<String, dynamic>?);
 
   String toJson() => json.encode(toMap());
 

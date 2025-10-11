@@ -16,4 +16,18 @@ class Validators {
     }
     return null;
   }
+
+  /// Validate email address. Returns null when valid.
+  static String? validateEmail(String? value) {
+    if (value == null || value.isEmpty) return 'Email cannot be empty.';
+    final emailRegExp = RegExp(r"^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$");
+    if (!emailRegExp.hasMatch(value)) return 'Enter a valid email address.';
+    return null;
+  }
+
+  /// Optional phone validator: accepts empty/null as valid, otherwise validates the phone.
+  static String? validatePhoneNumberOptional(String? value) {
+    if (value == null || value.isEmpty) return null;
+    return validatePhoneNumber(value);
+  }
 }

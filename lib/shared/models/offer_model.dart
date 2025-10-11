@@ -28,7 +28,11 @@ class Offer {
     this.minimumSpend,
   });
 
-  factory Offer.fromMap(Map<String, dynamic> map) {
+  factory Offer.fromMap(Map<String, dynamic>? map) {
+    if (map == null) {
+      return const Offer(code: '', type: OfferType.percentage, value: 0.0, description: '', minimumSpend: null);
+    }
+
     return Offer(
       code: map['code'] as String? ?? '',
       type: OfferTypeX.fromString(map['type'] as String?),

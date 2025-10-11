@@ -33,8 +33,41 @@ class ServiceModel {
     required this.options,
     this.subscriptionPlans,
   });
-// Create from a generic Map (suitable for converting Firebase document data or local store maps)
-  factory ServiceModel.fromMap(Map<String, dynamic> map) {
+  // Create from a generic Map (suitable for converting Firebase document data or local store maps)
+  factory ServiceModel.fromMap(Map<String, dynamic>? map) {
+    // If the source map is null, return a safe empty model.
+    if (map == null) {
+      return const ServiceModel(
+        id: '',
+        name: '',
+        description: '',
+        price: 0.0,
+        originalPrice: 0.0,
+        iconUrl: '',
+        detailImageUrl: '',
+        vendorName: '',
+        estimatedTime: '',
+        offer: '',
+        inclusions: const [],
+        exclusions: const [],
+        options: const [],
+        subscriptionPlans: null,
+      );
+    }
+
+    // Safe parsing with fallbacks for each field
+    final rawOptions = map['options'] as List?;
+    final options = rawOptions
+            ?.map<ServiceOption>((e) => ServiceOption.fromMap(Map<String, dynamic>.from(e as Map)))
+            .toList() ??
+        const <ServiceOption>[];
+
+    final rawSubs = map['subscriptionPlans'] as List?;
+    final subs = rawSubs
+            ?.map<SubscriptionPlan>((e) => SubscriptionPlan.fromMap(Map<String, dynamic>.from(e as Map)))
+            .toList() ??
+        null;
+
     return ServiceModel(
       id: map['id'] as String? ?? '',
       name: map['name'] as String? ?? '',
@@ -48,13 +81,8 @@ class ServiceModel {
       offer: map['offer'] as String? ?? '',
       inclusions: List<String>.from(map['inclusions'] as List? ?? const []),
       exclusions: List<String>.from(map['exclusions'] as List? ?? const []),
-      options: (map['options'] as List?)
-          ?.map<ServiceOption>((e) => ServiceOption.fromMap(Map<String, dynamic>.from(e as Map)))
-          .toList() ??
-          const [],
-      subscriptionPlans: (map['subscriptionPlans'] as List?)
-          ?.map<SubscriptionPlan>((e) => SubscriptionPlan.fromMap(Map<String, dynamic>.from(e as Map)))
-          .toList(),
+      options: options,
+      subscriptionPlans: subs,
     );
   }
 

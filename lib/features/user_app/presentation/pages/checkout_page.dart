@@ -1,4 +1,4 @@
-// filepath: c:\FlutterDev\project\agapecares\lib\features\user_app\presentation\pages\checkout_page.dart
+// filepath: c:\FlutterDev\agapecares\lib\features\user_app\presentation\pages\checkout_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -10,6 +10,7 @@ import '../../payment_gateway/bloc/checkout_bloc.dart';
 import '../../payment_gateway/bloc/checkout_event.dart';
 import '../../payment_gateway/bloc/checkout_state.dart';
 import '../../cart/data/models/cart_item_model.dart';
+import '../../cart/bloc/cart_bloc.dart';
 
 class CheckoutPage extends StatefulWidget {
   final Map<String, dynamic>? serviceData;
@@ -37,30 +38,40 @@ class _CheckoutPageState extends State<CheckoutPage> {
   @override
   Widget build(BuildContext context) {
     final s = widget.serviceData;
-    final title = s?['title'] as String? ?? 'Service';
-    final price = (s?['price'] as num?)?.toDouble() ?? 0.0;
-    // Create a minimal ServiceModel and ServiceOption to construct a CartItemModel
-    final serviceModel = ServiceModel(
-      id: s?['id'] as String? ?? 'srv_unknown',
-      name: title,
-      description: s?['description'] as String? ?? '',
-      price: price,
-      originalPrice: price,
-      iconUrl: s?['image'] as String? ?? '',
-      detailImageUrl: s?['image'] as String? ?? '',
-      vendorName: '',
-      estimatedTime: '',
-      offer: '',
-      inclusions: const [],
-      exclusions: const [],
-      options: [ServiceOption(id: 'opt1', name: 'Standard', price: price)],
-    );
-    final cartItem = CartItemModel(
-      id: '${serviceModel.id}_opt1',
-      service: serviceModel,
-      selectedOption: serviceModel.options.first,
-      quantity: 1,
-    );
+    final cartState = context.watch<CartBloc>().state;
+
+    // If serviceData is provided (single-service checkout), keep existing behavior.
+    // Otherwise use the CartBloc state for multi-item cart checkout.
+    final title = s?['title'] as String? ?? (cartState.items.isNotEmpty ? 'Cart Checkout' : 'Service');
+    final priceFromService = (s?['price'] as num?)?.toDouble();
+    final price = priceFromService ?? cartState.total;
+
+    // Build items list: either single item from serviceData or all cart items.
+    final List<CartItemModel> items = s != null
+        ? [
+            // Create a minimal ServiceModel and ServiceOption to construct a CartItemModel
+            CartItemModel(
+              id: '${s['id'] ?? 'srv_unknown'}_opt1',
+              service: ServiceModel(
+                id: s['id'] as String? ?? 'srv_unknown',
+                name: s['title'] as String? ?? title,
+                description: s['description'] as String? ?? '',
+                price: (s['price'] as num?)?.toDouble() ?? 0.0,
+                originalPrice: (s['price'] as num?)?.toDouble() ?? 0.0,
+                iconUrl: s['image'] as String? ?? '',
+                detailImageUrl: s['image'] as String? ?? '',
+                vendorName: '',
+                estimatedTime: '',
+                offer: '',
+                inclusions: const [],
+                exclusions: const [],
+                options: [ServiceOption(id: 'opt1', name: 'Standard', price: (s['price'] as num?)?.toDouble() ?? 0.0)],
+              ),
+              selectedOption: ServiceOption(id: 'opt1', name: 'Standard', price: (s['price'] as num?)?.toDouble() ?? 0.0),
+              quantity: 1,
+            )
+          ]
+        : cartState.items;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Checkout')),
@@ -131,7 +142,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                               userEmail: _emailCtrl.text.trim(),
                               userPhone: _phoneCtrl.text.trim(),
                               userName: _nameCtrl.text.trim(),
-                              items: [cartItem],
+                              items: items,
                             );
                             context.read<CheckoutBloc>().add(CheckoutSubmitted(request: req, paymentMethod: _paymentMethod));
                           },

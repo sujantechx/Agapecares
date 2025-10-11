@@ -3,14 +3,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../../core/utils/validators.dart';
 import '../../../../shared/widgets/common_button.dart';
-import '../../data/datasources/auth_remote_ds.dart';
-import '../../data/repositories/auth_repository.dart';
 import '../../logic/blocs/auth_bloc.dart';
 import '../../logic/blocs/auth_event.dart';
 import '../../logic/blocs/auth_state.dart';
+import '../../data/repositories/auth_repository.dart';
+import '../../data/datasources/auth_remote_ds.dart';
+import '../../../../routes/app_routes.dart';
+import '../../../../shared/services/session_service.dart';
+import '../../../../shared/models/user_model.dart';
+import 'package:agapecares/features/user_app/cart/data/repository/cart_repository.dart';
+import 'package:agapecares/features/user_app/cart/bloc/cart_bloc.dart';
+import 'package:agapecares/features/user_app/cart/bloc/cart_event.dart';
 
 
 class LoginPage extends StatelessWidget {
@@ -18,16 +26,22 @@ class LoginPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Providing the AuthBloc to the LoginPage widget tree.
-    // In a real app, this would be provided higher up, possibly via a DI solution.
-    return BlocProvider(
-      create: (context) => AuthBloc(
-        authRepository: AuthRepositoryImpl(
-          remoteDataSource: AuthDummyDataSourceImpl(),
+    // Use the AuthBloc provided at the app level (injection_container.dart).
+    // If none is available (tests or minimal app shells), provide a temporary
+    // AuthBloc that uses the dummy data source so the page can build safely.
+    try {
+      // Try to read an existing AuthBloc. If it doesn't exist, this will throw.
+      context.read<AuthBloc>();
+      return const LoginView();
+    } catch (_) {
+      // Provide a local AuthBloc built from the dummy remote datasource.
+      return BlocProvider(
+        create: (_) => AuthBloc(
+          authRepository: AuthRepositoryImpl(remoteDataSource: AuthDummyDataSourceImpl()),
         ),
-      ),
-      child: const LoginView(),
-    );
+        child: const LoginView(),
+      );
+    }
   }
 }
 
@@ -41,10 +55,32 @@ class LoginView extends StatefulWidget {
 class _LoginViewState extends State<LoginView> {
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isEmailMode = false;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // If a session is already present, navigate to home automatically.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final session = context.read<SessionService>();
+        if (session.isLoggedIn()) {
+          if (mounted) context.go(AppRoutes.home);
+        }
+      } catch (_) {
+        // No SessionService is provided (e.g., during lightweight tests). Ignore.
+      }
+    });
+  }
 
   @override
   void dispose() {
     _phoneController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -57,6 +93,45 @@ class _LoginViewState extends State<LoginView> {
     }
   }
 
+  Future<void> _signInWithEmail() async {
+    // Fix: return early if form is invalid
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
+    // Read session service before any await to avoid using context across async gaps
+    final sessionService = context.read<SessionService>();
+    try {
+      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+      final user = cred.user;
+      if (user != null) {
+        // Save session (fire-and-forget is fine here)
+        try {
+          final um = UserModel(uid: user.uid, phoneNumber: user.phoneNumber ?? '', name: user.displayName ?? '', email: user.email);
+          // Await saving the session to ensure persistence before navigation.
+          await sessionService.saveUser(um);
+          // Seed cart and notify CartBloc so the UI updates immediately
+          try {
+            final cartRepo = context.read<CartRepository>();
+            await cartRepo.getCartItems();
+          } catch (_) {}
+          try {
+            context.read<CartBloc>().add(CartStarted());
+          } catch (_) {}
+        } catch (_) {}
+        if (!mounted) return;
+        context.go(AppRoutes.home);
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message ?? 'Login failed')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $e')));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -65,7 +140,7 @@ class _LoginViewState extends State<LoginView> {
         listener: (context, state) {
           if (state is AuthCodeSentSuccess) {
             // Navigate to OTP page on success
-            context.push('/otp', extra: _phoneController.text.trim());
+            context.push(AppRoutes.otp, extra: _phoneController.text.trim());
           } else if (state is AuthFailure) {
             // Show an error message on failure
             ScaffoldMessenger.of(context).showSnackBar(
@@ -91,30 +166,76 @@ class _LoginViewState extends State<LoginView> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),
-                  Text(
-                    'Enter your phone number to continue',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 48),
-                  TextFormField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone Number',
-                      prefixText: '+91 ',
-                    ),
-                    validator: Validators.validatePhoneNumber,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Phone'),
+                        selected: !_isEmailMode,
+                        onSelected: (s) => setState(() => _isEmailMode = !s),
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('Email'),
+                        selected: _isEmailMode,
+                        onSelected: (s) => setState(() => _isEmailMode = s),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 24),
-                  BlocBuilder<AuthBloc, AuthState>(
-                    builder: (context, state) {
-                      return CommonButton(
-                        onPressed: _sendOtp,
-                        text: 'Send OTP',
-                        isLoading: state is AuthLoading,
-                      );
-                    },
+                  if (_isEmailMode) ...[
+                    TextFormField(
+                      controller: _emailController,
+                      decoration: const InputDecoration(labelText: 'Email'),
+                      keyboardType: TextInputType.emailAddress,
+                      validator: Validators.validateEmail,
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _passwordController,
+                      decoration: const InputDecoration(labelText: 'Password'),
+                      obscureText: true,
+                      validator: (v) => (v == null || v.length < 6) ? 'Enter min 6 chars' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    CommonButton(onPressed: _signInWithEmail, text: 'Login', isLoading: _isLoading),
+                  ] else ...[
+                    Text(
+                      'Enter your phone number to continue',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _phoneController,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Phone Number',
+                        prefixText: '+91 ',
+                      ),
+                      validator: Validators.validatePhoneNumber,
+                    ),
+                    const SizedBox(height: 24),
+                    BlocBuilder<AuthBloc, AuthState>(
+                      builder: (context, state) {
+                        return CommonButton(
+                          onPressed: _sendOtp,
+                          text: 'Send OTP',
+                          isLoading: state is AuthLoading,
+                        );
+                      },
+                    ),
+                  ],
+
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => context.push(AppRoutes.register),
+                    child: const Text('Don\'t have an account? Register'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => context.push(AppRoutes.forgotPassword),
+                    child: const Text('Forgot password?'),
                   ),
                 ],
               ),

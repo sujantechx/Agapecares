@@ -8,11 +8,13 @@ class UserModel extends Equatable {
   final String uid;
   final String phoneNumber;
   final String? name; // Optional name
+  final String? email; // Optional email
 
   const UserModel({
     required this.uid,
     required this.phoneNumber,
     this.name,
+    this.email,
   });
 
   Map<String, dynamic> toMap() {
@@ -20,14 +22,20 @@ class UserModel extends Equatable {
       'uid': uid,
       'phoneNumber': phoneNumber,
       'name': name,
+      'email': email,
     };
   }
 
-  factory UserModel.fromMap(Map<String, dynamic> map) {
+  factory UserModel.fromMap(Map<String, dynamic>? map) {
+    if (map == null) {
+      return const UserModel(uid: '', phoneNumber: '', name: null, email: null);
+    }
+
     return UserModel(
-      uid: map['uid'] as String,
-      phoneNumber: map['phoneNumber'] as String,
+      uid: map['uid'] as String? ?? '',
+      phoneNumber: map['phoneNumber'] as String? ?? '',
       name: map['name'] as String?,
+      email: map['email'] as String?,
     );
   }
 
@@ -39,20 +47,22 @@ class UserModel extends Equatable {
   // JSON helpers for local storage (e.g., shared_preferences or file)
   String toJson() => json.encode(toMap());
   factory UserModel.fromJson(String source) =>
-      UserModel.fromMap(json.decode(source) as Map<String, dynamic>);
+      UserModel.fromMap(json.decode(source) as Map<String, dynamic>?);
 
   UserModel copyWith({
     String? uid,
     String? phoneNumber,
     String? name,
+    String? email,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
       phoneNumber: phoneNumber ?? this.phoneNumber,
       name: name ?? this.name,
+      email: email ?? this.email,
     );
   }
 
   @override
-  List<Object?> get props => [uid, phoneNumber, name];
+  List<Object?> get props => [uid, phoneNumber, name, email];
 }

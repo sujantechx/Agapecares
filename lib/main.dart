@@ -71,7 +71,8 @@ class MyApp extends StatelessWidget {
         title: 'Agape Cares',
         theme: AppTheme.lightTheme,
         themeMode: ThemeMode.system,
-        routerConfig: AppRouter.router,
+        // When running without DI, create a router lazily.
+        routerConfig: AppRouter.createRouter(),
         debugShowCheckedModeBanner: false,
       );
     }
@@ -87,7 +88,9 @@ class MyApp extends StatelessWidget {
             theme: AppTheme.lightTheme,
             // darkTheme: AppTheme.darkTheme,
             themeMode: ThemeMode.system,
-            routerConfig: AppRouter.router,
+            // Create the router after providers and blocs are available so
+            // route builder contexts include them (fixes "Could not find the correct Provider<CartBloc>" errors).
+            routerConfig: AppRouter.createRouter(),
             debugShowCheckedModeBanner: false,
           ),
         );

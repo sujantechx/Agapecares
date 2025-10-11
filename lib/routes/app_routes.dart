@@ -5,6 +5,11 @@ class AppRoutes {
   // --- Authentication Flow ---
   static const String login = '/login';
   static const String otp = '/otp';
+  static const String register = '/register';
+  static const String phoneVerify = '/phone-verify';
+  static const String forgotPassword = '/forgot-password';
+  static const String phoneResetOtp = '/phone-reset-otp';
+  static const String setNewPassword = '/set-new-password';
 
   // --- Main App Shell (Dashboard) Routes ---
   static const String home = '/home';

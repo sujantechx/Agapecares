@@ -7,11 +7,13 @@ import 'package:pinput/pinput.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/common_button.dart';
-import '../../data/datasources/auth_remote_ds.dart';
-import '../../data/repositories/auth_repository.dart';
 import '../../logic/blocs/auth_bloc.dart';
 import '../../logic/blocs/auth_event.dart';
 import '../../logic/blocs/auth_state.dart';
+import '../../../../shared/services/session_service.dart';
+import 'package:agapecares/features/user_app/cart/data/repository/cart_repository.dart';
+import 'package:agapecares/features/user_app/cart/bloc/cart_bloc.dart';
+import 'package:agapecares/features/user_app/cart/bloc/cart_event.dart';
 
 
 class OtpPage extends StatelessWidget {
@@ -20,22 +22,21 @@ class OtpPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Provide the BLoC here as well. In a larger app, this would be inherited.
-    return BlocProvider(
-      create: (context) => AuthBloc(
-        authRepository: AuthRepositoryImpl(
-          remoteDataSource: AuthDummyDataSourceImpl(),
-        ),
-      ),
-      child: OtpView(phoneNumber: phoneNumber),
-    );
+    // Use existing AuthBloc provided at the app level (from injection_container)
+    return OtpView(phoneNumber: phoneNumber);
   }
 }
 
-class OtpView extends StatelessWidget {
+// Converted to StatefulWidget to allow use of `mounted` in async listeners
+class OtpView extends StatefulWidget {
   final String phoneNumber;
   const OtpView({super.key, required this.phoneNumber});
 
+  @override
+  State<OtpView> createState() => _OtpViewState();
+}
+
+class _OtpViewState extends State<OtpView> {
   void _verifyOtp(BuildContext context, String otp) {
     context.read<AuthBloc>().add(AuthVerifyOtpRequested(otp));
   }
@@ -61,10 +62,28 @@ class OtpView extends StatelessWidget {
         foregroundColor: AppTheme.textColor,
       ),
       body: BlocListener<AuthBloc, AuthState>(
-        listener: (context, state) {
+        listener: (context, state) async {
           if (state is AuthLoggedIn) {
+            // Save session
+            try {
+              final session = context.read<SessionService>();
+              await session.saveUser(state.user);
+            } catch (_) {}
+            // If cart repository is available, attempt to seed local DB from remote.
+            try {
+              final cartRepo = context.read<CartRepository>();
+              // Fire-and-forget: getCartItems may seed the local DB
+              await cartRepo.getCartItems();
+            } catch (_) {}
+
+            // Ensure CartBloc recalculates its state from the repository so UI updates immediately
+            try {
+              context.read<CartBloc>().add(CartStarted());
+            } catch (_) {}
+
             // On successful login, navigate to the home screen and remove
             // the auth pages from the navigation stack.
+            if (!mounted) return;
             context.go('/home');
           } else if (state is AuthFailure) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -87,7 +106,7 @@ class OtpView extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'We have sent an OTP to +91 $phoneNumber',
+                  'We have sent an OTP to +91 ${widget.phoneNumber}',
                   style: Theme.of(context).textTheme.bodyMedium,
                   textAlign: TextAlign.center,
                 ),

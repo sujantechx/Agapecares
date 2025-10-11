@@ -24,7 +24,52 @@ class SubscriptionPlan {
     required this.discount,
   });
 
-  toMap() {}
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'frequencyDetails': frequencyDetails,
+      'durationInMonths': durationInMonths,
+      'discount': discount,
+    };
+  }
 
-  static fromMap(Map<String, dynamic> map) {}
+  static SubscriptionPlan fromMap(Map<String, dynamic>? map) {
+    if (map == null) {
+      return const SubscriptionPlan(
+        id: '',
+        name: '',
+        frequencyDetails: '',
+        durationInMonths: 1,
+        discount: 0.0,
+      );
+    }
+
+    final durationRaw = map['durationInMonths'];
+    final discountRaw = map['discount'];
+
+    final duration = (durationRaw is int)
+        ? durationRaw
+        : (durationRaw is String)
+            ? int.tryParse(durationRaw) ?? 1
+            : (durationRaw is num)
+                ? durationRaw.toInt()
+                : 1;
+
+    final discount = (discountRaw is int)
+        ? discountRaw.toDouble()
+        : (discountRaw is double)
+            ? discountRaw
+            : (discountRaw is String)
+                ? double.tryParse(discountRaw) ?? 0.0
+                : 0.0;
+
+    return SubscriptionPlan(
+      id: map['id'] as String? ?? '',
+      name: map['name'] as String? ?? '',
+      frequencyDetails: map['frequencyDetails'] as String? ?? '',
+      durationInMonths: duration,
+      discount: discount,
+    );
+  }
 }

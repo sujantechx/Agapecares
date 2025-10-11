@@ -1,15 +1,47 @@
+import 'dart:async';
 import 'package:agapecares/features/user_app/cart/presentation/widgets/cart_item_card.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../routes/app_routes.dart';
 
 import '../bloc/cart_bloc.dart';
 import '../bloc/cart_event.dart';
 import '../bloc/cart_state.dart';
 
 
-class CartPage extends StatelessWidget {
+class CartPage extends StatefulWidget {
   const CartPage({super.key});
+
+  @override
+  State<CartPage> createState() => _CartPageState();
+}
+
+class _CartPageState extends State<CartPage> {
+  StreamSubscription<User?>? _authSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // When user logs in, ensure CartBloc reloads (local DB may have been seeded by CartRepository)
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null) {
+        try {
+          // context is available after initState via addPostFrameCallback
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) context.read<CartBloc>().add(CartStarted());
+          });
+        } catch (_) {}
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -141,9 +173,9 @@ class CartPage extends StatelessWidget {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Checkout process started!')),
-                );
+                // Navigate to the checkout page to complete the order.
+                // Passing no extra data signals a full-cart checkout.
+                context.push(AppRoutes.checkout);
               },
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),

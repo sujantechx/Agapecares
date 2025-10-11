@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import './service_option_model.dart';
 import './subscription_plan_model.dart';
 
@@ -56,17 +58,49 @@ class ServiceModel {
     }
 
     // Safe parsing with fallbacks for each field
-    final rawOptions = map['options'] as List?;
-    final options = rawOptions
-            ?.map<ServiceOption>((e) => ServiceOption.fromMap(Map<String, dynamic>.from(e as Map)))
-            .toList() ??
-        const <ServiceOption>[];
+    List<ServiceOption> options = const <ServiceOption>[];
+    try {
+      final rawOptions = map['options'];
+      if (rawOptions is String && rawOptions.isNotEmpty) {
+        // maybe JSON-encoded list
+        final decoded = (rawOptions.startsWith('[')) ? List<dynamic>.from(jsonDecode(rawOptions) as List) : <dynamic>[];
+        options = decoded.map((e) => ServiceOption.fromMap(e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})).toList();
+      } else if (rawOptions is List) {
+        options = rawOptions.map((e) {
+          try {
+            if (e is Map) return ServiceOption.fromMap(Map<String, dynamic>.from(e));
+            return ServiceOption.fromMap(<String, dynamic>{});
+          } catch (_) {
+            return ServiceOption.fromMap(<String, dynamic>{});
+          }
+        }).toList();
+      }
+    } catch (_) {
+      options = const <ServiceOption>[];
+    }
 
-    final rawSubs = map['subscriptionPlans'] as List?;
-    final subs = rawSubs
-            ?.map<SubscriptionPlan>((e) => SubscriptionPlan.fromMap(Map<String, dynamic>.from(e as Map)))
-            .toList() ??
-        null;
+    List<SubscriptionPlan>? subs;
+    try {
+      final rawSubs = map['subscriptionPlans'];
+      if (rawSubs is String && rawSubs.isNotEmpty) {
+        final decoded = (rawSubs.startsWith('[')) ? List<dynamic>.from(jsonDecode(rawSubs) as List) : <dynamic>[];
+        subs = decoded.map((e) => SubscriptionPlan.fromMap(e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})).toList();
+      } else if (rawSubs is List) {
+        subs = rawSubs.map((e) {
+          try {
+            if (e is Map) return SubscriptionPlan.fromMap(Map<String, dynamic>.from(e));
+            return SubscriptionPlan.fromMap(<String, dynamic>{});
+          } catch (_) {
+            return SubscriptionPlan.fromMap(<String, dynamic>{});
+          }
+        }).toList();
+      } else {
+        subs = null;
+      }
+    } catch (_) {
+      subs = null;
+    }
+
 
     return ServiceModel(
       id: map['id'] as String? ?? '',
@@ -79,31 +113,47 @@ class ServiceModel {
       vendorName: map['vendorName'] as String? ?? '',
       estimatedTime: map['estimatedTime'] as String? ?? '',
       offer: map['offer'] as String? ?? '',
-      inclusions: List<String>.from(map['inclusions'] as List? ?? const []),
-      exclusions: List<String>.from(map['exclusions'] as List? ?? const []),
+      inclusions: _coerceStringList(map['inclusions']),
+      exclusions: _coerceStringList(map['exclusions']),
       options: options,
       subscriptionPlans: subs,
     );
   }
 
-  // Convert to a Map suitable for storing in local store or Firebase
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'name': name,
-      'description': description,
-      'price': price,
-      'originalPrice': originalPrice,
-      'iconUrl': iconUrl,
-      'detailImageUrl': detailImageUrl,
-      'vendorName': vendorName,
-      'estimatedTime': estimatedTime,
-      'offer': offer,
-      'inclusions': inclusions,
-      'exclusions': exclusions,
-      'options': options.map((o) => o.toMap()).toList(),
-      if (subscriptionPlans != null)
-        'subscriptionPlans': subscriptionPlans!.map((p) => p.toMap()).toList(),
-    };
+  // Helper to coerce a dynamic into List<String>
+  static List<String> _coerceStringList(dynamic value) {
+    try {
+      if (value is String && value.isNotEmpty) {
+        final decoded = (value.startsWith('[')) ? jsonDecode(value) as List : <dynamic>[];
+        return decoded.map((e) => e?.toString() ?? '').toList().cast<String>();
+      }
+      if (value is List) {
+        return value.map((e) => e?.toString() ?? '').toList().cast<String>();
+      }
+      return <String>[];
+    } catch (_) {
+      return <String>[];
+    }
   }
+
+   // Convert to a Map suitable for storing in local store or Firebase
+   Map<String, dynamic> toMap() {
+     return {
+       'id': id,
+       'name': name,
+       'description': description,
+       'price': price,
+       'originalPrice': originalPrice,
+       'iconUrl': iconUrl,
+       'detailImageUrl': detailImageUrl,
+       'vendorName': vendorName,
+       'estimatedTime': estimatedTime,
+       'offer': offer,
+       'inclusions': inclusions,
+       'exclusions': exclusions,
+       'options': options.map((o) => o.toMap()).toList(),
+       if (subscriptionPlans != null)
+         'subscriptionPlans': subscriptionPlans!.map((p) => p.toMap()).toList(),
+     };
+   }
 }

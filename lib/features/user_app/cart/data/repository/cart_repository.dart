@@ -6,6 +6,29 @@ import 'package:flutter/foundation.dart';
 import '../models/cart_item_model.dart';
 import 'package:agapecares/shared/services/session_service.dart';
 
+// Top-level function used by compute to parse a remote cart items list into a List<Map<String, dynamic>>.
+// This runs in a background isolate to avoid JSON decoding on the UI thread.
+List<Map<String, dynamic>> _parseCartItemsForCompute(dynamic itemsJson) {
+  final List<Map<String, dynamic>> parsed = [];
+  try {
+    if (itemsJson is List) {
+      for (final e in itemsJson) {
+        try {
+          if (e is Map) {
+            parsed.add(Map<String, dynamic>.from(e));
+          } else if (e is String && e.isNotEmpty) {
+            final dyn = jsonDecode(e);
+            if (dyn is Map) parsed.add(Map<String, dynamic>.from(dyn));
+          }
+        } catch (_) {
+          // skip bad entries
+        }
+      }
+    }
+  } catch (_) {}
+  return parsed;
+}
+
 /// CartRepository now persists cart items using LocalDatabaseService (SQLite/Web-memory)
 /// and optionally syncs with Firestore when a user is authenticated (phone number as id).
 class CartRepository {
@@ -21,13 +44,18 @@ class CartRepository {
   // Helper to obtain a stable user id: prefer FirebaseAuth currentUser, then SessionService user
   String? _getCurrentUserId() {
     final firebaseUser = FirebaseAuth.instance.currentUser;
-    final fromFirebase = firebaseUser?.phoneNumber ?? firebaseUser?.uid;
-    if (fromFirebase != null) return fromFirebase;
+    final fromFirebase = (firebaseUser?.phoneNumber?.trim().isNotEmpty == true)
+        ? firebaseUser!.phoneNumber
+        : (firebaseUser?.uid?.trim().isNotEmpty == true ? firebaseUser!.uid : null);
+    if (fromFirebase != null && (fromFirebase as String).isNotEmpty) return fromFirebase;
 
     try {
       final sessionUser = _sessionService?.getUser();
       if (sessionUser != null) {
-        return sessionUser.phoneNumber.isNotEmpty ? sessionUser.phoneNumber : sessionUser.uid;
+        final phone = sessionUser.phoneNumber?.trim();
+        final sid = sessionUser.uid?.trim();
+        if (phone != null && phone.isNotEmpty) return phone;
+        if (sid != null && sid.isNotEmpty) return sid;
       }
     } catch (_) {}
 
@@ -46,33 +74,19 @@ class CartRepository {
     try {
       final userId = _getCurrentUserId();
       debugPrint('[CartRepository] currentUser userId=$userId');
+      if (userId == null || (userId is String && userId.isEmpty)) {
+        debugPrint('[CartRepository] no valid userId, skipping remote cart load');
+        return [];
+      }
       if (userId != null) {
         final doc = await _firestore.collection('carts').doc(userId).get();
         if (doc.exists) {
           final data = doc.data();
           final itemsJson = data?['items'] as List<dynamic>?;
           if (itemsJson != null && itemsJson.isNotEmpty) {
-            final items = itemsJson.map((e) {
-              try {
-                if (e is Map) {
-                  return CartItemModel.fromJson(Map<String, dynamic>.from(e));
-                }
-                // If the entry is a JSON string, try to decode it
-                if (e is String) {
-                  // Attempt to parse as JSON-encoded map
-                  try {
-                    final decoded = e.isEmpty ? <String, dynamic>{} : Map<String, dynamic>.from(jsonDecode(e) as Map);
-                    return CartItemModel.fromJson(decoded);
-                  } catch (_) {
-                    return CartItemModel.fromJson(<String, dynamic>{});
-                  }
-                }
-              } catch (ex, st) {
-                debugPrint('[CartRepository] parse item failed: $ex\n$st');
-              }
-              // Fallback to an empty cart item map so CartItemModel.fromJson can return a safe default
-              return CartItemModel.fromJson(<String, dynamic>{});
-            }).toList();
+            // Parse items in background isolate to avoid jank
+            final parsed = await compute(_parseCartItemsForCompute, itemsJson);
+            final items = parsed.map((e) => CartItemModel.fromJson(e)).toList();
             // Seed local DB
             for (final it in items) {
               await _localDb.addCartItem(it);
@@ -123,7 +137,7 @@ class CartRepository {
     try {
       final userId = _getCurrentUserId();
       debugPrint('[CartRepository] _syncCartToRemoteIfAuthenticated userId=$userId');
-      if (userId == null) return;
+      if (userId == null || (userId is String && userId.isEmpty)) return;
       final items = await _localDb.getCartItems();
       final jsonItems = items.map((i) => i.toJson()).toList();
       await _firestore.collection('carts').doc(userId).set({'items': jsonItems});

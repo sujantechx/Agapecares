@@ -6,6 +6,7 @@ import '../features/user_app/cart/presentation/cart_page.dart';
 import '../features/user_app/presentation/pages/message_page.dart';
 import '../features/user_app/presentation/pages/profile_page.dart';
 import '../features/user_app/presentation/pages/user_home_page.dart';
+import '../features/user_app/presentation/pages/order_list_page.dart';
 import '../shared/widgets/dashboard_page.dart';
 import 'app_routes.dart';
 
@@ -26,6 +27,10 @@ final List<RouteBase> dashboardRoutes = [
       GoRoute(
         path: AppRoutes.cart,
         builder: (context, state) => const CartPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.orders,
+        builder: (context, state) => const OrderListPage(),
       ),
       GoRoute(
         path: AppRoutes.profile,

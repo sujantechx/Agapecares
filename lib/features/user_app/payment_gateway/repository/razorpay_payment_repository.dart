@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../model/payment_models.dart';
+import 'package:flutter/foundation.dart';
 
 /// Razorpay client: asks backend for order creation and opens checkout.
 /// Why: keep secret on server; client uses public/test key only.
@@ -37,29 +38,82 @@ class RazorpayPaymentRepository {
         Uri.parse(backendCreateOrderUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'amount': amountInPaise}),
-      );
+      ).timeout(const Duration(seconds: 10));
       if (resp.statusCode != 200) {
-        throw Exception('Backend failed to create order: ${resp.body}');
-      }
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final orderId = data['id'] as String?;
-      if (orderId == null) throw Exception('Order id missing from backend');
+        final body = resp.body;
+        debugPrint('[RazorpayPaymentRepository] backend create-order failed: ${resp.statusCode} ${body}');
+        // Fallback: try opening checkout without server order_id so devs can test Razorpay UI.
+        final optionsFallback = {
+          'key': 'rzp_test_RQu49xkKeYszyG',
+          'amount': amountInPaise,
+          'name': 'Agape Cares',
+          'description': 'Order Payment',
+          'prefill': {'contact': request.userPhone, 'email': request.userEmail},
+        };
+        try {
+          _razorpay.open(optionsFallback);
+        } catch (e) {
+          if (!completer.isCompleted) completer.complete(PaymentFailure(message: 'Failed to open Razorpay checkout (fallback): ${e.toString()}'));
+        }
+      } else {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final orderId = data['id'] as String?;
+        if (orderId == null) {
+          debugPrint('[RazorpayPaymentRepository] backend response missing id: ${resp.body}');
+          // Fallback: open without order_id
+          final optionsFallback = {
+            'key': 'rzp_test_RQu49xkKeYszyG',
+            'amount': amountInPaise,
+            'name': 'Agape Cares',
+            'description': 'Order Payment',
+            'prefill': {'contact': request.userPhone, 'email': request.userEmail},
+          };
+          try {
+            _razorpay.open(optionsFallback);
+          } catch (e) {
+            if (!completer.isCompleted) completer.complete(PaymentFailure(message: 'Failed to open Razorpay checkout (missing id): ${e.toString()}'));
+          }
+        } else {
+          final options = {
+            'key': 'rzp_test_RQu49xkKeYszyG', // test key provided
+            'amount': amountInPaise,
+            'name': 'Agape Cares',
+            'order_id': orderId,
+            'description': 'Order Payment',
+            'prefill': {'contact': request.userPhone, 'email': request.userEmail},
+          };
 
-      final options = {
-        'key': 'rzp_test_RQu49xkKeYszyG', // test key provided
+          // open checkout UI
+          try {
+            _razorpay.open(options);
+          } catch (e) {
+            if (!completer.isCompleted) completer.complete(PaymentFailure(message: 'Failed to open Razorpay checkout: ${e.toString()}'));
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[RazorpayPaymentRepository] exception while creating order: ${e.toString()}');
+      // As a last resort try opening checkout without server order id so developers can test UI
+      final amountInPaise = (request.totalAmount * 100).toInt();
+      final optionsFallback = {
+        'key': 'rzp_test_RQu49xkKeYszyG',
         'amount': amountInPaise,
         'name': 'Agape Cares',
-        'order_id': orderId,
         'description': 'Order Payment',
         'prefill': {'contact': request.userPhone, 'email': request.userEmail},
       };
-
-      _razorpay.open(options);
-    } catch (e) {
-      if (!completer.isCompleted) completer.complete(PaymentFailure(message: 'Could not initiate payment.'));
+      try {
+        _razorpay.open(optionsFallback);
+      } catch (e2) {
+        if (!completer.isCompleted) completer.complete(PaymentFailure(message: 'Could not initiate payment: ${e.toString()} / fallback failed: ${e2.toString()}'));
+      }
     }
 
-    final result = await completer.future;
+    // Wait for payment result but don't hang forever if callbacks never arrive
+    final result = await completer.future.timeout(const Duration(minutes: 2), onTimeout: () {
+      debugPrint('[RazorpayPaymentRepository] payment timeout or no callback received');
+      return const PaymentFailure(message: 'Payment timed out or was cancelled');
+    });
     _razorpay.clear();
     return result;
   }

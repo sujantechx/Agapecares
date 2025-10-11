@@ -48,14 +48,28 @@ class _RegisterPageState extends State<RegisterPage> {
       );
       final user = cred.user;
       if (user != null) {
-        final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
-        await userDoc.set({
-          'uid': user.uid,
-          'name': _nameCtrl.text.trim(),
-          'email': _emailCtrl.text.trim(),
-          'phoneNumber': _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-          'createdAt': FieldValue.serverTimestamp(),
-        });
+        final uid = user.uid?.trim();
+        if (uid == null || uid.isEmpty) {
+          // Unexpected: user has no uid. Inform the user and abort Firestore writes.
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registration succeeded but user id is missing. Please restart the app.')));
+        } else {
+          try {
+            final userDoc = FirebaseFirestore.instance.collection('users').doc(uid);
+            await userDoc.set({
+              'uid': uid,
+              'name': _nameCtrl.text.trim(),
+              'email': _emailCtrl.text.trim(),
+              'phoneNumber': _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          } on FirebaseException catch (e) {
+            // Permission denied or other Firestore errors -- inform user but continue
+            debugPrint('Firestore write failed: ${e.code} ${e.message}');
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save user data remotely: ${e.message}')));
+          } catch (e) {
+            debugPrint('Unknown error writing user doc: $e');
+          }
+        }
         // Save session
         try {
           final session = context.read<SessionService>();
@@ -95,14 +109,26 @@ class _RegisterPageState extends State<RegisterPage> {
           await FirebaseAuth.instance.signInWithCredential(credential);
           final user = FirebaseAuth.instance.currentUser;
           if (user != null) {
-            final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
-            await userDoc.set({
-              'uid': user.uid,
-              'name': _nameCtrl.text.trim(),
-              'email': _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
-              'phoneNumber': user.phoneNumber,
-              'createdAt': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
+            final uid = user.uid?.trim();
+            if (uid == null || uid.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signed in but user id not available.')));
+            } else {
+              try {
+                final userDoc = FirebaseFirestore.instance.collection('users').doc(uid);
+                await userDoc.set({
+                  'uid': uid,
+                  'name': _nameCtrl.text.trim(),
+                  'email': _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
+                  'phoneNumber': user.phoneNumber,
+                  'createdAt': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
+              } on FirebaseException catch (e) {
+                debugPrint('Firestore write failed: ${e.code} ${e.message}');
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save user data remotely: ${e.message}')));
+              } catch (e) {
+                debugPrint('Unknown error writing user doc: $e');
+              }
+            }
             // Save session so the user stays logged in
             try {
               final session = context.read<SessionService>();

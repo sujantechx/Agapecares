@@ -15,6 +15,7 @@ class AppRoutes {
   static const String home = '/home';
   static const String profile = '/profile';
   static const String messages = '/messages';
+  static const String orders = '/orders'; // <- new orders route
 
   // --- Top-Level (Standalone) Pages ---
   static const String serviceDetails = '/service-details';

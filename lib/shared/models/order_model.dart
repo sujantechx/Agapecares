@@ -22,12 +22,14 @@ class OrderModel extends Equatable {
   final String userEmail;
   final String userPhone;
   final String userAddress;
+  final String orderNumber; // human-friendly order number (e.g. ORD123...)
   final Timestamp createdAt;
 
   const OrderModel({
     this.localId,
     this.isSynced = false,
     this.id,
+    this.orderNumber = '',
     required this.userId,
     required this.items,
     required this.subtotal,
@@ -49,11 +51,13 @@ class OrderModel extends Equatable {
     String? id,
     String? paymentId,
     String? orderStatus,
+    String? orderNumber,
   }) {
     return OrderModel(
       localId: localId ?? this.localId,
       isSynced: isSynced ?? this.isSynced,
       id: id ?? this.id,
+      orderNumber: orderNumber ?? this.orderNumber,
       userId: userId,
       items: items,
       subtotal: subtotal,
@@ -75,6 +79,7 @@ class OrderModel extends Equatable {
     return {
       'userId': userId,
       'items': items.map((i) => i.toJson()).toList(),
+      'orderNumber': orderNumber,
       'subtotal': subtotal,
       'discount': discount,
       'total': total,
@@ -98,6 +103,7 @@ class OrderModel extends Equatable {
       'id': localId, // SQLite autoincrement - remove when inserting to let DB assign
       'isSynced': isSynced ? 1 : 0,
       'id_str': id, // remote id (firestore/razorpay) if present
+      'orderNumber': orderNumber,
       'userId': userId,
       'itemsJson': jsonEncode(items.map((i) => i.toJson()).toList()),
       'subtotal': subtotal,
@@ -123,6 +129,7 @@ class OrderModel extends Equatable {
       localId: (map['id'] is int) ? map['id'] as int : int.tryParse('${map['id']}'),
       isSynced: (map['isSynced'] == 1),
       id: map['id_str'] as String?,
+      orderNumber: map['orderNumber'] as String? ?? '',
       userId: map['userId'] as String,
       items: itemsList,
       subtotal: (map['subtotal'] as num).toDouble(),
@@ -139,6 +146,20 @@ class OrderModel extends Equatable {
     );
   }
 
+  /// Helper to parse a cart-item-like Map coming from Firestore into a CartItemModel.
+  /// This delegates to the existing CartItemModel.fromJson constructor and handles
+  /// different runtime shapes defensively.
+  static CartItemModel cartItemFromMap(Map<String, dynamic>? map) {
+    if (map == null) return CartItemModel.fromJson(<String, dynamic>{});
+    try {
+      // If the map already matches expected shape, use it directly.
+      return CartItemModel.fromJson(Map<String, dynamic>.from(map));
+    } catch (_) {
+      // Fallback: return an empty/placeholder CartItemModel so the UI doesn't crash.
+      return CartItemModel.fromJson(<String, dynamic>{});
+    }
+  }
+
   @override
-  List<Object?> get props => [localId, isSynced, id, userId, items, total];
+  List<Object?> get props => [localId, isSynced, id, userId, items, total, orderNumber];
 }

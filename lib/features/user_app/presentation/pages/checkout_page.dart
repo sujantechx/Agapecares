@@ -1,6 +1,7 @@
 // filepath: c:\FlutterDev\agapecares\lib\features\user_app\presentation\pages\checkout_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 
 import '../../../../shared/models/service_list_model.dart';
@@ -25,13 +26,37 @@ class _CheckoutPageState extends State<CheckoutPage> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
   String _paymentMethod = 'razorpay';
+  bool _autoFilled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tryAutoFill();
+  }
+
+  Future<void> _tryAutoFill() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        setState(() {
+          // Use displayName/email/phone from Firebase user when available
+          if ((user.displayName ?? '').isNotEmpty) _nameCtrl.text = user.displayName ?? '';
+          if ((user.email ?? '').isNotEmpty) _emailCtrl.text = user.email ?? '';
+          if ((user.phoneNumber ?? '').isNotEmpty) _phoneCtrl.text = user.phoneNumber ?? '';
+          _autoFilled = true;
+        });
+      }
+    } catch (_) {}
+  }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
+    _addressCtrl.dispose();
     super.dispose();
   }
 
@@ -116,6 +141,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   keyboardType: TextInputType.phone,
                   validator: (v) => (v == null || v.isEmpty) ? 'Enter phone' : null,
                 ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _addressCtrl,
+                  decoration: const InputDecoration(labelText: 'Delivery Address'),
+                  maxLines: 3,
+                  validator: (v) => (v == null || v.isEmpty) ? 'Enter delivery address' : null,
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.person),
+                    label: const Text('Use account info'),
+                    onPressed: _tryAutoFill,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 const Text('Payment Method', style: TextStyle(fontWeight: FontWeight.bold)),
                 RadioListTile<String>(
@@ -142,8 +183,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                               userEmail: _emailCtrl.text.trim(),
                               userPhone: _phoneCtrl.text.trim(),
                               userName: _nameCtrl.text.trim(),
+                              userAddress: _addressCtrl.text.trim(),
                               items: items,
                             );
+                            debugPrint('[CheckoutPage] placing order with method=$_paymentMethod request=${req.userName}/${req.userEmail}/${req.userPhone} total=${req.totalAmount} items=${req.items.length}');
                             context.read<CheckoutBloc>().add(CheckoutSubmitted(request: req, paymentMethod: _paymentMethod));
                           },
                     child: state.isInProgress ? const CircularProgressIndicator() : const Text('Place Order'),

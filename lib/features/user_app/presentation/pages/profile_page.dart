@@ -195,6 +195,14 @@ class _UserProfilePageState extends State<UserProfilePage> {
                       child: Column(
                         children: [
                           ListTile(
+                            leading: const Icon(Icons.receipt_long),
+                            title: const Text('My Orders'),
+                            subtitle: const Text('View your past orders'),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => GoRouter.of(context).go(AppRoutes.orders),
+                          ),
+                          const Divider(height: 1),
+                          ListTile(
                             leading: const Icon(Icons.book_online),
                             title: const Text('My Bookings'),
                             subtitle: const Text('View your bookings and orders'),

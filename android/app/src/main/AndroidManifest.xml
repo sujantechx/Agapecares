@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Allow the app and payment plugins to access the network -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="agapecares"
         android:name="${applicationName}"
@@ -6,6 +8,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:enableOnBackInvokedCallback="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"

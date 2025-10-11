@@ -7,6 +7,7 @@ class PaymentRequest {
   final String userEmail;
   final String userPhone;
   final String userName;
+  final String userAddress; // NEW: include delivery address
   final List<dynamic> items; // UI cart items (should map to CartItemModel)
 
   PaymentRequest({
@@ -14,6 +15,7 @@ class PaymentRequest {
     required this.userEmail,
     required this.userPhone,
     required this.userName,
+    required this.userAddress,
     required this.items,
   });
 }

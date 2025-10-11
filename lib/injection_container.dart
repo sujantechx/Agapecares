@@ -125,8 +125,14 @@ List<BlocProvider> buildBlocs(BuildContext context) {
         // For now, a small helper to obtain current user id. Replace with your auth provider later.
         getCurrentUserId: () async {
           final user = FirebaseAuth.instance.currentUser;
-          // Prefer phone number (as per your requirement), fall back to uid if phone is not available.
-          return user?.phoneNumber ?? user?.uid ?? 'anonymous_user';
+          // Return null when no user is logged in. CheckoutBloc will handle nulls.
+          if (user == null) return null;
+          // Prefer Firebase UID (stable) over phone number for server-side queries
+          final uid = user.uid?.trim();
+          if (uid != null && uid.isNotEmpty) return uid;
+          final phone = user.phoneNumber?.trim();
+          if (phone != null && phone.isNotEmpty) return phone;
+          return null;
         },
       ),
     ),

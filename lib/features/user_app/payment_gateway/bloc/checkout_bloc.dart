@@ -1,6 +1,7 @@
 // File: lib/features/user_app/payment_gateway/bloc/checkout_bloc.dart
 import 'dart:async';
 import 'package:bloc/bloc.dart';
+import 'package:flutter/cupertino.dart';
 
 import '../../../../shared/models/order_model.dart';
 import '../../data/repositories/order_repository.dart';
@@ -23,7 +24,7 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
   final CodPaymentRepository _codRepo;
   final BookingRepository _bookingRepo;
   final CartRepository _cartRepo;
-  final Future<String> Function() _getCurrentUserId;
+  final Future<String?> Function() _getCurrentUserId;
 
   CheckoutBloc({
     required OrderRepository orderRepo,
@@ -31,7 +32,7 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
     required CodPaymentRepository codRepo,
     required CartRepository cartRepo,
     required BookingRepository bookingRepo,
-    required Future<String> Function() getCurrentUserId,
+    required Future<String?> Function() getCurrentUserId,
   })  : _orderRepo = orderRepo,
         _razorpayRepo = razorpayRepo,
         _codRepo = codRepo,
@@ -46,6 +47,15 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
     emit(state.copyWith(isInProgress: true, errorMessage: null, successMessage: null));
     try {
       final userId = await _getCurrentUserId();
+      if (userId == null || userId.isEmpty) {
+        emit(state.copyWith(isInProgress: false, errorMessage: 'Please log in to place an order.'));
+        return;
+      }
+
+      // Generate a simple human-friendly order number for tracking (ORD + timestamp + small suffix)
+      final now = DateTime.now().toUtc();
+      final orderNumber = 'ORD${now.millisecondsSinceEpoch}${now.microsecond % 1000}';
+
       // Convert UI items to CartItemModel as cartItem if already in that shape this is a no-op.
       final itemsModel = event.request.items.map((i) {
         if (i is CartItemModel) return i;
@@ -55,6 +65,7 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
 
       final order = OrderModel(
         userId: userId,
+        orderNumber: orderNumber,
         items: itemsModel,
         subtotal: event.request.totalAmount, // assume subtotal ~ total for simplicity
         discount: 0,
@@ -64,43 +75,54 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
         userName: event.request.userName,
         userEmail: event.request.userEmail,
         userPhone: event.request.userPhone,
-        userAddress: '', // pass from UI if available
+        userAddress: event.request.userAddress, // include address from request
         createdAt: Timestamp.now(),
       );
 
-      // Save locally and get localId
-      final savedLocal = await _orderRepo.createOrder(order);
+      // Create local order once. For Razorpay create local-only (no remote upload) and upload after payment.
+      OrderModel savedLocal;
+      if (event.paymentMethod == 'razorpay') {
+        savedLocal = await _orderRepo.createOrder(order, uploadRemote: false);
+      } else {
+        // For COD and other immediate payments, uploadRemote=true so remote doc is created now.
+        savedLocal = await _orderRepo.createOrder(order, uploadRemote: true);
+      }
 
       // If Razorpay flow
       if (event.paymentMethod == 'razorpay') {
+        debugPrint('[CheckoutBloc] Starting Razorpay payment for orderNumber=$orderNumber total=${event.request.totalAmount}');
+        final localOnly = savedLocal; // localOnly alias
         final res = await _razorpayRepo.processPayment(event.request);
+        debugPrint('[CheckoutBloc] Razorpay result for orderNumber=$orderNumber: $res');
         if (res is PaymentSuccess) {
-          // update local order with paymentId and successful status
-          final updated = savedLocal.copyWith(paymentId: res.paymentId, orderStatus: 'success');
+          // update local-only order with payment info and mark success
+          final updated = localOnly.copyWith(paymentId: res.paymentId, orderStatus: 'success');
           await _orderRepo.updateLocalOrder(updated);
-          // try upload immediately
-          final uploaded = await _orderRepo.uploadOrder(updated);
+          String? remoteId;
+          try {
+            // Attempt to upload the paid order to Firestore now that payment succeeded
+            remoteId = await _orderRepo.uploadOrder(updated);
+          } catch (e) {
+            debugPrint('[CheckoutBloc] uploadOrder threw after Razorpay: $e');
+            remoteId = null;
+          }
 
-          if (uploaded) {
-            // Clear cart locally after successful order
-            await _cartRepo.clearCart();
-            // also create a booking document (mirror orders collection or separate bookings collection)
-            try {
-              await _bookingRepo.createBooking(updated);
-            } catch (_) {}
+          // Clear cart locally regardless of remote upload success, but surface messages accordingly
+          await _cartRepo.clearCart();
+          try {
+            await _bookingRepo.createBooking(updated);
+          } catch (_) {}
+
+          if (remoteId != null) {
             emit(state.copyWith(isInProgress: false, successMessage: 'Payment successful and order synced.'));
           } else {
-            await _cartRepo.clearCart();
-            try {
-              await _bookingRepo.createBooking(updated);
-            } catch (_) {}
             emit(state.copyWith(isInProgress: false, successMessage: 'Payment successful. Order will be uploaded when online.'));
           }
           return;
         } else if (res is PaymentFailure) {
           // mark local as failed
-          if (savedLocal.localId != null) {
-            await _orderRepo.markLocalOrderFailed(savedLocal.localId!, reason: res.message);
+          if (localOnly.localId != null) {
+            await _orderRepo.markLocalOrderFailed(localOnly.localId!, reason: res.message);
           }
           emit(state.copyWith(isInProgress: false, errorMessage: 'Payment failed: ${res.message}'));
           return;
@@ -109,21 +131,36 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
         // COD
         final r = await _codRepo.processCod(event.request);
         if (r is PaymentSuccess) {
-          // set status to success and upload
+          // set status to success and upload if needed
           final updated = savedLocal.copyWith(orderStatus: 'success');
           await _orderRepo.updateLocalOrder(updated);
-          final uploaded = await _orderRepo.uploadOrder(updated);
-          if (uploaded) {
-            await _cartRepo.clearCart();
-            try {
-              await _bookingRepo.createBooking(updated);
-            } catch (_) {}
+          String? remoteId;
+          try {
+            // If savedLocal already has a remote id (createOrder may have uploaded), avoid duplicate add
+            if (savedLocal.id == null || savedLocal.id!.isEmpty) {
+              remoteId = await _orderRepo.uploadOrder(updated);
+            } else {
+              remoteId = savedLocal.id;
+            }
+          } catch (e) {
+            debugPrint('[CheckoutBloc] uploadOrder threw (COD): $e');
+            remoteId = null;
+          }
+          debugPrint('[CheckoutBloc] COD order localId=${savedLocal.localId} remoteId=$remoteId');
+          // Ensure any remaining unsynced orders are uploaded promptly
+          try {
+            await _orderRepo.syncUnsynced();
+            debugPrint('[CheckoutBloc] syncUnsynced called after COD');
+          } catch (e) {
+            debugPrint('[CheckoutBloc] syncUnsynced failed: $e');
+          }
+          await _cartRepo.clearCart();
+          try {
+            await _bookingRepo.createBooking(updated);
+          } catch (_) {}
+          if (remoteId != null) {
             emit(state.copyWith(isInProgress: false, successMessage: 'Order placed (COD) and synced.'));
           } else {
-            await _cartRepo.clearCart();
-            try {
-              await _bookingRepo.createBooking(updated);
-            } catch (_) {}
             emit(state.copyWith(isInProgress: false, successMessage: 'Order placed (COD). Will sync when online.'));
           }
           return;

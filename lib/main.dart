@@ -4,6 +4,7 @@ import 'package:agapecares/firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'injection_container.dart';
 import 'routes/app_router.dart';
@@ -21,6 +22,15 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    // Ensure FirebaseAuth has initialized and emitted initial auth state.
+    // This avoids calling Firestore with an unready auth instance which can
+    // lead to empty or invalid user ids during early writes.
+    try {
+      // Wait for the first auth state event (may be immediate). Time out after a short period
+      await FirebaseAuth.instance.authStateChanges().first.timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // If auth didn't become ready quickly, continue; downstream code must still guard for null user.
+    }
   } catch (e, stack) {
     // If Firebase fails to initialize, it's unsafe to create repositories
     // that depend on Firestore. Re-throw or exit early depending on desired

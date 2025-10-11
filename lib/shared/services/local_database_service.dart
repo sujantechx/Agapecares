@@ -133,6 +133,9 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
 
   // Fallback in-memory cart when sqlite is unavailable (desktop/missing ffi)
   final Map<String, CartItemModel> _fallbackCart = {};
+  // In-memory orders fallback when sqlite is unavailable or insert fails
+  final Map<int, OrderModel> _inMemoryOrders = {};
+  int _nextInMemoryOrderId = 1;
 
   @override
   Future<void> init() async {
@@ -149,6 +152,7 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               isSynced INTEGER NOT NULL,
               id_str TEXT,
+              orderNumber TEXT,
               userId TEXT NOT NULL,
               itemsJson TEXT NOT NULL,
               subtotal REAL NOT NULL,
@@ -181,6 +185,7 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             isSynced INTEGER NOT NULL,
             id_str TEXT,
+            orderNumber TEXT,
             userId TEXT NOT NULL,
             itemsJson TEXT NOT NULL,
             subtotal REAL NOT NULL,
@@ -202,6 +207,8 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
             itemJson TEXT NOT NULL
           );
         ''');
+        // Ensure any new columns are present in existing DB (migration for older installs)
+        await _ensureOrdersTableColumns();
       } catch (e, s) {
         debugPrint('[LocalDB] table ensure failed: $e\n$s');
       }
@@ -212,43 +219,152 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
     }
   }
 
+  // Ensure the orders table has the expected columns (migration step for existing DB files).
+  Future<void> _ensureOrdersTableColumns() async {
+    if (_db == null) return;
+    try {
+      final db = _requireDb();
+      final info = await db.rawQuery("PRAGMA table_info($_ordersTable);");
+      final existingCols = <String>{};
+      for (final row in info) {
+        final name = row['name'] as String? ?? (row['NAME'] as String? ?? '');
+        if (name.isNotEmpty) existingCols.add(name);
+      }
+      // Add orderNumber column if missing
+      if (!existingCols.contains('orderNumber')) {
+        try {
+          await db.execute('ALTER TABLE $_ordersTable ADD COLUMN orderNumber TEXT;');
+          debugPrint('[LocalDB] migrated: added orderNumber column to $_ordersTable');
+          // refresh cache
+          _ordersTableColumnsCache = null;
+        } catch (e) {
+          debugPrint('[LocalDB] failed to add orderNumber column: $e');
+        }
+      }
+    } catch (e, s) {
+      debugPrint('[LocalDB] _ensureOrdersTableColumns failed: $e\n$s');
+    }
+  }
+
   Database _requireDb() {
     if (_db == null) throw Exception('Local DB not initialized. Call init() first.');
     return _db!;
   }
 
+  // Cache of existing columns for orders table to avoid repeated PRAGMA queries
+  Set<String>? _ordersTableColumnsCache;
+
+  Future<Set<String>> _getOrdersTableColumns() async {
+    if (_ordersTableColumnsCache != null) return _ordersTableColumnsCache!;
+    final db = _requireDb();
+    try {
+      final info = await db.rawQuery("PRAGMA table_info($_ordersTable);");
+      final cols = <String>{};
+      for (final row in info) {
+        final name = row['name'] as String? ?? (row['NAME'] as String? ?? '');
+        if (name.isNotEmpty) cols.add(name);
+      }
+      _ordersTableColumnsCache = cols;
+      return cols;
+    } catch (e) {
+      debugPrint('[LocalDB] _getOrdersTableColumns error: $e');
+      _ordersTableColumnsCache = <String>{};
+      return _ordersTableColumnsCache!;
+    }
+  }
+
+  // Remove any keys from the map that are not actual columns in the orders table.
+  Future<Map<String, Object?>> _filterMapToExistingOrderColumns(Map<String, Object?> values) async {
+    final cols = await _getOrdersTableColumns();
+    final filtered = <String, Object?>{};
+    values.forEach((k, v) {
+      if (cols.contains(k)) filtered[k] = v;
+    });
+    return filtered;
+  }
+
   @override
   Future<OrderModel> createOrder(OrderModel order) async {
-    if (_db == null) throw Exception('Orders are not supported without sqlite in this build');
+    if (_db == null) {
+      // fallback to in-memory orders store
+      final id = _nextInMemoryOrderId++;
+      final saved = order.copyWith(localId: id);
+      _inMemoryOrders[id] = saved;
+      return saved;
+    }
     final db = _requireDb();
     final values = order.toSqliteMap();
     values.remove('id'); // let sqlite assign autoincrement id
-    final id = await db.insert(_ordersTable, values);
-    final maps = await db.query(_ordersTable, where: 'id = ?', whereArgs: [id]);
-    return OrderModel.fromSqliteMap(maps.first);
+    try {
+      final filtered = await _filterMapToExistingOrderColumns(values);
+      final id = await db.insert(_ordersTable, filtered);
+      final maps = await db.query(_ordersTable, where: 'id = ?', whereArgs: [id]);
+      return OrderModel.fromSqliteMap(maps.first);
+    } catch (e) {
+      debugPrint('[LocalDB] createOrder insert failed: $e — attempting migration and retry');
+      // Try to migrate schema (add missing columns) then retry once
+      try {
+        await _ensureOrdersTableColumns();
+        final filtered = await _filterMapToExistingOrderColumns(values);
+        final id = await db.insert(_ordersTable, filtered);
+        final maps = await db.query(_ordersTable, where: 'id = ?', whereArgs: [id]);
+        return OrderModel.fromSqliteMap(maps.first);
+      } catch (e2) {
+        debugPrint('[LocalDB] createOrder retry after migration failed: $e2 — falling back to in-memory orders');
+        // Fall back to in-memory store so the app can continue
+        final id = _nextInMemoryOrderId++;
+        final saved = order.copyWith(localId: id);
+        _inMemoryOrders[id] = saved;
+        return saved;
+      }
+    }
   }
 
   @override
   Future<List<OrderModel>> getUnsyncedOrders() async {
-    if (_db == null) return [];
-    final db = _requireDb();
-    final maps = await db.query(_ordersTable, where: 'isSynced = ?', whereArgs: [0]);
-    return maps.map((m) => OrderModel.fromSqliteMap(m)).toList();
+    final results = <OrderModel>[];
+    if (_db != null) {
+      final db = _requireDb();
+      final maps = await db.query(_ordersTable, where: 'isSynced = ?', whereArgs: [0]);
+      results.addAll(maps.map((m) => OrderModel.fromSqliteMap(m)));
+    }
+    // Append any in-memory orders that are not synced
+    results.addAll(_inMemoryOrders.values.where((o) => !o.isSynced));
+    return results;
   }
 
   @override
   Future<void> markOrderAsSynced(int localId) async {
-    if (_db == null) return;
+    if (_db == null) {
+      final existing = _inMemoryOrders[localId];
+      if (existing != null) _inMemoryOrders[localId] = existing.copyWith(isSynced: true);
+      return;
+    }
     final db = _requireDb();
-    await db.update(_ordersTable, {'isSynced': 1}, where: 'id = ?', whereArgs: [localId]);
+    try {
+      await db.update(_ordersTable, {'isSynced': 1}, where: 'id = ?', whereArgs: [localId]);
+    } catch (e) {
+      debugPrint('[LocalDB] markOrderAsSynced failed: $e');
+    }
   }
 
   @override
   Future<void> updateOrder(OrderModel order) async {
-    if (_db == null) return;
     if (order.localId == null) return;
+    if (_db == null) {
+      final existing = _inMemoryOrders[order.localId!];
+      if (existing != null) _inMemoryOrders[order.localId!] = order;
+      return;
+    }
     final db = _requireDb();
-    await db.update(_ordersTable, order.toSqliteMap(), where: 'id = ?', whereArgs: [order.localId]);
+    try {
+      final values = order.toSqliteMap();
+      final filtered = await _filterMapToExistingOrderColumns(values);
+      await db.update(_ordersTable, filtered, where: 'id = ?', whereArgs: [order.localId]);
+    } catch (e) {
+      debugPrint('[LocalDB] updateOrder failed: $e — updating in-memory fallback');
+      _inMemoryOrders[order.localId!] = order;
+    }
   }
 
   @override
@@ -280,7 +396,8 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
       Map<String, dynamic> decoded = {};
       if (raw is String && raw.isNotEmpty) {
         try {
-          final dyn = jsonDecode(raw);
+          // Offload JSON decoding to a background isolate to avoid jank on the UI thread.
+          final dyn = await compute(_backgroundDecode, raw);
           if (dyn is Map<String, dynamic>) {
             decoded = dyn;
           } else if (dyn is Map) {
@@ -289,11 +406,12 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
             debugPrint('[SqfliteDB] unexpected itemJson type=${dyn.runtimeType}');
           }
         } catch (e, s) {
-          debugPrint('[SqfliteDB] failed to jsonDecode itemJson: $e\n$s');
+          debugPrint('[SqfliteDB] failed to jsonDecode itemJson in isolate: $e\n$s');
           decoded = {};
         }
       }
       try {
+        // Ensure we pass a non-null Map to fromJson; CartItemModel.fromJson handles empty maps.
         items.add(CartItemModel.fromJson(decoded));
       } catch (e, s) {
         debugPrint('[SqfliteDB] failed to parse CartItemModel from decoded map: $e\n$s');
@@ -329,11 +447,11 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
       final raw = existing.first['itemJson'];
       if (raw is String && raw.isNotEmpty) {
         try {
-          final dyn = jsonDecode(raw);
+          final dyn = await compute(_backgroundDecode, raw);
           if (dyn is Map<String, dynamic>) currentMap = dyn;
           else if (dyn is Map) currentMap = Map<String, dynamic>.from(dyn);
         } catch (e, s) {
-          debugPrint('[SqfliteDB] failed to decode existing itemJson for id=${item.id}: $e\n$s');
+          debugPrint('[SqfliteDB] failed to decode existing itemJson for id=${item.id} in isolate: $e\n$s');
           currentMap = {};
         }
       }
@@ -388,11 +506,11 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
     final raw = existing.first['itemJson'];
     if (raw is String && raw.isNotEmpty) {
       try {
-        final dyn = jsonDecode(raw);
+        final dyn = await compute(_backgroundDecode, raw);
         if (dyn is Map<String, dynamic>) currentMap = dyn;
         else if (dyn is Map) currentMap = Map<String, dynamic>.from(dyn);
       } catch (e, s) {
-        debugPrint('[SqfliteDB] failed to decode existing itemJson for id=$cartItemId: $e\n$s');
+        debugPrint('[SqfliteDB] failed to decode existing itemJson for id=$cartItemId in isolate: $e\n$s');
         currentMap = {};
       }
     }
@@ -422,4 +540,9 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
     debugPrint('[SqfliteDB] clearCart');
     await db.delete(_cartTable);
   }
+}
+
+// Top-level function used by compute to decode JSON in a background isolate.
+dynamic _backgroundDecode(String raw) {
+  return jsonDecode(raw);
 }

@@ -153,6 +153,7 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
               isSynced INTEGER NOT NULL,
               id_str TEXT,
               orderNumber TEXT,
+              paymentStatus TEXT NOT NULL,
               userId TEXT NOT NULL,
               itemsJson TEXT NOT NULL,
               subtotal REAL NOT NULL,
@@ -189,6 +190,7 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
             isSynced INTEGER NOT NULL,
             id_str TEXT,
             orderNumber TEXT,
+            paymentStatus TEXT NOT NULL,
             userId TEXT NOT NULL,
             itemsJson TEXT NOT NULL,
             subtotal REAL NOT NULL,
@@ -245,6 +247,16 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
           _ordersTableColumnsCache = null;
         } catch (e) {
           debugPrint('[LocalDB] failed to add orderNumber column: $e');
+        }
+      }
+      // Add paymentStatus column if missing
+      if (!existingCols.contains('paymentStatus')) {
+        try {
+          await db.execute("ALTER TABLE $_ordersTable ADD COLUMN paymentStatus TEXT NOT NULL DEFAULT 'pending';");
+          debugPrint('[LocalDB] migrated: added paymentStatus column to $_ordersTable');
+          _ordersTableColumnsCache = null;
+        } catch (e) {
+          debugPrint('[LocalDB] failed to add paymentStatus column: $e');
         }
       }
       // Add worker-related columns if missing
@@ -333,15 +345,25 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
     try {
       // Ensure we have the latest PRAGMA information and try to migrate missing columns
       await _ensureOrdersTableColumns();
-      // Defensive: remove columns that historically caused insert failures if they are not present.
-      // Some older DBs may not contain 'orderNumber' column; remove it if present so the insert
-      // won't attempt to write a non-existent column. The _filterMapToExistingOrderColumns
-      // call below would normally remove unknown columns, but being extra defensive avoids
-      // rare race cases where the insert SQL may still reference the field.
-      values.remove('orderNumber');
 
-      // Now filter to only existing columns
+      // Refresh cached columns
+      _ordersTableColumnsCache = null;
+      final cols = await _getOrdersTableColumns();
+
+      // If the order lacks an orderNumber and the DB supports the column, generate one.
+      if ((values['orderNumber'] == null || (values['orderNumber'] as String).isEmpty) && cols.contains('orderNumber')) {
+        try {
+          final generated = await _generateOrderNumber(db);
+          values['orderNumber'] = generated;
+          debugPrint('[LocalDB] generated orderNumber=$generated');
+        } catch (e) {
+          debugPrint('[LocalDB] failed to generate orderNumber: $e');
+        }
+      }
+
+      // Defensive: filter to only existing columns (avoid SQLite 'no column named' errors)
       final filtered = await _filterMapToExistingOrderColumns(values);
+
       final id = await db.insert(_ordersTable, filtered);
       final maps = await db.query(_ordersTable, where: 'id = ?', whereArgs: [id]);
       return OrderModel.fromSqliteMap(maps.first);
@@ -361,6 +383,18 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
           debugPrint('[LocalDB] removing unknown order columns before retry: $toRemove');
           for (final k in toRemove) values.remove(k);
         }
+
+        // If orderNumber still missing but DB now supports it, generate.
+        if ((values['orderNumber'] == null || (values['orderNumber'] as String).isEmpty) && cols.contains('orderNumber')) {
+          try {
+            final generated = await _generateOrderNumber(db);
+            values['orderNumber'] = generated;
+            debugPrint('[LocalDB] generated orderNumber (retry)=$generated');
+          } catch (e) {
+            debugPrint('[LocalDB] failed to generate orderNumber on retry: $e');
+          }
+        }
+
         final filtered = await _filterMapToExistingOrderColumns(values);
         final id = await db.insert(_ordersTable, filtered);
         final maps = await db.query(_ordersTable, where: 'id = ?', whereArgs: [id]);
@@ -373,6 +407,50 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
         _inMemoryOrders[id] = saved;
         return saved;
       }
+    }
+  }
+
+  // Generate a stable orderNumber in format YYYYMMDDxxxxx where xxxxx is a 5-digit increment per day.
+  Future<String> _generateOrderNumber(Database db) async {
+    final now = DateTime.now();
+    final y = now.year.toString().padLeft(4, '0');
+    final m = now.month.toString().padLeft(2, '0');
+    final d = now.day.toString().padLeft(2, '0');
+    final prefix = '$y$m$d';
+
+    // Ensure the orders table actually has orderNumber column before querying
+    final cols = await _getOrdersTableColumns();
+    if (!cols.contains('orderNumber')) {
+      throw Exception('orders table missing orderNumber column');
+    }
+
+    // Query the last orderNumber for today
+    try {
+      // Use LIKE to find today's orders and order by orderNumber desc to get the highest suffix
+      final res = await db.rawQuery(
+        "SELECT orderNumber FROM $_ordersTable WHERE orderNumber LIKE ? ORDER BY orderNumber DESC LIMIT 1",
+        ["$prefix%"],
+      );
+      if (res.isEmpty) {
+        // Start suffix at 00100 as baseline
+        return '$prefix${'100'.padLeft(5, '0')}';
+      }
+      final last = res.first['orderNumber'] as String? ?? '';
+      if (last.length <= prefix.length) {
+        // Start suffix at 00100 as baseline
+        return '$prefix${'100'.padLeft(5, '0')}';
+      }
+      final suffix = last.substring(prefix.length);
+      final parsed = int.tryParse(suffix);
+      final lastNum = (parsed == null) ? 0 : parsed;
+      // Ensure we never go below baseline 100
+      final nextNum = (lastNum < 100) ? 100 : (lastNum + 1);
+      return prefix + nextNum.toString().padLeft(5, '0');
+    } catch (e) {
+      debugPrint('[LocalDB] _generateOrderNumber failed: $e');
+      // Fallback: use timestamp-based unique suffix
+      final stamp = DateTime.now().millisecondsSinceEpoch.remainder(100000).toString().padLeft(5, '0');
+      return prefix + stamp;
     }
   }
 

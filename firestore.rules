@@ -1,0 +1,35 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Allow authenticated users to read and write ONLY their own user document
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Allow access to orders subcollection under the user document
+      match /orders/{orderId} {
+        allow create: if request.auth != null && request.auth.uid == userId;
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow update, delete: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // Allow access to cart subcollection if you use it under users/{userId}/cart
+      match /cart/{cartId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Allow authenticated users to read and write ONLY their own cart (legacy path)
+    match /carts/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Optional: Protect 'orders' if used (legacy root collection)
+    match /orders/{orderId} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if request.auth != null
+                                  && request.auth.uid == resource.data.userId;
+    }
+  }
+}

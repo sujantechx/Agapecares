@@ -52,9 +52,16 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
         return;
       }
 
-      // Generate a simple human-friendly order number for tracking (ORD + timestamp + small suffix)
-      final now = DateTime.now().toUtc();
-      final orderNumber = 'ORD${now.millisecondsSinceEpoch}${now.microsecond % 1000}';
+      // Generate deterministic daily order number (YYYYMMDD + 5-digit suffix)
+      String orderNumber;
+      try {
+        orderNumber = await _orderRepo.generateOrderNumber();
+      } catch (e) {
+        debugPrint('[CheckoutBloc] failed to generate orderNumber via repo: $e');
+        // Fallback to a timestamp-based ORD id to avoid blocking checkout
+        final now = DateTime.now().toUtc();
+        orderNumber = 'ORD${now.millisecondsSinceEpoch}${now.microsecond % 1000}';
+      }
 
       // Convert UI items to CartItemModel as cartItem if already in that shape this is a no-op.
       final itemsModel = event.request.items.map((i) {
@@ -79,14 +86,10 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
         createdAt: Timestamp.now(),
       );
 
-      // Create local order once. For Razorpay create local-only (no remote upload) and upload after payment.
-      OrderModel savedLocal;
-      if (event.paymentMethod == 'razorpay') {
-        savedLocal = await _orderRepo.createOrder(order, uploadRemote: false);
-      } else {
-        // For COD and other immediate payments, uploadRemote=true so remote doc is created now.
-        savedLocal = await _orderRepo.createOrder(order, uploadRemote: true);
-      }
+      // Create local order only (do NOT upload remotely yet). We'll upload
+      // after payment confirmation (Razorpay) or COD confirmation to avoid
+      // creating Firestore documents for incomplete/abandoned checkouts.
+      final savedLocal = await _orderRepo.createOrder(order, uploadRemote: false);
 
       // If Razorpay flow
       if (event.paymentMethod == 'razorpay') {
@@ -96,7 +99,7 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
         debugPrint('[CheckoutBloc] Razorpay result for orderNumber=$orderNumber: $res');
         if (res is PaymentSuccess) {
           // update local-only order with payment info and mark success
-          final updated = localOnly.copyWith(paymentId: res.paymentId, orderStatus: 'success');
+          final updated = localOnly.copyWith(paymentId: res.paymentId, paymentStatus: 'success');
           await _orderRepo.updateLocalOrder(updated);
           String? remoteId;
           try {
@@ -131,17 +134,13 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
         // COD
         final r = await _codRepo.processCod(event.request);
         if (r is PaymentSuccess) {
-          // set status to success and upload if needed
-          final updated = savedLocal.copyWith(orderStatus: 'success');
+          // COD succeeded from app perspective (order accepted) — payment remains pending until delivery.
+          final updated = savedLocal.copyWith(paymentStatus: 'pending', orderStatus: 'pending');
           await _orderRepo.updateLocalOrder(updated);
           String? remoteId;
           try {
-            // If savedLocal already has a remote id (createOrder may have uploaded), avoid duplicate add
-            if (savedLocal.id == null || savedLocal.id!.isEmpty) {
-              remoteId = await _orderRepo.uploadOrder(updated);
-            } else {
-              remoteId = savedLocal.id;
-            }
+            // Upload now that user confirmed COD
+            remoteId = await _orderRepo.uploadOrder(updated);
           } catch (e) {
             debugPrint('[CheckoutBloc] uploadOrder threw (COD): $e');
             remoteId = null;

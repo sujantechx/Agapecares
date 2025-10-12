@@ -91,18 +91,42 @@ class _OrderListPageState extends State<OrderListPage> {
 
   Color _statusColor(String status, String paymentMethod) {
     final s = status.toLowerCase();
-    if (s.contains('success')) return Colors.green.shade600;
-    if (s.contains('fail')) return Colors.red.shade600;
-    if (paymentMethod.toLowerCase() == 'cod') return Colors.orange.shade700;
-    return Colors.blueGrey.shade600; // pending/placed
+    if (s.contains('success') || s == 'success') return Colors.green.shade600;
+    if (s.contains('fail') || s == 'failed') return Colors.red.shade600;
+    if (s == 'assigned') return Colors.orange.shade700;
+    if (s == 'complete') return Colors.green.shade700;
+    return Colors.blueGrey.shade600; // pending or unknown
   }
 
-  String _statusLabel(String status, String paymentMethod) {
+  String _orderStatusLabel(String status) {
     final s = status.toLowerCase();
-    if (s.contains('success')) return 'Success';
-    if (s.contains('fail')) return 'Failed';
-    if (paymentMethod.toLowerCase() == 'cod') return 'COD (Pending)';
+    switch (s) {
+      case 'pending':
+        return 'Pending';
+      case 'assigned':
+        return 'Assigned';
+      case 'complete':
+        return 'Complete';
+      default:
+        return status.isNotEmpty ? status : 'Pending';
+    }
+  }
+
+  String _paymentStatusLabel(String paymentStatus, String paymentMethod) {
+    final p = paymentStatus.toLowerCase();
+    if (p == 'success' || p == 'paid') return 'Paid';
+    if (p == 'failed' || p == 'failure') return 'Failed';
+    // For COD, pending payment is expected
+    if (paymentMethod.toLowerCase() == 'cod') return 'COD';
     return 'Pending';
+  }
+
+  Color _paymentStatusColor(String paymentStatus, String paymentMethod) {
+    final p = paymentStatus.toLowerCase();
+    if (p == 'success' || p == 'paid') return Colors.green.shade600;
+    if (p == 'failed' || p == 'failure') return Colors.red.shade600;
+    if (paymentMethod.toLowerCase() == 'cod') return Colors.orange.shade700;
+    return Colors.blueGrey.shade600;
   }
 
   @override
@@ -173,15 +197,31 @@ class _OrderListPageState extends State<OrderListPage> {
               itemBuilder: (context, index) {
                 final o = orders[index];
                 final created = o.createdAt;
-                // created may be a Timestamp from Firestore; convert defensively
+                // created may be a Timestamp from Firestore, a DateTime, or an ISO string; convert defensively
                 DateTime createdDate;
                 try {
-                  createdDate = (created as dynamic).toDate() as DateTime;
+                  final dynamic val = created;
+                  if (val is DateTime) {
+                    createdDate = val;
+                  } else if (val is String) {
+                    createdDate = DateTime.parse(val);
+                  } else if (val is int) {
+                    createdDate = DateTime.fromMillisecondsSinceEpoch(val);
+                  } else if (val != null) {
+                    // Firestore Timestamp or other object with toDate()
+                    try {
+                      createdDate = (val as dynamic).toDate() as DateTime;
+                    } catch (_) {
+                      createdDate = DateTime.tryParse(val.toString()) ?? DateTime.now();
+                    }
+                  } else {
+                    createdDate = DateTime.now();
+                  }
                 } catch (_) {
                   createdDate = DateTime.now();
                 }
 
-                final statusLabel = _statusLabel(o.orderStatus, o.paymentMethod);
+                // Use _orderStatusLabel (existing helper) and _statusColor for display
                 final statusColor = _statusColor(o.orderStatus, o.paymentMethod);
 
                 return ExpansionTile(
@@ -203,9 +243,18 @@ class _OrderListPageState extends State<OrderListPage> {
                         children: [
                           Text('₹${o.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 6),
-                          Chip(
-                            label: Text(statusLabel, style: const TextStyle(color: Colors.white, fontSize: 12)),
-                            backgroundColor: statusColor,
+                          Row(
+                            children: [
+                              Chip(
+                                label: Text(_orderStatusLabel(o.orderStatus), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                backgroundColor: statusColor,
+                              ),
+                              const SizedBox(width: 6),
+                              Chip(
+                                label: Text(_paymentStatusLabel(o.paymentStatus, o.paymentMethod), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                backgroundColor: _paymentStatusColor(o.paymentStatus, o.paymentMethod),
+                              ),
+                            ],
                           )
                         ],
                       ),

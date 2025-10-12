@@ -10,6 +10,7 @@ class OrderModel extends Equatable {
   final int? localId; // sqlite autoincrement id
   final bool isSynced; // synced to remote
   final String? id; // Firestore id / Razorpay order id (optional)
+  final String paymentStatus; // 'pending' | 'success' | 'failed'
   final String userId;
   final List<CartItemModel> items;
   final double subtotal;
@@ -17,7 +18,7 @@ class OrderModel extends Equatable {
   final double total;
   final String paymentMethod;
   final String? paymentId;
-  final String orderStatus;
+  final String orderStatus; // 'pending' | 'assigned' | 'complete'
   final String userName;
   final String userEmail;
   final String userPhone;
@@ -33,6 +34,7 @@ class OrderModel extends Equatable {
     this.isSynced = false,
     this.id,
     this.orderNumber = '',
+    this.paymentStatus = 'pending',
     required this.userId,
     required this.items,
     required this.subtotal,
@@ -40,7 +42,7 @@ class OrderModel extends Equatable {
     required this.total,
     required this.paymentMethod,
     this.paymentId,
-    this.orderStatus = 'Placed',
+    this.orderStatus = 'pending',
     required this.userName,
     required this.userEmail,
     required this.userPhone,
@@ -57,6 +59,7 @@ class OrderModel extends Equatable {
     String? id,
     String? paymentId,
     String? orderStatus,
+    String? paymentStatus,
     String? orderNumber,
     String? workerId,
     String? workerName,
@@ -67,6 +70,7 @@ class OrderModel extends Equatable {
       isSynced: isSynced ?? this.isSynced,
       id: id ?? this.id,
       orderNumber: orderNumber ?? this.orderNumber,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
       userId: userId,
       items: items,
       subtotal: subtotal,
@@ -92,6 +96,7 @@ class OrderModel extends Equatable {
       'userId': userId,
       'items': items.map((i) => i.toJson()).toList(),
       'orderNumber': orderNumber,
+      'paymentStatus': paymentStatus,
       'subtotal': subtotal,
       'discount': discount,
       'total': total,
@@ -120,6 +125,7 @@ class OrderModel extends Equatable {
       'isSynced': isSynced ? 1 : 0,
       'id_str': id, // remote id (firestore/razorpay) if present
       'orderNumber': orderNumber,
+      'paymentStatus': paymentStatus,
       'userId': userId,
       'itemsJson': jsonEncode(items.map((i) => i.toJson()).toList()),
       'subtotal': subtotal,
@@ -158,6 +164,7 @@ class OrderModel extends Equatable {
       isSynced: (map['isSynced'] == 1),
       id: map['id_str'] as String?,
       orderNumber: map['orderNumber'] as String? ?? '',
+      paymentStatus: map['paymentStatus'] as String? ?? 'pending',
       userId: map['userId'] as String,
       items: itemsList,
       subtotal: (map['subtotal'] as num).toDouble(),

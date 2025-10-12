@@ -12,8 +12,10 @@ class SessionService {
 
   Future<void> saveUser(UserModel user) async {
     final prefs = _requirePrefs();
-    // Store the JSON string produced by UserModel.toJson().
-    await prefs.setString(_kUserJson, user.toJson());
+    // Normalize to a JSON string regardless of whether `toJson()` returns a Map or a String.
+    final raw = user.toJson();
+    final jsonStr = raw is String ? raw : jsonEncode(raw);
+    await prefs.setString(_kUserJson, jsonStr);
   }
 
   UserModel? getUser() {
@@ -21,7 +23,7 @@ class SessionService {
     final jsonStr = prefs.getString(_kUserJson);
     if (jsonStr == null) return null;
     try {
-      // UserModel.fromJson expects a JSON string.
+      // Attempt to construct from the stored JSON string.
       return UserModel.fromJson(jsonStr);
     } catch (_) {
       return null;

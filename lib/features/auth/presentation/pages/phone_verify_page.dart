@@ -17,8 +17,9 @@ class PhoneVerifyPage extends StatefulWidget {
   final String phone;
   final String? name;
   final String? email;
+  final String? role;
 
-  const PhoneVerifyPage({super.key, required this.verificationId, required this.phone, this.name, this.email});
+  const PhoneVerifyPage({super.key, required this.verificationId, required this.phone, this.name, this.email, this.role});
 
   @override
   State<PhoneVerifyPage> createState() => _PhoneVerifyPageState();
@@ -47,17 +48,19 @@ class _PhoneVerifyPageState extends State<PhoneVerifyPage> {
       final user = userCred.user;
       if (user != null) {
         final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
-        await userDoc.set({
+        final Map<String, dynamic> userData = {
           'uid': user.uid,
           'name': widget.name ?? '',
           'email': widget.email ?? '',
           'phoneNumber': widget.phone,
           'createdAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        };
+        if (widget.role != null) userData['role'] = widget.role;
+        await userDoc.set(userData, SetOptions(merge: true));
         // Save session to shared preferences
         try {
           final session = context.read<SessionService>();
-          final um = UserModel(uid: user.uid, phoneNumber: widget.phone, name: widget.name ?? '', email: widget.email);
+          final um = UserModel(uid: user.uid, phoneNumber: widget.phone, name: widget.name ?? '', email: widget.email, role: widget.role ?? 'user');
           await session.saveUser(um);
           // Seed cart from remote if available and notify bloc
           try {
@@ -71,7 +74,12 @@ class _PhoneVerifyPageState extends State<PhoneVerifyPage> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Phone verified')));
         if (!mounted) return;
-        context.go(AppRoutes.home);
+        // Navigate to appropriate dashboard depending on role
+        if ((widget.role ?? '').toLowerCase() == 'worker') {
+          context.go(AppRoutes.workerHome);
+        } else {
+          context.go(AppRoutes.home);
+        }
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verification failed: $e')));

@@ -24,6 +24,9 @@ class OrderModel extends Equatable {
   final String userAddress;
   final String orderNumber; // human-friendly order number (e.g. ORD123...)
   final Timestamp createdAt;
+  final String? workerId;
+  final String? workerName;
+  final Timestamp? acceptedAt; // when a worker accepted the order
 
   const OrderModel({
     this.localId,
@@ -42,6 +45,9 @@ class OrderModel extends Equatable {
     required this.userEmail,
     required this.userPhone,
     required this.userAddress,
+    this.workerId,
+    this.workerName,
+    this.acceptedAt,
     required this.createdAt,
   });
 
@@ -52,6 +58,9 @@ class OrderModel extends Equatable {
     String? paymentId,
     String? orderStatus,
     String? orderNumber,
+    String? workerId,
+    String? workerName,
+    Timestamp? acceptedAt,
   }) {
     return OrderModel(
       localId: localId ?? this.localId,
@@ -70,13 +79,16 @@ class OrderModel extends Equatable {
       userEmail: userEmail,
       userPhone: userPhone,
       userAddress: userAddress,
+      workerId: workerId ?? this.workerId,
+      workerName: workerName ?? this.workerName,
+      acceptedAt: acceptedAt ?? this.acceptedAt,
       createdAt: createdAt,
     );
   }
 
   /// Firestore JSON
   Map<String, dynamic> toFirebaseJson() {
-    return {
+    final map = {
       'userId': userId,
       'items': items.map((i) => i.toJson()).toList(),
       'orderNumber': orderNumber,
@@ -92,6 +104,10 @@ class OrderModel extends Equatable {
       'userAddress': userAddress,
       'createdAt': createdAt,
     };
+    if (workerId != null) map['workerId'] = workerId;
+    if (workerName != null) map['workerName'] = workerName;
+    if (acceptedAt != null) map['acceptedAt'] = acceptedAt;
+    return map;
   }
 
   /// Generic JSON (for UI/debug)
@@ -116,6 +132,9 @@ class OrderModel extends Equatable {
       'userEmail': userEmail,
       'userPhone': userPhone,
       'userAddress': userAddress,
+      'workerId': workerId,
+      'workerName': workerName,
+      'acceptedAt': acceptedAt != null ? acceptedAt!.toDate().toIso8601String() : null,
       'createdAt': createdAt.toDate().toIso8601String(),
     };
   }
@@ -124,6 +143,15 @@ class OrderModel extends Equatable {
     final itemsJson = map['itemsJson'] as String? ?? '[]';
     final decoded = (jsonDecode(itemsJson) as List).cast<Map<String, dynamic>>();
     final itemsList = decoded.map((j) => CartItemModel.fromJson(j)).toList();
+
+    Timestamp? parsedAcceptedAt;
+    if (map['acceptedAt'] != null && (map['acceptedAt'] as String).isNotEmpty) {
+      try {
+        parsedAcceptedAt = Timestamp.fromDate(DateTime.parse(map['acceptedAt'] as String));
+      } catch (_) {
+        parsedAcceptedAt = null;
+      }
+    }
 
     return OrderModel(
       localId: (map['id'] is int) ? map['id'] as int : int.tryParse('${map['id']}'),
@@ -142,6 +170,9 @@ class OrderModel extends Equatable {
       userEmail: map['userEmail'] as String,
       userPhone: map['userPhone'] as String,
       userAddress: map['userAddress'] as String,
+      workerId: map['workerId'] as String?,
+      workerName: map['workerName'] as String?,
+      acceptedAt: parsedAcceptedAt,
       createdAt: Timestamp.fromDate(DateTime.parse(map['createdAt'] as String)),
     );
   }

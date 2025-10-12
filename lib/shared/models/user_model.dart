@@ -9,12 +9,14 @@ class UserModel extends Equatable {
   final String phoneNumber;
   final String? name; // Optional name
   final String? email; // Optional email
+  final String role; // 'user' or 'worker'
 
   const UserModel({
     required this.uid,
     required this.phoneNumber,
     this.name,
     this.email,
+    this.role = 'user',
   });
 
   Map<String, dynamic> toMap() {
@@ -23,12 +25,13 @@ class UserModel extends Equatable {
       'phoneNumber': phoneNumber,
       'name': name,
       'email': email,
+      'role': role,
     };
   }
 
   factory UserModel.fromMap(Map<String, dynamic>? map) {
     if (map == null) {
-      return const UserModel(uid: '', phoneNumber: '', name: null, email: null);
+      return const UserModel(uid: '', phoneNumber: '', name: null, email: null, role: 'user');
     }
 
     return UserModel(
@@ -36,6 +39,7 @@ class UserModel extends Equatable {
       phoneNumber: map['phoneNumber'] as String? ?? '',
       name: map['name'] as String?,
       email: map['email'] as String?,
+      role: map['role'] as String? ?? 'user',
     );
   }
 
@@ -54,12 +58,14 @@ class UserModel extends Equatable {
     String? phoneNumber,
     String? name,
     String? email,
+    String? role,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
       phoneNumber: phoneNumber ?? this.phoneNumber,
       name: name ?? this.name,
       email: email ?? this.email,
+      role: role ?? this.role,
     );
   }
 

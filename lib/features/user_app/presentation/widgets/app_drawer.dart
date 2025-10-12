@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:agapecares/shared/services/session_service.dart';
+import 'package:provider/provider.dart';
+import 'package:agapecares/shared/models/user_model.dart';
+import 'package:agapecares/routes/app_routes.dart';
 
 import '../../../../shared/theme/app_theme.dart'; // Import the new package
 
@@ -23,6 +27,14 @@ class AppDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Determine if current session user is a worker
+    bool showWorkerMenu = false;
+    try {
+      final session = context.read<SessionService>();
+      final UserModel? u = session.getUser();
+      if (u != null && u.role == 'worker') showWorkerMenu = true;
+    } catch (_) {}
+
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
@@ -30,6 +42,8 @@ class AppDrawer extends StatelessWidget {
           _buildDrawerHeader(),
           _buildSubheading('Pages:'),
           _buildDrawerItem(context: context, icon: Icons.login, text: 'Login', onTap: () => context.go('/login')),
+          if (showWorkerMenu) _buildDrawerItem(context: context, icon: Icons.dashboard_outlined, text: 'Worker Dashboard', onTap: () => context.go(AppRoutes.workerHome)),
+          if (showWorkerMenu) _buildDrawerItem(context: context, icon: Icons.work_outline, text: 'Worker Orders', onTap: () => context.go(AppRoutes.workerOrders)),
           _buildDrawerItem(context: context, icon: Icons.info_outline, text: 'About Us', onTap: () => context.push('/about-us')),
           _buildDrawerItem(context: context, icon: Icons.cleaning_services, text: 'Cleaning Services', onTap: () => context.push('/cleaning-services')),
           _buildDrawerItem(context: context, icon: Icons.settings_outlined, text: 'AC Services', onTap: () => context.push('/ac-services')),
@@ -54,7 +68,7 @@ class AppDrawer extends StatelessWidget {
           // The ClipRRect gives the logo image rounded corners.
           ClipRRect(
             // borderRadius: BorderRadius.circular(50.0),
-            child: Image.network(
+            child: Image.asset(
               "assets/logos/logo.png", // Make sure this path is correct
               width: 300,
               height: 150,

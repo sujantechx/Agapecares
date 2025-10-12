@@ -59,9 +59,9 @@ class _OrderListPageState extends State<OrderListPage> {
           final oUser = (o.userId).trim();
           if (oUser.isNotEmpty && oUser == userId) return true;
           if (oUser.isEmpty && fbUser != null) {
-            final uid = fbUser.uid?.trim();
+            final uid = fbUser.uid.trim();
             final phone = fbUser.phoneNumber?.trim();
-            if ((uid != null && uid == userId) || (phone != null && phone == userId)) return true;
+            if ((uid.isNotEmpty && uid == userId) || (phone != null && phone == userId)) return true;
           }
           return false;
         }).toList();

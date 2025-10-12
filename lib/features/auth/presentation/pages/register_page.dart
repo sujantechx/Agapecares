@@ -28,6 +28,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _passwordCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   bool _isLoading = false;
+  String _role = 'user';
 
   @override
   void dispose() {
@@ -48,8 +49,8 @@ class _RegisterPageState extends State<RegisterPage> {
       );
       final user = cred.user;
       if (user != null) {
-        final uid = user.uid?.trim();
-        if (uid == null || uid.isEmpty) {
+        final uid = user.uid.trim();
+        if (uid.isEmpty) {
           // Unexpected: user has no uid. Inform the user and abort Firestore writes.
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registration succeeded but user id is missing. Please restart the app.')));
         } else {
@@ -60,6 +61,7 @@ class _RegisterPageState extends State<RegisterPage> {
               'name': _nameCtrl.text.trim(),
               'email': _emailCtrl.text.trim(),
               'phoneNumber': _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
+              'role': _role,
               'createdAt': FieldValue.serverTimestamp(),
             });
           } on FirebaseException catch (e) {
@@ -73,7 +75,7 @@ class _RegisterPageState extends State<RegisterPage> {
         // Save session
         try {
           final session = context.read<SessionService>();
-          final um = UserModel(uid: user.uid, phoneNumber: _phoneCtrl.text.trim().isEmpty ? '' : _phoneCtrl.text.trim(), name: _nameCtrl.text.trim(), email: _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim());
+          final um = UserModel(uid: user.uid, phoneNumber: _phoneCtrl.text.trim().isEmpty ? '' : _phoneCtrl.text.trim(), name: _nameCtrl.text.trim(), email: _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(), role: _role);
           await session.saveUser(um);
           // Seed cart from remote if available and notify bloc
           try {
@@ -85,7 +87,12 @@ class _RegisterPageState extends State<RegisterPage> {
           } catch (_) {}
         } catch (_) {}
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registered successfully')));
-        context.go(AppRoutes.home);
+        // Navigate to the appropriate dashboard based on role
+        if (_role == 'worker') {
+          context.go(AppRoutes.workerHome);
+        } else {
+          context.go(AppRoutes.home);
+        }
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Registration failed: $e')));
@@ -109,8 +116,8 @@ class _RegisterPageState extends State<RegisterPage> {
           await FirebaseAuth.instance.signInWithCredential(credential);
           final user = FirebaseAuth.instance.currentUser;
           if (user != null) {
-            final uid = user.uid?.trim();
-            if (uid == null || uid.isEmpty) {
+            final uid = user.uid.trim();
+            if (uid.isEmpty) {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signed in but user id not available.')));
             } else {
               try {
@@ -120,6 +127,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   'name': _nameCtrl.text.trim(),
                   'email': _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
                   'phoneNumber': user.phoneNumber,
+                  'role': _role,
                   'createdAt': FieldValue.serverTimestamp(),
                 }, SetOptions(merge: true));
               } on FirebaseException catch (e) {
@@ -132,7 +140,7 @@ class _RegisterPageState extends State<RegisterPage> {
             // Save session so the user stays logged in
             try {
               final session = context.read<SessionService>();
-              final um = UserModel(uid: user.uid, phoneNumber: user.phoneNumber ?? '', name: _nameCtrl.text.trim(), email: _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim());
+              final um = UserModel(uid: user.uid, phoneNumber: user.phoneNumber ?? '', name: _nameCtrl.text.trim(), email: _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(), role: _role);
               await session.saveUser(um);
               // Seed cart and notify bloc
               try {
@@ -149,7 +157,12 @@ class _RegisterPageState extends State<RegisterPage> {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signed in automatically')));
           } catch (_) {}
           if (!mounted) return;
-          context.go(AppRoutes.home);
+          // Route based on the role selected during registration
+          if (_role == 'worker') {
+            context.go(AppRoutes.workerHome);
+          } else {
+            context.go(AppRoutes.home);
+          }
         },
         verificationFailed: (e) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Phone verification failed: ${e.message}')));
@@ -160,7 +173,8 @@ class _RegisterPageState extends State<RegisterPage> {
             'verificationId': verificationId,
             'phone': phone,
             'name': _nameCtrl.text.trim(),
-            'email': _emailCtrl.text.trim()
+            'email': _emailCtrl.text.trim(),
+            'role': _role,
           });
         },
         codeAutoRetrievalTimeout: (verificationId) {},
@@ -182,6 +196,27 @@ class _RegisterPageState extends State<RegisterPage> {
           key: _formKey,
           child: Column(
             children: [
+              // Role selector: user or worker
+              Row(
+                children: [
+                  Expanded(
+                    child: RadioListTile<String>(
+                      title: const Text('User'),
+                      value: 'user',
+                      groupValue: _role,
+                      onChanged: (v) => setState(() => _role = v ?? 'user'),
+                    ),
+                  ),
+                  Expanded(
+                    child: RadioListTile<String>(
+                      title: const Text('Worker'),
+                      value: 'worker',
+                      groupValue: _role,
+                      onChanged: (v) => setState(() => _role = v ?? 'user'),
+                    ),
+                  ),
+                ],
+              ),
               TextFormField(
                 controller: _nameCtrl,
                 decoration: const InputDecoration(labelText: 'Full name'),

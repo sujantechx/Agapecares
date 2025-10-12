@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../../core/utils/validators.dart';
 import '../../../../shared/widgets/common_button.dart';
@@ -67,8 +68,15 @@ class _LoginViewState extends State<LoginView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
         final session = context.read<SessionService>();
-        if (session.isLoggedIn()) {
-          if (mounted) context.go(AppRoutes.home);
+        final u = session.getUser();
+        if (u != null) {
+          if (mounted) {
+            if (u.role == 'worker') {
+              context.go(AppRoutes.workerHome);
+            } else {
+              context.go(AppRoutes.home);
+            }
+          }
         }
       } catch (_) {
         // No SessionService is provided (e.g., during lightweight tests). Ignore.
@@ -106,9 +114,18 @@ class _LoginViewState extends State<LoginView> {
       );
       final user = cred.user;
       if (user != null) {
+        // Determine role from Firestore user doc (fallback to 'user')
+        String role = 'user';
+        try {
+          final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+          final data = doc.data();
+          if (data != null && data['role'] is String) role = data['role'] as String;
+        } catch (e) {
+          debugPrint('[LoginPage] failed to read user role from Firestore: $e');
+        }
         // Save session (fire-and-forget is fine here)
         try {
-          final um = UserModel(uid: user.uid, phoneNumber: user.phoneNumber ?? '', name: user.displayName ?? '', email: user.email);
+          final um = UserModel(uid: user.uid, phoneNumber: user.phoneNumber ?? '', name: user.displayName ?? '', email: user.email, role: role);
           // Await saving the session to ensure persistence before navigation.
           await sessionService.saveUser(um);
           // Seed cart and notify CartBloc so the UI updates immediately
@@ -121,7 +138,12 @@ class _LoginViewState extends State<LoginView> {
           } catch (_) {}
         } catch (_) {}
         if (!mounted) return;
-        context.go(AppRoutes.home);
+        // Navigate to the correct dashboard based on role
+        if (role == 'worker') {
+          context.go(AppRoutes.workerHome);
+        } else {
+          context.go(AppRoutes.home);
+        }
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message ?? 'Login failed')));

@@ -12,6 +12,7 @@ import 'package:agapecares/features/user_app/payment_gateway/repository/cod_paym
 import 'package:agapecares/features/user_app/payment_gateway/repository/razorpay_payment_repository.dart';
 import 'package:agapecares/features/user_app/data/repositories/booking_repository.dart';
 import 'package:agapecares/features/user_app/data/repositories/service_repository.dart';
+import 'package:agapecares/features/worker_app/data/repositories/worker_repository.dart';
 
 // Services
 import 'package:agapecares/shared/services/local_database_service.dart';
@@ -65,6 +66,7 @@ Future<List<RepositoryProvider>> init() async {
   final codRepository = CodPaymentRepository();
   final serviceRepository = ServiceRepository();
   final bookingRepository = BookingRepository();
+  final workerRepository = WorkerRepository();
 
   // Sync service
   final syncService = SyncService(orderRepository: orderRepository);
@@ -89,6 +91,7 @@ Future<List<RepositoryProvider>> init() async {
     RepositoryProvider<RazorpayPaymentRepository>.value(value: razorpayRepository),
     RepositoryProvider<CodPaymentRepository>.value(value: codRepository),
     RepositoryProvider<SyncService>.value(value: syncService),
+    RepositoryProvider<WorkerRepository>.value(value: workerRepository),
     // Provide auth repository so AuthBloc can be created at app start
     RepositoryProvider<AuthRepository>.value(value: authRepository),
   ];
@@ -128,8 +131,8 @@ List<BlocProvider> buildBlocs(BuildContext context) {
           // Return null when no user is logged in. CheckoutBloc will handle nulls.
           if (user == null) return null;
           // Prefer Firebase UID (stable) over phone number for server-side queries
-          final uid = user.uid?.trim();
-          if (uid != null && uid.isNotEmpty) return uid;
+          final uid = user.uid.trim();
+          if (uid.isNotEmpty) return uid;
           final phone = user.phoneNumber?.trim();
           if (phone != null && phone.isNotEmpty) return phone;
           return null;

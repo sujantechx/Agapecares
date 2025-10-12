@@ -58,9 +58,9 @@ class OrderRepository {
       if (finalUserId == null) {
         final fbUser = FirebaseAuth.instance.currentUser;
         if (fbUser != null) {
-          final uid = fbUser.uid?.trim();
+          final uid = fbUser.uid.trim();
           final phone = fbUser.phoneNumber?.trim();
-          if (uid != null && uid.isNotEmpty) {
+          if (uid.isNotEmpty) {
             finalUserId = uid;
           } else if (phone != null && phone.isNotEmpty) {
             finalUserId = phone;
@@ -172,6 +172,9 @@ class OrderRepository {
               userEmail: data['userEmail'] as String? ?? '',
               userPhone: data['userPhone'] as String? ?? '',
               userAddress: data['userAddress'] as String? ?? '',
+              workerId: data['workerId'] as String?,
+              workerName: data['workerName'] as String?,
+              acceptedAt: data['acceptedAt'] is Timestamp ? data['acceptedAt'] as Timestamp : null,
               createdAt: data['createdAt'] is Timestamp ? data['createdAt'] as Timestamp : Timestamp.now(),
             );
           }).toList();
@@ -216,6 +219,9 @@ class OrderRepository {
           userEmail: data['userEmail'] as String? ?? '',
           userPhone: data['userPhone'] as String? ?? '',
           userAddress: data['userAddress'] as String? ?? '',
+          workerId: data['workerId'] as String?,
+          workerName: data['workerName'] as String?,
+          acceptedAt: data['acceptedAt'] is Timestamp ? data['acceptedAt'] as Timestamp : null,
           createdAt: data['createdAt'] is Timestamp ? data['createdAt'] as Timestamp : Timestamp.now(),
         );
       }).toList();
@@ -242,9 +248,9 @@ class OrderRepository {
         final oUser = (o.userId).trim();
         if (oUser.isNotEmpty && oUser == userId) return true;
         if (oUser.isEmpty && fbUser != null) {
-          final uid = fbUser.uid?.trim();
+          final uid = fbUser.uid.trim();
           final phone = fbUser.phoneNumber?.trim();
-          if ((uid != null && uid == userId) || (phone != null && phone == userId)) return true;
+          if ((uid.isNotEmpty && uid == userId) || (phone != null && phone == userId)) return true;
         }
         return false;
       }).toList();
@@ -276,6 +282,150 @@ class OrderRepository {
       return merged;
     } catch (e) {
       return [];
+    }
+  }
+
+  /// Fetch incoming orders for a worker — orders placed within the last [withinHours]
+  /// and not yet accepted. This queries remote firestore for recent orders with
+  /// status 'Placed' (or pending) and then filters out any that already have a worker.
+  Future<List<OrderModel>> getIncomingOrdersForWorker({int withinHours = 1}) async {
+    try {
+      final cutoff = Timestamp.fromDate(DateTime.now().toUtc().subtract(Duration(hours: withinHours)));
+      final snapshot = await _firestore.collection('orders').where('orderStatus', isEqualTo: 'Placed').where('createdAt', isGreaterThanOrEqualTo: cutoff).orderBy('createdAt', descending: true).get();
+      final docs = snapshot.docs;
+      final incoming = <OrderModel>[];
+      for (final d in docs) {
+        final data = d.data();
+        final workerId = (data['workerId'] as String?) ?? '';
+        if (workerId.trim().isNotEmpty) continue; // already assigned
+        final itemsRaw = (data['items'] as List<dynamic>?) ?? <dynamic>[];
+        final items = itemsRaw.map((e) {
+          if (e is Map<String, dynamic>) return OrderModel.cartItemFromMap(e);
+          if (e is Map) return OrderModel.cartItemFromMap(Map<String, dynamic>.from(e));
+          return OrderModel.cartItemFromMap(null);
+        }).toList();
+        incoming.add(OrderModel(
+          localId: null,
+          isSynced: true,
+          id: d.id,
+          userId: data['userId'] as String? ?? '',
+          items: items.cast(),
+          subtotal: (data['subtotal'] as num?)?.toDouble() ?? 0.0,
+          discount: (data['discount'] as num?)?.toDouble() ?? 0.0,
+          total: (data['total'] as num?)?.toDouble() ?? 0.0,
+          paymentMethod: data['paymentMethod'] as String? ?? '',
+          paymentId: data['paymentId'] as String?,
+          orderStatus: data['orderStatus'] as String? ?? 'Placed',
+          userName: data['userName'] as String? ?? '',
+          userEmail: data['userEmail'] as String? ?? '',
+          userPhone: data['userPhone'] as String? ?? '',
+          userAddress: data['userAddress'] as String? ?? '',
+          workerId: null,
+          workerName: null,
+          acceptedAt: null,
+          createdAt: data['createdAt'] is Timestamp ? data['createdAt'] as Timestamp : Timestamp.now(),
+        ));
+      }
+      return incoming;
+    } catch (e) {
+      debugPrint('[OrderRepository] getIncomingOrdersForWorker failed: $e');
+      return [];
+    }
+  }
+
+  /// Assign/accept an order for a worker. Updates Firestore and local DB if present.
+  Future<bool> assignOrderToWorker({required OrderModel order, required String workerId, required String workerName}) async {
+    try {
+      final acceptedAt = Timestamp.now();
+      if (order.id != null && order.id!.isNotEmpty) {
+        final docRef = _firestore.collection('orders').doc(order.id);
+        // Use transaction to ensure workerId is not already set (avoid double-accept)
+        final success = await _firestore.runTransaction<bool>((tx) async {
+          final snapshot = await tx.get(docRef);
+          if (!snapshot.exists) return false;
+          final data = snapshot.data();
+          final existingWorker = (data?['workerId'] as String?) ?? '';
+          final status = (data?['orderStatus'] as String?) ?? 'Placed';
+          if (existingWorker.trim().isNotEmpty || status.toLowerCase() != 'placed') {
+            // Already assigned or not in placed state, fail
+            return false;
+          }
+          tx.update(docRef, {'workerId': workerId, 'workerName': workerName, 'acceptedAt': acceptedAt, 'orderStatus': 'Accepted'});
+          return true;
+        });
+        if (!success) return false;
+      }
+
+      // Update local DB copy if exists
+      final updated = order.copyWith(orderStatus: 'Accepted', workerId: workerId, workerName: workerName, acceptedAt: acceptedAt);
+      try {
+        await _localDb.updateOrder(updated);
+      } catch (_) {}
+      return true;
+    } on FirebaseException catch (e) {
+      debugPrint('[OrderRepository] assignOrderToWorker Firestore error: ${e.code} ${e.message}');
+      return false;
+    } catch (e) {
+      debugPrint('[OrderRepository] assignOrderToWorker failed: $e');
+      return false;
+    }
+  }
+
+  /// Fetch orders assigned to a worker (accepted / in-progress / completed)
+  Future<List<OrderModel>> getAssignedOrdersForWorker(String workerId) async {
+    try {
+      final snap = await _firestore.collection('orders').where('workerId', isEqualTo: workerId).orderBy('createdAt', descending: true).get();
+      return snap.docs.map((d) {
+        final data = d.data();
+        final itemsRaw = (data['items'] as List<dynamic>?) ?? <dynamic>[];
+        final items = itemsRaw.map((e) {
+          if (e is Map<String, dynamic>) return OrderModel.cartItemFromMap(e);
+          if (e is Map) return OrderModel.cartItemFromMap(Map<String, dynamic>.from(e));
+          return OrderModel.cartItemFromMap(null);
+        }).toList();
+        return OrderModel(
+          localId: null,
+          isSynced: true,
+          id: d.id,
+          userId: data['userId'] as String? ?? '',
+          items: items.cast(),
+          subtotal: (data['subtotal'] as num?)?.toDouble() ?? 0.0,
+          discount: (data['discount'] as num?)?.toDouble() ?? 0.0,
+          total: (data['total'] as num?)?.toDouble() ?? 0.0,
+          paymentMethod: data['paymentMethod'] as String? ?? '',
+          paymentId: data['paymentId'] as String?,
+          orderStatus: data['orderStatus'] as String? ?? 'Placed',
+          userName: data['userName'] as String? ?? '',
+          userEmail: data['userEmail'] as String? ?? '',
+          userPhone: data['userPhone'] as String? ?? '',
+          userAddress: data['userAddress'] as String? ?? '',
+          workerId: data['workerId'] as String?,
+          workerName: data['workerName'] as String?,
+          acceptedAt: data['acceptedAt'] is Timestamp ? data['acceptedAt'] as Timestamp : null,
+          createdAt: data['createdAt'] is Timestamp ? data['createdAt'] as Timestamp : Timestamp.now(),
+        );
+      }).toList();
+    } catch (e) {
+      debugPrint('[OrderRepository] getAssignedOrdersForWorker failed: $e');
+      return [];
+    }
+  }
+
+  /// Mark an order as completed. Updates Firestore and local DB if possible.
+  Future<bool> completeOrder(OrderModel order) async {
+    try {
+      if (order.id != null && order.id!.isNotEmpty) {
+        final docRef = _firestore.collection('orders').doc(order.id);
+        await docRef.update({'orderStatus': 'Completed'});
+      }
+      final updated = order.copyWith(orderStatus: 'Completed');
+      try {
+        await _localDb.updateOrder(updated);
+      } catch (_) {}
+      return true;
+    } catch (e) {
+      debugPrint('[OrderRepository] completeOrder failed: $e');
+      return false;
     }
   }
 }

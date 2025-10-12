@@ -28,4 +28,8 @@ class AppRoutes {
   static const String terms = '/terms';
   // Checkout route for placing orders
   static const String checkout = '/checkout';
+  // Worker routes
+  static const String workerOrders = '/worker/orders';
+  static const String workerHome = '/worker/home';
+  static const String workerProfile = '/worker/profile';
 }

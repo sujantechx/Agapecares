@@ -44,18 +44,20 @@ class CartRepository {
   // Helper to obtain a stable user id: prefer FirebaseAuth currentUser, then SessionService user
   String? _getCurrentUserId() {
     final firebaseUser = FirebaseAuth.instance.currentUser;
-    final fromFirebase = (firebaseUser?.phoneNumber?.trim().isNotEmpty == true)
-        ? firebaseUser!.phoneNumber
-        : (firebaseUser?.uid?.trim().isNotEmpty == true ? firebaseUser!.uid : null);
-    if (fromFirebase != null && (fromFirebase as String).isNotEmpty) return fromFirebase;
+    if (firebaseUser != null) {
+      final phone = firebaseUser.phoneNumber?.trim();
+      if (phone != null && phone.isNotEmpty) return phone;
+      final uid = firebaseUser.uid.trim();
+      if (uid.isNotEmpty) return uid;
+    }
 
     try {
       final sessionUser = _sessionService?.getUser();
       if (sessionUser != null) {
         final phone = sessionUser.phoneNumber?.trim();
-        final sid = sessionUser.uid?.trim();
         if (phone != null && phone.isNotEmpty) return phone;
-        if (sid != null && sid.isNotEmpty) return sid;
+        final sid = sessionUser.uid.trim();
+        if (sid.isNotEmpty) return sid;
       }
     } catch (_) {}
 
@@ -74,26 +76,24 @@ class CartRepository {
     try {
       final userId = _getCurrentUserId();
       debugPrint('[CartRepository] currentUser userId=$userId');
-      if (userId == null || (userId is String && userId.isEmpty)) {
+      if (userId == null || userId.isEmpty) {
         debugPrint('[CartRepository] no valid userId, skipping remote cart load');
         return [];
       }
-      if (userId != null) {
-        final doc = await _firestore.collection('carts').doc(userId).get();
-        if (doc.exists) {
-          final data = doc.data();
-          final itemsJson = data?['items'] as List<dynamic>?;
-          if (itemsJson != null && itemsJson.isNotEmpty) {
-            // Parse items in background isolate to avoid jank
-            final parsed = await compute(_parseCartItemsForCompute, itemsJson);
-            final items = parsed.map((e) => CartItemModel.fromJson(e)).toList();
-            // Seed local DB
-            for (final it in items) {
-              await _localDb.addCartItem(it);
-            }
-            debugPrint('[CartRepository] seeded local DB with ${items.length} items from remote');
-            return items;
+      final doc = await _firestore.collection('carts').doc(userId).get();
+      if (doc.exists) {
+        final data = doc.data();
+        final itemsJson = data?['items'] as List<dynamic>?;
+        if (itemsJson != null && itemsJson.isNotEmpty) {
+          // Parse items in background isolate to avoid jank
+          final parsed = await compute(_parseCartItemsForCompute, itemsJson);
+          final items = parsed.map((e) => CartItemModel.fromJson(e)).toList();
+          // Seed local DB
+          for (final it in items) {
+            await _localDb.addCartItem(it);
           }
+          debugPrint('[CartRepository] seeded local DB with ${items.length} items from remote');
+          return items;
         }
       }
     } catch (e, s) {
@@ -137,7 +137,7 @@ class CartRepository {
     try {
       final userId = _getCurrentUserId();
       debugPrint('[CartRepository] _syncCartToRemoteIfAuthenticated userId=$userId');
-      if (userId == null || (userId is String && userId.isEmpty)) return;
+      if (userId == null || userId.isEmpty) return;
       final items = await _localDb.getCartItems();
       final jsonItems = items.map((i) => i.toJson()).toList();
       await _firestore.collection('carts').doc(userId).set({'items': jsonItems});

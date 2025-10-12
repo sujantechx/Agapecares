@@ -165,6 +165,9 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
               userEmail TEXT NOT NULL,
               userPhone TEXT NOT NULL,
               userAddress TEXT NOT NULL,
+              workerId TEXT,
+              workerName TEXT,
+              acceptedAt TEXT,
               createdAt TEXT NOT NULL
             );
           ''');
@@ -198,6 +201,9 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
             userEmail TEXT NOT NULL,
             userPhone TEXT NOT NULL,
             userAddress TEXT NOT NULL,
+            workerId TEXT,
+            workerName TEXT,
+            acceptedAt TEXT,
             createdAt TEXT NOT NULL
           );
         ''');
@@ -239,6 +245,34 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
           _ordersTableColumnsCache = null;
         } catch (e) {
           debugPrint('[LocalDB] failed to add orderNumber column: $e');
+        }
+      }
+      // Add worker-related columns if missing
+      if (!existingCols.contains('workerId')) {
+        try {
+          await db.execute('ALTER TABLE $_ordersTable ADD COLUMN workerId TEXT;');
+          debugPrint('[LocalDB] migrated: added workerId column to $_ordersTable');
+          _ordersTableColumnsCache = null;
+        } catch (e) {
+          debugPrint('[LocalDB] failed to add workerId column: $e');
+        }
+      }
+      if (!existingCols.contains('workerName')) {
+        try {
+          await db.execute('ALTER TABLE $_ordersTable ADD COLUMN workerName TEXT;');
+          debugPrint('[LocalDB] migrated: added workerName column to $_ordersTable');
+          _ordersTableColumnsCache = null;
+        } catch (e) {
+          debugPrint('[LocalDB] failed to add workerName column: $e');
+        }
+      }
+      if (!existingCols.contains('acceptedAt')) {
+        try {
+          await db.execute('ALTER TABLE $_ordersTable ADD COLUMN acceptedAt TEXT;');
+          debugPrint('[LocalDB] migrated: added acceptedAt column to $_ordersTable');
+          _ordersTableColumnsCache = null;
+        } catch (e) {
+          debugPrint('[LocalDB] failed to add acceptedAt column: $e');
         }
       }
     } catch (e, s) {
@@ -293,24 +327,46 @@ class SqfliteLocalDatabaseService implements LocalDatabaseService {
       return saved;
     }
     final db = _requireDb();
-    final values = order.toSqliteMap();
+    // Always regenerate the values from the model here
+    final values = Map<String, dynamic>.from(order.toSqliteMap());
     values.remove('id'); // let sqlite assign autoincrement id
     try {
+      // Ensure we have the latest PRAGMA information and try to migrate missing columns
+      await _ensureOrdersTableColumns();
+      // Defensive: remove columns that historically caused insert failures if they are not present.
+      // Some older DBs may not contain 'orderNumber' column; remove it if present so the insert
+      // won't attempt to write a non-existent column. The _filterMapToExistingOrderColumns
+      // call below would normally remove unknown columns, but being extra defensive avoids
+      // rare race cases where the insert SQL may still reference the field.
+      values.remove('orderNumber');
+
+      // Now filter to only existing columns
       final filtered = await _filterMapToExistingOrderColumns(values);
       final id = await db.insert(_ordersTable, filtered);
       final maps = await db.query(_ordersTable, where: 'id = ?', whereArgs: [id]);
       return OrderModel.fromSqliteMap(maps.first);
-    } catch (e) {
-      debugPrint('[LocalDB] createOrder insert failed: $e — attempting migration and retry');
-      // Try to migrate schema (add missing columns) then retry once
+    } catch (e, s) {
+      debugPrint('[LocalDB] createOrder insert failed: $e — attempting targeted migration and retry\n$s');
+      // If the insert failed due to missing columns, try to parse the error and remove offending keys then retry.
       try {
-        await _ensureOrdersTableColumns();
+        // Refresh PRAGMA info to get any recent changes
+        _ordersTableColumnsCache = null;
+        final cols = await _getOrdersTableColumns();
+        // Identify keys that are not in the table and drop them before retry
+        final toRemove = <String>[];
+        for (final k in values.keys) {
+          if (!cols.contains(k)) toRemove.add(k);
+        }
+        if (toRemove.isNotEmpty) {
+          debugPrint('[LocalDB] removing unknown order columns before retry: $toRemove');
+          for (final k in toRemove) values.remove(k);
+        }
         final filtered = await _filterMapToExistingOrderColumns(values);
         final id = await db.insert(_ordersTable, filtered);
         final maps = await db.query(_ordersTable, where: 'id = ?', whereArgs: [id]);
         return OrderModel.fromSqliteMap(maps.first);
-      } catch (e2) {
-        debugPrint('[LocalDB] createOrder retry after migration failed: $e2 — falling back to in-memory orders');
+      } catch (e2, s2) {
+        debugPrint('[LocalDB] createOrder retry after targeted migration failed: $e2 — falling back to in-memory orders\n$s2');
         // Fall back to in-memory store so the app can continue
         final id = _nextInMemoryOrderId++;
         final saved = order.copyWith(localId: id);

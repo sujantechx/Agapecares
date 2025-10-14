@@ -28,4 +28,12 @@ class AppTheme {
 
   static AppButtonTheme buttonTheme(BuildContext context) =>
       Theme.of(context).extension<AppButtonTheme>()!;
+
+  // Commonly used colors across the app. Using const so they can be
+  // used in const widget expressions.
+  static const Color primaryColor = Color(0xFF0A7FFF); // blue-ish
+  static const Color accentColor = Color(0xFFFFA000); // amber
+  static const Color subtitleColor = Color(0xFF757575); // grey
+  static const Color textColor = Color(0xFF212121);
+  static const Color backgroundColor = Color(0xFFF5F5F5);
 }

@@ -1,0 +1,67 @@
+import 'package:equatable/equatable.dart';
+import '../../../../../../core/models/service_list_model.dart';
+import '../../../../../../core/models/service_option_model.dart';
+import '../../../../../../core/models/subscription_plan_model.dart';
+
+
+class CartItemModel extends Equatable {
+// A unique ID for the cart item, combining the other IDs.
+final String id;
+final ServiceModel service;
+final ServiceOption selectedOption;
+final SubscriptionPlan? subscription;
+final int quantity;
+
+const CartItemModel({
+required this.id,
+required this.service,
+required this.selectedOption,
+this.subscription,
+this.quantity = 1,
+});
+
+// Helper to calculate the price for this specific cart item instance.
+double get price {
+double basePrice = selectedOption.price;
+if (subscription != null) {
+final discount = subscription!.discount / 100;
+final pricePerService = basePrice * (1 - discount);
+return pricePerService * subscription!.durationInMonths * quantity;
+}
+return basePrice * quantity;
+}
+
+// Helper to create a new instance with updated values (immutable pattern).
+CartItemModel copyWith({int? quantity}) {
+return CartItemModel(
+id: id,
+service: service,
+selectedOption: selectedOption,
+subscription: subscription,
+quantity: quantity ?? this.quantity,
+);
+}
+
+@override
+List<Object?> get props => [id, service, selectedOption, subscription, quantity];
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'service': service.toMap(),
+      'selectedOption': selectedOption.toMap(),
+      'subscription': subscription?.toMap(),
+      'quantity': quantity,
+    };
+  }
+
+  factory CartItemModel.fromJson(Map<String, dynamic> json) {
+    return CartItemModel(
+      id: json['id'] as String? ?? '',
+      // Nested maps may be null; our fromMap constructors accept nullable maps.
+      service: ServiceModel.fromMap(json['service'] as Map<String, dynamic>?),
+      selectedOption: ServiceOption.fromMap(json['selectedOption'] as Map<String, dynamic>?),
+      subscription: SubscriptionPlan.fromMap(json['subscription'] as Map<String, dynamic>?),
+      quantity: (json['quantity'] as int?) ?? 1,
+    );
+  }
+}

@@ -1,8 +1,8 @@
 // filepath: c:\FlutterDev\agapecares\lib\features\worker_app\presentation\pages\create_service_page.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:agapecares/features/user_app/data/repositories/service_repository.dart';
-import 'package:agapecares/shared/models/service_list_model.dart';
+import 'package:agapecares/features/user_app/features/data/repositories/service_repository.dart';
+import 'package:agapecares/core/models/service_list_model.dart';
 
 class CreateServicePage extends StatefulWidget {
   const CreateServicePage({Key? key}) : super(key: key);
@@ -110,4 +110,3 @@ class _CreateServicePageState extends State<CreateServicePage> {
     );
   }
 }
-

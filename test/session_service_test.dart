@@ -1,7 +1,8 @@
+import 'package:agapecares/core/models/user_model.dart';
+import 'package:agapecares/core/services/session_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:agapecares/shared/services/session_service.dart';
-import 'package:agapecares/shared/models/user_model.dart';
+
 
 void main() {
   test('SessionService saves and loads user correctly', () async {

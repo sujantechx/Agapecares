@@ -2,10 +2,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:agapecares/routes/app_routes.dart';
-import 'package:agapecares/shared/services/session_service.dart';
-import 'package:agapecares/shared/theme/app_theme.dart';
+
+import 'package:agapecares/core/services/session_service.dart';
+import 'package:agapecares/app/theme/app_theme.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
+import '../../../../app/routes/app_routes.dart';
 
 class WorkerDrawer extends StatelessWidget {
   const WorkerDrawer({super.key});
@@ -77,4 +79,3 @@ class WorkerDrawer extends StatelessWidget {
     );
   }
 }
-

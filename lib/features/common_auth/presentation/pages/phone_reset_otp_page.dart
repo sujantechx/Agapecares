@@ -4,12 +4,14 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 
-import '../../../../shared/widgets/common_button.dart';
-import '../../../../shared/services/session_service.dart';
-import '../../../../shared/models/user_model.dart';
-import 'package:agapecares/features/user_app/cart/data/repository/cart_repository.dart';
-import 'package:agapecares/features/user_app/cart/bloc/cart_bloc.dart';
-import 'package:agapecares/features/user_app/cart/bloc/cart_event.dart';
+import '../../../../core/models/user_model.dart';
+import '../../../../core/services/session_service.dart';
+import '../../../../core/widgets/common_button.dart';
+import '../../../user_app/features/cart/bloc/cart_bloc.dart';
+import '../../../user_app/features/cart/bloc/cart_event.dart';
+import '../../../user_app/features/cart/data/repositories/cart_repository.dart';
+
+
 
 class PhoneResetOtpPage extends StatefulWidget {
   final String verificationId;
@@ -51,7 +53,7 @@ class _PhoneResetOtpPageState extends State<PhoneResetOtpPage> {
           // Seed cart and notify CartBloc
           try {
             final cartRepo = context.read<CartRepository>();
-            await cartRepo.getCartItems();
+            await cartRepo.getCartItems(cartRepo);
           } catch (_) {}
           try {
             context.read<CartBloc>().add(CartStarted());

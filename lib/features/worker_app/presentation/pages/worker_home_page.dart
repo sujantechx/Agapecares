@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:agapecares/features/worker_app/data/repositories/worker_repository.dart';
-import 'package:agapecares/shared/models/user_model.dart';
-import 'package:agapecares/routes/app_routes.dart';
+import 'package:agapecares/core/models/user_model.dart';
+
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:agapecares/features/user_app/data/repositories/order_repository.dart';
-import 'package:agapecares/features/user_app/data/repositories/service_repository.dart';
-import 'package:agapecares/shared/models/service_list_model.dart';
-import 'package:agapecares/shared/models/order_model.dart';
+import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart';
+import 'package:agapecares/core/models/service_list_model.dart';
+import 'package:agapecares/core/models/order_model.dart';
 import 'package:agapecares/features/worker_app/presentation/pages/create_service_page.dart';
-import 'package:agapecares/shared/services/session_service.dart';
+import 'package:agapecares/core/services/session_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
+import 'package:agapecares/app/routes/app_routes.dart';
 
 class WorkerHomePage extends StatefulWidget {
   const WorkerHomePage({Key? key}) : super(key: key);
@@ -47,7 +47,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
       setState(() => _loading = true);
       final repo = context.read<WorkerRepository>();
       final orderRepo = context.read<OrderRepository>();
-      final serviceRepo = context.read<ServiceRepository>();
+      // final serviceRepo = context.read<ServiceRepository>(); // not used
 
       // Resolve worker id from SessionService first, then FirebaseAuth as fallback
       String? resolvedWorkerId;
@@ -58,7 +58,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
         if (sUser != null && sUser.role == 'worker' && sUser.uid.isNotEmpty) {
           resolvedWorkerId = sUser.uid;
         }
-        if (sUser != null && (sUser.phoneNumber).isNotEmpty) resolvedPhone = sUser.phoneNumber;
+        if (sUser != null && sUser.phoneNumber != null && sUser.phoneNumber!.isNotEmpty) resolvedPhone = sUser.phoneNumber;
       } catch (_) {}
 
       final fbUser = FirebaseAuth.instance.currentUser;
@@ -150,7 +150,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
             workerId: data['workerId'] as String?,
             workerName: data['workerName'] as String?,
             acceptedAt: data['acceptedAt'] is Timestamp ? data['acceptedAt'] as Timestamp : null,
-            createdAt: data['createdAt'] is Timestamp ? data['createdAt'] as Timestamp : Timestamp.now(),
+            createdAt: data['createdAt'] is Timestamp ? data['createdAt'] as Timestamp : Timestamp.now(), orderNumber: '',
           );
         }).toList();
         if (mounted) {

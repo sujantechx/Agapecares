@@ -4,13 +4,13 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/routes/app_routes.dart';
-import '../../../../shared/widgets/common_button.dart';
-import '../../../../shared/services/session_service.dart';
-import '../../../../shared/models/user_model.dart';
-import 'package:agapecares/features/user_app/cart/data/repository/cart_repository.dart';
-import 'package:agapecares/features/user_app/cart/bloc/cart_bloc.dart';
+import '../../../../core/models/user_model.dart';
+import '../../../../core/services/session_service.dart';
+import '../../../../core/widgets/common_button.dart';
+import '../../../user_app/features/cart/bloc/cart_bloc.dart';
+import '../../../user_app/features/cart/bloc/cart_event.dart';
+import '../../../user_app/features/cart/data/repositories/cart_repository.dart';
 
-import '../../../user_app/cart/bloc/cart_event.dart';
 
 class SetNewPasswordPage extends StatefulWidget {
   const SetNewPasswordPage({super.key});
@@ -53,7 +53,7 @@ class _SetNewPasswordPageState extends State<SetNewPasswordPage> {
         // Seed cart and notify CartBloc
         try {
           final cartRepo = context.read<CartRepository>();
-          await cartRepo.getCartItems();
+          await cartRepo.getCartItems(cartRepo);
         } catch (_) {}
         try {
           context.read<CartBloc>().add(CartStarted());

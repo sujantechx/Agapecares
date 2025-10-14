@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
-import '../../../../shared/models/user_model.dart';
+import 'package:agapecares/core/models/user_model.dart';
 
 /// Simple WorkerRepository that reads/writes worker profiles and helper methods
 /// for worker-related queries (assigned orders count, accept/complete shortcuts

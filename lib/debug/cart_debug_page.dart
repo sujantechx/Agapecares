@@ -1,11 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:agapecares/features/user_app/cart/data/models/cart_item_model.dart';
-import 'package:agapecares/features/user_app/cart/data/repository/cart_repository.dart';
-import 'package:agapecares/shared/models/service_list_model.dart';
-import 'package:agapecares/features/user_app/data/fixed_data/all_services.dart';
-import 'package:agapecares/shared/models/service_option_model.dart';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
+
+import 'package:agapecares/core/models/cart_item_model.dart';
+import 'package:agapecares/core/models/service_option_model.dart';
+import 'package:agapecares/features/user_app/cart/data/repository/cart_repository.dart';
+import 'package:agapecares/features/user_app/features/data/fixed_data/all_services.dart';
+
+import '../features/user_app/features/cart/data/repositories/cart_repository.dart';
 
 class CartDebugPage extends StatefulWidget {
   const CartDebugPage({super.key});
@@ -20,7 +23,7 @@ class _CartDebugPageState extends State<CartDebugPage> {
 
   Future<void> _reload(CartRepository repo) async {
     setState(() => _loading = true);
-    final items = await repo.getCartItems();
+    final items = await repo.getCartItems(repo);
     setState(() {
       _items = items;
       _loading = false;
@@ -36,11 +39,12 @@ class _CartDebugPageState extends State<CartDebugPage> {
       final id = 'debug_${service.id}_${option.id}';
       final item = CartItemModel(
         id: id,
-        service: service,
+        serviceId: service.id,
+        serviceName: service.name,
+        unitPrice: option.price,
         selectedOption: option,
         quantity: 1,
       );
-      await repo.addItemToCart(item);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Added debug item')));
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Add failed: $e')));
@@ -84,7 +88,7 @@ class _CartDebugPageState extends State<CartDebugPage> {
                   itemBuilder: (context, index) {
                     final it = _items[index];
                     return ListTile(
-                      title: Text(it.service.name),
+                      title: Text(it.serviceName),
                       subtitle: Text('Option: ${it.selectedOption.name}  qty: ${it.quantity}'),
                       trailing: Text('₹ ${it.price.toStringAsFixed(2)}'),
                     );

@@ -5,15 +5,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pinput/pinput.dart';
 
-import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/common_button.dart';
+import 'package:agapecares/app/theme/app_theme.dart';
+import 'package:agapecares/core/widgets/common_button.dart';
+import 'package:agapecares/core/services/session_service.dart';
+import 'package:agapecares/features/user_app/features/cart/data/repository/cart_repository.dart';
+import 'package:agapecares/features/user_app/features/cart/bloc/cart_bloc.dart';
+import 'package:agapecares/features/user_app/features/cart/bloc/cart_event.dart';
 import '../../logic/blocs/auth_bloc.dart';
 import '../../logic/blocs/auth_event.dart';
 import '../../logic/blocs/auth_state.dart';
-import '../../../../shared/services/session_service.dart';
-import 'package:agapecares/features/user_app/cart/data/repository/cart_repository.dart';
-import 'package:agapecares/features/user_app/cart/bloc/cart_bloc.dart';
-import 'package:agapecares/features/user_app/cart/bloc/cart_event.dart';
 
 
 class OtpPage extends StatelessWidget {

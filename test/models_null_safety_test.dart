@@ -1,6 +1,8 @@
+import 'package:agapecares/core/models/cart_item_model.dart';
+import 'package:agapecares/core/models/service_list_model.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:agapecares/shared/models/service_list_model.dart';
-import 'package:agapecares/features/user_app/cart/data/models/cart_item_model.dart';
+
+
 
 void main() {
   test('ServiceModel.fromMap handles null input safely', () {
@@ -22,7 +24,7 @@ void main() {
     final item = CartItemModel.fromJson(json);
     expect(item.id, 'test');
     expect(item.quantity, 2);
-    expect(item.service.id, '');
+    expect(item.serviceId, '');
     expect(item.selectedOption.id, '');
   });
 }

@@ -2,7 +2,8 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../features/user_app/cart/data/models/cart_item_model.dart';
+
+import '../../features/user_app/features/cart/data/models/cart_item_model.dart';
 import '../models/order_model.dart';
 import 'local_database_service.dart';
 

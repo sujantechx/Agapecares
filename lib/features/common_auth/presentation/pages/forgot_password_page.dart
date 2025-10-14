@@ -5,7 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../../app/routes/app_routes.dart';
 import '../../../../core/utils/validators.dart';
 
-import '../../../../shared/widgets/common_button.dart';
+import '../../../../core/widgets/common_button.dart';
+
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});

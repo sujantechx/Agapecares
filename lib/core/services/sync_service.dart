@@ -3,7 +3,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import '../../features/user_app/data/repositories/order_repository.dart';
+import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart';
+
 
 /// A small background sync service that periodically checks connectivity
 /// by attempting a DNS lookup and triggers `OrderRepository.syncUnsynced()` when online.

@@ -1,11 +1,8 @@
-
-
 // lib/features/auth/logic/blocs/auth_state.dart
 
 
 import 'package:equatable/equatable.dart';
-
-import '../../../../shared/models/user_model.dart';
+import 'package:agapecares/core/models/user_model.dart';
 
 abstract class AuthState extends Equatable {
   const AuthState();

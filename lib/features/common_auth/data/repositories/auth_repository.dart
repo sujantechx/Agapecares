@@ -1,7 +1,7 @@
 // lib/features/auth/data/repositories/auth_repository.dart
 import 'package:dartz/dartz.dart';
-import '../../../../shared/models/user_model.dart';
-import '../../../../shared/services/session_service.dart'; // Import SessionService
+import 'package:agapecares/core/models/user_model.dart';
+import 'package:agapecares/core/services/session_service.dart'; // Import SessionService
 import '../datasources/auth_remote_ds.dart';
 
 // Failure class (can be in a separate core/error file)

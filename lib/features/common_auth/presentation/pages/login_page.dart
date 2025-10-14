@@ -7,20 +7,20 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../../../../app/routes/app_routes.dart';
-import '../../../../core/utils/validators.dart';
-import '../../../../shared/widgets/common_button.dart';
+import 'package:agapecares/app/routes/app_routes.dart';
+import 'package:agapecares/core/utils/validators.dart';
+import 'package:agapecares/core/widgets/common_button.dart';
 import '../../logic/blocs/auth_bloc.dart';
 import '../../logic/blocs/auth_event.dart';
 import '../../logic/blocs/auth_state.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/datasources/auth_remote_ds.dart';
 
-import '../../../../shared/services/session_service.dart';
-import '../../../../shared/models/user_model.dart';
-import 'package:agapecares/features/user_app/cart/data/repository/cart_repository.dart';
-import 'package:agapecares/features/user_app/cart/bloc/cart_bloc.dart';
-import 'package:agapecares/features/user_app/cart/bloc/cart_event.dart';
+import 'package:agapecares/core/services/session_service.dart';
+import 'package:agapecares/core/models/user_model.dart';
+import 'package:agapecares/features/user_app/features/cart/data/repository/cart_repository.dart';
+import 'package:agapecares/features/user_app/features/cart/bloc/cart_bloc.dart';
+import 'package:agapecares/features/user_app/features/cart/bloc/cart_event.dart';
 
 
 class LoginPage extends StatelessWidget {
@@ -294,4 +294,3 @@ class _LoginViewState extends State<LoginView> {
     );
   }
 }
-

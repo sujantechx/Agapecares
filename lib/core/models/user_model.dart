@@ -101,4 +101,6 @@ class UserModel {
       createdAt: Timestamp.now(),
     );
   }
+
+  static Future<UserModel?> fromMap(Map<String, dynamic> map) async {}
 }

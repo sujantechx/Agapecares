@@ -11,9 +11,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Repository interfaces
 import 'package:agapecares/features/common_auth/data/repositories/auth_repository.dart';
-import 'package:agapecares/features/user_app/cart/data/repositories/cart_repository.dart';
-import 'package:agapecares/features/user_app/services/data/repositories/service_repository.dart';
-import 'package:agapecares/features/user_app/orders/data/repositories/order_repository.dart';
+
 
 // Admin-specific imports
 import 'package:agapecares/features/admin_app/features/service_management/data/data_sources/service_remote_data_source.dart';
@@ -40,17 +38,22 @@ import 'package:agapecares/features/admin_app/features/worker_management/domain/
 import 'package:agapecares/features/admin_app/features/worker_management/data/repositories/worker_repository_impl.dart' as admin_worker_repo_impl;
 import 'package:agapecares/features/admin_app/features/worker_management/presentation/bloc/admin_worker_bloc.dart';
 
+// User-specific imports
+import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
+import 'package:agapecares/features/user_app/features/services/data/repositories/service_repository.dart';
+import 'package:agapecares/features/user_app/features/orders/data/repositories/order_repository.dart';
+import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository_impl.dart';
+import 'package:agapecares/features/user_app/features/services/data/repositories/service_repository_impl.dart';
+import 'package:agapecares/features/user_app/features/orders/data/repositories/order_repository_impl.dart';
+import 'package:agapecares/features/user_app/features/cart/logic/cart_bloc.dart';
+import 'package:agapecares/features/user_app/features/services/logic/service_bloc.dart';
+import 'package:agapecares/features/user_app/features/orders/logic/order_bloc.dart';
+
+import '../features/common_auth/logic/blocs/auth_bloc.dart';
+
 // Repository implementations
 
-import 'package:agapecares/features/user_app/cart/data/repositories/cart_repository_impl.dart';
-import 'package:agapecares/features/user_app/services/data/repositories/service_repository_impl.dart';
-import 'package:agapecares/features/user_app/orders/data/repositories/order_repository_impl.dart';
 
-// BLoCs
-import 'package:agapecares/features/common_auth/logic/blocs/auth_bloc.dart';
-import 'package:agapecares/features/user_app/cart/logic/cart_bloc.dart';
-import 'package:agapecares/features/user_app/services/logic/service_bloc.dart';
-import 'package:agapecares/features/user_app/orders/logic/order_bloc.dart';
 
 final sl = GetIt.instance;
 

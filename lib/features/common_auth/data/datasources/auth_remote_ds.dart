@@ -1,0 +1,67 @@
+// lib/features/auth/data/datasources/auth_remote_ds.dart
+import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../../shared/models/user_model.dart';
+
+abstract class AuthRemoteDataSource {
+  Future<void> sendOtp(String phoneNumber);
+  Future<UserModel> verifyOtp(String otp);
+}
+
+class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
+  final FirebaseAuth _firebaseAuth;
+  final FirebaseFirestore _firestore;
+  String? _verificationId;
+
+  AuthRemoteDataSourceImpl({
+    required FirebaseAuth firebaseAuth,
+    required FirebaseFirestore firestore,
+  })  : _firebaseAuth = firebaseAuth,
+        _firestore = firestore;
+
+  @override
+  Future<void> sendOtp(String phoneNumber) async {
+    final completer = Completer<void>();
+    await _firebaseAuth.verifyPhoneNumber(
+      phoneNumber: phoneNumber,
+      verificationCompleted: (PhoneAuthCredential credential) {
+        // Auto-sign in if possible
+      },
+      verificationFailed: (FirebaseAuthException e) {
+        completer.completeError(e);
+      },
+      codeSent: (String verificationId, int? resendToken) {
+        _verificationId = verificationId;
+        completer.complete();
+      },
+      codeAutoRetrievalTimeout: (String verificationId) {},
+    );
+    return completer.future;
+  }
+
+  @override
+  Future<UserModel> verifyOtp(String otp) async {
+    if (_verificationId == null) {
+      throw Exception('OTP was not sent. Please try again.');
+    }
+    final credential = PhoneAuthProvider.credential(
+      verificationId: _verificationId!,
+      smsCode: otp,
+    );
+    final userCredential = await _firebaseAuth.signInWithCredential(credential);
+    final user = userCredential.user;
+    if (user == null) {
+      throw Exception('Login failed, user not found.');
+    }
+
+    // Fetch user profile from Firestore to get their role
+    final doc = await _firestore.collection('users').doc(user.uid).get();
+    if (!doc.exists) {
+      // This case can happen if a user verifies but didn't complete registration
+      // We return a basic model, the app should handle this case
+      return UserModel.fromFirebaseUser(user);
+    }
+    return UserModel.fromFirestore(doc);
+  }
+}

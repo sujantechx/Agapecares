@@ -1,3 +1,4 @@
+import '../../../../core/models/offer_model.dart';
 import '../../../../shared/models/offer_model.dart';
 
 

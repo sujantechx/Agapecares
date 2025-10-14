@@ -1,6 +1,7 @@
 
 import 'package:equatable/equatable.dart';
 
+import '../../../../core/models/offer_model.dart';
 import '../../../../shared/models/offer_model.dart';
 import '../data/models/cart_item_model.dart';
 

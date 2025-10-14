@@ -1,35 +1,238 @@
-rules_version = '2';
+/// last updated: 2025-10-14
 
+
+rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Allow authenticated users to read and write ONLY their own user document
+    // -----------------------
+    // Helper functions
+    // -----------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Use the `admins` collection (or custom claims) to determine admin status.
+    // Using exists() is safer than reading .data() and avoids null deref.
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Use the existence of a workers doc as the worker indicator.
+    function isWorker() {
+      return isSignedIn() && exists(/databases/$(database)/documents/workers/$(request.auth.uid));
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Shared helper: forbid client from setting server-only fields
+    function noServerFields() {
+      // List server-controlled fields here
+      return !('orderNumber' in request.resource.data)
+             && !('assignmentHistory' in request.resource.data)
+             && !('paymentRef' in request.resource.data)
+             && !('createdAt' in request.resource.data)
+             && !('updatedAt' in request.resource.data);
+    }
+
+    // Allow admin or server-side (Cloud Functions using admin SDK will bypass rules).
+    function adminOnly() {
+      return isSignedIn() && isAdmin();
+    }
+
+    // -----------------------
+    // users collection
+    // -----------------------
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Create: user may create their own profile; disallow client setting role and timestamps
+      allow create: if isSignedIn()
+                    && request.auth.uid == userId
+                    && (
+                        !( 'role' in request.resource.data )
+                        || request.resource.data.role == 'user'
+                       )
+                    && !('createdAt' in request.resource.data)
+                    && !('updatedAt' in request.resource.data);
 
-      // Allow access to orders subcollection under the user document
-      match /orders/{orderId} {
-        allow create: if request.auth != null && request.auth.uid == userId;
-        allow read: if request.auth != null && request.auth.uid == userId;
-        allow update, delete: if request.auth != null && request.auth.uid == userId;
-      }
+      // Read: owner or admin
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
 
-      // Allow access to cart subcollection if you use it under users/{userId}/cart
+      // Update: admin can update anything; owner can update but cannot change `role` or server fields
+      allow update: if isSignedIn() && (
+                      isAdmin()
+                      ||
+                      (isOwner(userId)
+                        && ( !('role' in request.resource.data) || request.resource.data.role == resource.data.role )
+                        && !('createdAt' in request.resource.data)
+                        && !('updatedAt' in request.resource.data)
+                      )
+                    );
+
+      // Delete: owner or admin (you can restrict to admin-only if desired)
+      allow delete: if isSignedIn() && (isOwner(userId) || isAdmin());
+
+      // cart subcollection
       match /cart/{cartId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+      }
+
+      // orders subcollection (per-user orders)
+      match /orders/{orderId} {
+        // Create: only owner, must not set server-managed fields, and require only safe initial status
+        allow create: if isSignedIn()
+                        && isOwner(userId)
+                        && noServerFields()
+                        // require orders start in allowed initial status (e.g., 'PENDING' or 'CREATED')
+                        && (
+                            !('status' in request.resource.data)
+                            || request.resource.data.status == 'PENDING'
+                           )
+                        // enforce essential fields (example)
+                        && ('items' in request.resource.data)
+                        && ('totalAmount' in request.resource.data);
+
+        // Get: owner, admin, or worker only if order is relevant
+        allow get: if isSignedIn() && (
+                     isOwner(userId)
+                     || isAdmin()
+                     || (isWorker() && (
+                          // worker can read if order is pending (in pool) or assigned to them
+                          (resource.data.status == 'PENDING')
+                          || (resource.data.workerId == request.auth.uid)
+                        ))
+                   );
+
+        // List (query): admin or owner; worker allowed only with constrained query
+        allow list: if isSignedIn() && (
+                      isAdmin()
+                      || isOwner(userId)
+                      || (
+                          isWorker()
+                          // the client query must explicitly filter by the workerId == current worker OR status == 'PENDING'
+                          && (
+                               (request.query.where('workerId','==', request.auth.uid))
+                               || (request.query.where('status','==', 'PENDING'))
+                             )
+                        )
+                    );
+
+        // Helper: valid worker transitions for worker role
+        function workerAllowedStatusTransition(old, new) {
+          // enumerated safe transitions for workers
+          return (old == 'ASSIGNED' && new == 'ACCEPTED')
+                 || (old == 'ACCEPTED' && new == 'IN_PROGRESS')
+                 || (old == 'IN_PROGRESS' && new == 'COMPLETED');
+        }
+
+        // Update: admin can update everything.
+        // Owner may update only non-assignment, non-status fields.
+        // Worker may update a few status transitions but only when they're the assigned worker.
+        allow update: if isSignedIn() && (
+                        isAdmin()
+                        || (
+                            isOwner(userId)
+                            && // owner cannot change assignment or status
+                            !( 'workerId' in request.resource.data )
+                            && !( 'status' in request.resource.data )
+                            && noServerFields()
+                          )
+                        || (
+                            isWorker()
+                            && resource.data.workerId == request.auth.uid
+                            && noServerFields()
+                            && (
+                                // either worker is updating allowed status change, or updating only worker-local fields (not assignment)
+                                ( 'status' in request.resource.data && workerAllowedStatusTransition(resource.data.status, request.resource.data.status) && request.resource.data.workerId == resource.data.workerId )
+                                || ( !('status' in request.resource.data) && !('workerId' in request.resource.data) )
+                              )
+                          )
+                      );
+
+        // Delete: only admin
+        allow delete: if isSignedIn() && isAdmin();
       }
     }
 
-    // Allow authenticated users to read and write ONLY their own cart (legacy path)
-    match /carts/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // -----------------------
+    // top-level carts (alternate flow)
+    // -----------------------
+    match /carts/{cartId} {
+      allow read, write: if isSignedIn() && (request.auth.uid == cartId || isAdmin());
     }
 
-    // Optional: Protect 'orders' if used (legacy root collection)
-    match /orders/{orderId} {
-      allow create: if request.auth != null;
-      allow read, update, delete: if request.auth != null
-                                  && request.auth.uid == resource.data.userId;
+    // -----------------------
+    // workers collection
+    // -----------------------
+    match /workers/{workerId} {
+      // create: worker themself or admin (initial registration)
+      allow create: if isSignedIn() && (request.auth.uid == workerId || isAdmin());
+
+      // read: admin, any worker (directory), or the worker themself
+      allow read: if isSignedIn() && (isAdmin() || isWorker() || request.auth.uid == workerId);
+
+      // update: only the worker themself or admin; however disallow client from editing server-only fields
+      allow update: if isSignedIn() && (isAdmin() || request.auth.uid == workerId)
+                    && !( 'onboardedAt' in request.resource.data )  // example server-set field
+                    ;
+
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    // -----------------------
+    // services collection
+    // -----------------------
+    match /services/{serviceId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn() && isAdmin();
+    }
+
+    // -----------------------
+    // offers collection
+    // -----------------------
+    match /offers/{offerId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn() && isAdmin();
+    }
+
+    // -----------------------
+    // payments collection — CLIENTS SHOULD NOT WRITE HERE
+    // Prefer Cloud Functions (admin SDK) to write payment records.
+    // -----------------------
+    match /payments/{paymentId} {
+      // reads: admin, or owner of associated order (if you store orderOwner)
+      allow read: if isSignedIn() && (isAdmin() || (resource.data.orderOwner == request.auth.uid));
+
+      // deny client writes — Cloud Functions (admin SDK) can create/update payments
+      allow create, update, delete: if false;
+    }
+
+    // -----------------------
+    // admins collection — admin-only
+    // -----------------------
+    match /admins/{adminId} {
+      // reading admin list is admin-only
+      allow read: if isSignedIn() && isAdmin();
+      allow create, update, delete: if isSignedIn() && isAdmin();
+    }
+
+    // -----------------------
+    // audit_logs — admin can read; client writes discouraged
+    // Cloud Functions (admin SDK) should write audit logs.
+    // -----------------------
+    match /audit_logs/{logId} {
+      allow read: if isSignedIn() && isAdmin();
+      // allow admin client writes for convenience but ideally Cloud Functions write logs
+      allow create: if isSignedIn() && isAdmin();
+      allow update, delete: if isSignedIn() && isAdmin();
+    }
+
+    // -----------------------
+    // Default: deny everything else
+    // -----------------------
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

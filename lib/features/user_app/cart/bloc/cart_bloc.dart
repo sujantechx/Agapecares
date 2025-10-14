@@ -1,5 +1,6 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import '../../../../core/models/offer_model.dart';
 import '../../../../shared/models/offer_model.dart';
 import '../../data/repositories/offer_repository.dart';
 import '../data/models/cart_item_model.dart';

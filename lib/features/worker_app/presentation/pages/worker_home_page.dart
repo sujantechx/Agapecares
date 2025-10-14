@@ -210,7 +210,13 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
           IconButton(
             icon: const Icon(Icons.person),
             onPressed: () {
-              Navigator.of(context).pushNamed(AppRoutes.workerProfile);
+              // Navigate to worker profile using GoRouter if available
+              final go = (context as dynamic).go as void Function(String);
+              try {
+                go(AppRoutes.workerProfile);
+              } catch (_) {
+                Navigator.of(context).pushNamed(AppRoutes.workerProfile);
+              }
             },
           )
         ],
@@ -299,7 +305,12 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
                   const SizedBox(height: 12),
                   ElevatedButton.icon(
                     onPressed: () {
-                      Navigator.of(context).pushNamed(AppRoutes.workerOrders);
+                      final go = (context as dynamic).go as void Function(String);
+                      try {
+                        go(AppRoutes.workerOrders);
+                      } catch (_) {
+                        Navigator.of(context).pushNamed(AppRoutes.workerOrders);
+                      }
                     },
                     icon: const Icon(Icons.list_alt),
                     label: const Text('View Orders'),
@@ -354,7 +365,12 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
                                   subtitle: Text('${o.userName} • ₹${o.total.toStringAsFixed(2)}'),
                                   trailing: Text(o.orderStatus),
                                   onTap: () {
-                                    Navigator.of(context).pushNamed(AppRoutes.workerOrders);
+                                    final go = (context as dynamic).go as void Function(String);
+                                    try {
+                                      go(AppRoutes.workerOrders);
+                                    } catch (_) {
+                                      Navigator.of(context).pushNamed(AppRoutes.workerOrders);
+                                    }
                                   },
                                 ),
                               );

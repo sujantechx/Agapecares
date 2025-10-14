@@ -33,8 +33,37 @@ class OrderRepository {
     final d = now.day.toString().padLeft(2, '0');
     final prefix = '$y$m$d';
 
+    // Primary approach: use a per-day counter document in Firestore to atomically
+    // reserve and increment the sequence. Collection: 'order_counters', doc id = YYYYMMDD.
     try {
-      // Query across all user subcollections for orders created today with orderNumber in the date range
+      final counterRef = _firestore.collection('order_counters').doc(prefix);
+      final seq = await _firestore.runTransaction<int>((tx) async {
+        final snap = await tx.get(counterRef);
+        int current = 0;
+        if (snap.exists) {
+          final data = snap.data();
+          if (data != null && data['seq'] is int) {
+            current = data['seq'] as int;
+          } else if (data != null && data['seq'] is String) {
+            current = int.tryParse(data['seq'] as String) ?? 0;
+          }
+        }
+        final next = current + 1;
+        tx.set(counterRef, {'seq': next, 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+        return next;
+      });
+
+      // Map seq to suffix where seq==1 => suffix 00100 baseline
+      final suffixNum = (seq + 99); // seq 1 -> 100
+      final suffix = suffixNum.toString().padLeft(5, '0');
+      return '$prefix$suffix';
+    } catch (e) {
+      debugPrint('[OrderRepository] generateOrderNumber transaction failed: $e');
+      // Fall back to prior best-effort logic (collectionGroup/local)
+    }
+
+    // Fallback: query remote collectionGroup for today's max orderNumber
+    try {
       final start = prefix;
       final end = '$prefix\uf8ff';
       final q = _firestore.collectionGroup('orders').where('orderNumber', isGreaterThanOrEqualTo: start).where('orderNumber', isLessThanOrEqualTo: end).orderBy('orderNumber', descending: true).limit(1);
@@ -79,31 +108,109 @@ class OrderRepository {
 
   /// Save order locally. Returns the saved local OrderModel (with localId set).
   Future<OrderModel> createOrder(OrderModel order, {bool uploadRemote = false}) async {
-    final saved = await _localDb.createOrder(order);
-    if (!uploadRemote) return saved;
-    // Attempt to upload immediately and await result so the checkout flow can
-    // know whether the remote document was created. If upload fails, we still
-    // return the local saved order and rely on SyncService to retry.
-    debugPrint('[OrderRepository] createOrder saved localId=${saved.localId} orderNumber=${saved.orderNumber} userId=${saved.userId} attempting remote upload...');
-    try {
-      final remoteId = await uploadOrder(saved);
-      if (remoteId != null) {
-        debugPrint('[OrderRepository] createOrder upload succeeded localId=${saved.localId} remoteId=$remoteId');
-        // Return a copy that reflects remote sync status
-        final updated = saved.copyWith(id: remoteId, isSynced: true);
-        // Update local DB to keep local row consistent
-        try {
-          await _localDb.updateOrder(updated);
-        } catch (e) {
-          debugPrint('[OrderRepository] failed to update local order row after upload: $e');
+    // If caller wants to upload immediately, prefer Firestore as the single source
+    // of truth: create the document remotely first and return a synced OrderModel.
+    if (uploadRemote) {
+      // Build upload map and ensure userId
+      var uploadData = order.toFirebaseJson();
+      // order.userId is non-nullable on OrderModel; trim and treat empty -> null
+      final candidate = order.userId.trim();
+      String? finalUserId = candidate.isNotEmpty ? candidate : null;
+      if (finalUserId == null) {
+        final fbUser = FirebaseAuth.instance.currentUser;
+        if (fbUser != null) {
+          final uid = fbUser.uid.trim();
+          final phone = fbUser.phoneNumber?.trim();
+          if (uid.isNotEmpty) {
+            finalUserId = uid;
+          } else if (phone != null && phone.isNotEmpty) {
+            finalUserId = phone;
+          }
         }
-        return updated;
-      } else {
-        debugPrint('[OrderRepository] createOrder upload returned null for localId=${saved.localId}; will remain local and be retried by SyncService');
       }
-    } catch (e, s) {
-      debugPrint('[OrderRepository] createOrder upload attempt threw: $e\n$s');
+
+      if (finalUserId == null || finalUserId.isEmpty) {
+        final msg = 'Cannot create remote order: userId is empty (no authenticated user).';
+        debugPrint('[OrderRepository] $msg');
+        throw Exception(msg);
+      }
+      uploadData['userId'] = finalUserId;
+
+      // Ensure orderNumber
+      try {
+        if (order.orderNumber.trim().isEmpty) {
+          uploadData['orderNumber'] = await generateOrderNumber();
+        } else {
+          uploadData['orderNumber'] = order.orderNumber;
+        }
+      } catch (e) {
+        debugPrint('[OrderRepository] failed to ensure orderNumber before remote create: $e');
+        uploadData['orderNumber'] = order.orderNumber;
+      }
+
+      if (uploadData['createdAt'] == null) uploadData['createdAt'] = Timestamp.now();
+
+      final userDoc = _firestore.collection('users').doc(finalUserId);
+      final ordersCol = userDoc.collection('orders');
+
+      // Ensure we don't create duplicate remote docs: try lookup by orderNumber + userId
+      try {
+        if (uploadData['orderNumber'] is String && (uploadData['orderNumber'] as String).isNotEmpty) {
+          final on = uploadData['orderNumber'] as String;
+          final q = await _firestore.collectionGroup('orders').where('orderNumber', isEqualTo: on).where('userId', isEqualTo: finalUserId).limit(1).get();
+          if (q.docs.isNotEmpty) {
+            final existingRef = q.docs.first.reference;
+            await existingRef.set(uploadData, SetOptions(merge: true));
+            final rid = q.docs.first.id;
+            debugPrint('[OrderRepository] createOrder found existing remote doc id=$rid, merged data');
+            return order.copyWith(id: rid, isSynced: true);
+          }
+        }
+      } catch (e) {
+        debugPrint('[OrderRepository] pre-create duplicate check failed: $e');
+      }
+
+      // Create new remote doc
+      final newDoc = ordersCol.doc();
+      final newRemoteId = newDoc.id;
+      uploadData['remoteId'] = newRemoteId;
+      try {
+        await newDoc.set(uploadData);
+        try {
+          await newDoc.update({'remoteId': newRemoteId});
+        } catch (_) {}
+        debugPrint('[OrderRepository] createOrder created remote doc id=$newRemoteId');
+        // Return an OrderModel representing the remote-synced order. Do not create a local sqlite row first.
+        return order.copyWith(id: newRemoteId, isSynced: true);
+      } catch (e) {
+        debugPrint('[OrderRepository] createOrder remote create failed: $e');
+        // As a last resort, fall back to saving locally so the order isn't lost.
+        // Ensure we have an orderNumber before local save to reduce duplicate creation later
+        if (order.orderNumber.trim().isEmpty) {
+          try {
+            final gen = await generateOrderNumber();
+            order = order.copyWith(orderNumber: gen);
+          } catch (e) {
+            debugPrint('[OrderRepository] fallback: failed to generate orderNumber: $e');
+          }
+        }
+        final saved = await _localDb.createOrder(order);
+        debugPrint('[OrderRepository] createOrder falling back to local save localId=${saved.localId}');
+        return saved;
+      }
     }
+
+    // Offline/default path: save locally and return the local record
+    // Ensure orderNumber exists for local saves so upload later can find and merge instead of creating duplicates
+    if (order.orderNumber.trim().isEmpty) {
+      try {
+        final gen = await generateOrderNumber();
+        order = order.copyWith(orderNumber: gen);
+      } catch (e) {
+        debugPrint('[OrderRepository] offline save: failed to generate orderNumber: $e');
+      }
+    }
+    final saved = await _localDb.createOrder(order);
     return saved;
   }
 
@@ -370,6 +477,8 @@ class OrderRepository {
             workerName: data['workerName'] as String?,
             acceptedAt: data['acceptedAt'] is Timestamp ? data['acceptedAt'] : null,
             createdAt: data['createdAt'] is Timestamp ? data['createdAt'] : Timestamp.now(),
+            rating: (data['rating'] is num) ? (data['rating'] as num).toDouble() : (data['rating'] is String ? double.tryParse('${data['rating']}') : null),
+            review: data['review'] as String?, orderNumber: '',
           );
         }).toList();
       } catch (e) {
@@ -411,6 +520,8 @@ class OrderRepository {
             workerName: data['workerName'] as String?,
             acceptedAt: data['acceptedAt'] is Timestamp ? data['acceptedAt'] : null,
             createdAt: data['createdAt'] is Timestamp ? data['createdAt'] : Timestamp.now(),
+            rating: (data['rating'] is num) ? (data['rating'] as num).toDouble() : (data['rating'] is String ? double.tryParse('${data['rating']}') : null),
+            review: data['review'] as String?, orderNumber: '',
           );
         }).toList();
       } catch (e) {
@@ -518,6 +629,8 @@ class OrderRepository {
           workerName: null,
           acceptedAt: null,
           createdAt: data['createdAt'] is Timestamp ? data['createdAt'] : Timestamp.now(),
+          rating: (data['rating'] is num) ? (data['rating'] as num).toDouble() : (data['rating'] is String ? double.tryParse('${data['rating']}') : null),
+          review: data['review'] as String?, orderNumber: '',
         ));
       }
       return incoming;
@@ -553,7 +666,7 @@ class OrderRepository {
         }
         if (docRef == null) return false;
         // Use transaction to ensure workerId is not already set (avoid double-accept)
-        final docRefNonNull = docRef as DocumentReference<Object?>;
+        final docRefNonNull = docRef;
         final success = await _firestore.runTransaction<bool>((tx) async {
           final snapshot = await tx.get(docRefNonNull);
           if (!snapshot.exists) return false;
@@ -619,6 +732,8 @@ class OrderRepository {
           workerName: data['workerName'] as String?,
           acceptedAt: data['acceptedAt'] is Timestamp ? data['acceptedAt'] : null,
           createdAt: data['createdAt'] is Timestamp ? data['createdAt'] : Timestamp.now(),
+          rating: (data['rating'] is num) ? (data['rating'] as num).toDouble() : (data['rating'] is String ? double.tryParse('${data['rating']}') : null),
+          review: data['review'] as String?, orderNumber: '',
         );
       }).toList();
     } catch (e) {
@@ -656,6 +771,70 @@ class OrderRepository {
       return true;
     } catch (e) {
       debugPrint('[OrderRepository] completeOrder failed: $e');
+      return false;
+    }
+  }
+
+  /// Submit rating and optional review for an order. Updates Firestore document
+  /// and local DB row if found. Returns true on success.
+  Future<bool> submitRatingForOrder({required OrderModel order, required double rating, String? review}) async {
+    try {
+      if (order.id != null && order.id!.isNotEmpty) {
+        DocumentReference? docRef;
+        try {
+          if (order.userId.trim().isNotEmpty) {
+            final candidate = _firestore.collection('users').doc(order.userId).collection('orders').doc(order.id);
+            final snap = await candidate.get();
+            if (snap.exists) docRef = candidate;
+          }
+        } catch (_) {}
+        if (docRef == null) {
+          final q = await _firestore.collectionGroup('orders').where(FieldPath.documentId, isEqualTo: order.id).get();
+          if (q.docs.isNotEmpty) docRef = _firestore.doc(q.docs.first.reference.path);
+        }
+        if (docRef != null) {
+          final updates = <String, dynamic>{'rating': rating, 'review': review ?? ''};
+          // Keep orderStatus as-is; if order is still pending we won't change it here.
+          await docRef.set(updates, SetOptions(merge: true));
+        }
+      }
+
+      // Update local DB
+      final updated = order.copyWith();
+      try {
+        // Since copyWith doesn't accept rating directly from older versions, create a manual copy
+        final localUpdated = OrderModel(
+           localId: updated.localId,
+           isSynced: updated.isSynced,
+           id: updated.id,
+           orderNumber: updated.orderNumber,
+           paymentStatus: updated.paymentStatus,
+           userId: updated.userId,
+           items: updated.items,
+           subtotal: updated.subtotal,
+           discount: updated.discount,
+           total: updated.total,
+           paymentMethod: updated.paymentMethod,
+           paymentId: updated.paymentId,
+           orderStatus: updated.orderStatus,
+           userName: updated.userName,
+           userEmail: updated.userEmail,
+           userPhone: updated.userPhone,
+           userAddress: updated.userAddress,
+           workerId: updated.workerId,
+           workerName: updated.workerName,
+           acceptedAt: updated.acceptedAt,
+           rating: rating,
+           review: review,
+           createdAt: updated.createdAt,
+         );
+         await _localDb.updateOrder(localUpdated);
+       } catch (e) {
+         // ignore local update failure
+       }
+      return true;
+    } catch (e) {
+      debugPrint('[OrderRepository] submitRatingForOrder failed: $e');
       return false;
     }
   }

@@ -39,7 +39,7 @@ class ServiceCard extends StatelessWidget {
           children: [
             Icon(
               _getIconForService(service.iconUrl),
-              color: AppTheme.primaryColor,
+              // color: AppTheme.primaryColor,
               size: 40,
             ),
             const SizedBox(width: 16),
@@ -66,7 +66,7 @@ class ServiceCard extends StatelessWidget {
             Text(
               '\$${service.price.toStringAsFixed(2)}',
               style: const TextStyle(
-                color: AppTheme.accentColor,
+                // color: AppTheme.accentColor,
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
               ),

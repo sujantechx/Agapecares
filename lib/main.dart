@@ -6,9 +6,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import 'injection_container.dart';
-import 'routes/app_router.dart';
-import 'shared/theme/app_theme.dart';
+import 'app/app.dart';
+import 'app/routes/app_router.dart';
+import 'app/theme/app_theme.dart';
+
+import 'core/services/session_service.dart';
+import 'core/api/auth_service.dart';
 
 /// App entrypoint
 /// - Initializes DI (repositories/services), Firebase and global error handlers.
@@ -40,6 +43,26 @@ Future<void> main() async {
     print('Firebase initialization error: $e\n$stack');
     rethrow;
   }
+
+  // Initialize session service (local prefs) early so we can cache user profile.
+  final session = SessionService();
+  await session.init();
+
+  // Listen for auth state changes and persist/clear session user accordingly.
+  final authService = AuthService();
+  FirebaseAuth.instance.authStateChanges().listen((user) async {
+    if (user == null) {
+      await session.clear();
+    } else {
+      // Try to fetch Firestore user profile and save it locally
+      try {
+        final model = await authService.fetchUserModel(user.uid);
+        if (model != null) await session.saveUser(model);
+      } catch (_) {
+        // ignore errors; session may remain stale until next successful fetch
+      }
+    }
+  });
 
   // Initialize dependency injection and receive repository providers
   final repoProviders = await init();

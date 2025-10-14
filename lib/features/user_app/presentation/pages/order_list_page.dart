@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../app/routes/app_routes.dart';
 import '../../../../features/user_app/data/repositories/order_repository.dart';
 import '../../../../shared/models/order_model.dart';
 import '../../../../shared/services/local_database_service.dart';
+import 'package:flutter/services.dart';
 
 class OrderListPage extends StatefulWidget {
   const OrderListPage({Key? key}) : super(key: key);
@@ -143,8 +145,17 @@ class _OrderListPageState extends State<OrderListPage> {
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: () {
-                  // Navigate to login - keep it simple and use route constant if available
-                  Navigator.of(context).pushNamed('/login');
+                  // Navigate to login - use centralized route constant and GoRouter
+                  // ignore: deprecated_member_use_from_same_package
+                  // Using context.go from go_router package
+                  // Replace at runtime
+                  final go = (context as dynamic).go as void Function(String);
+                  try {
+                    go(AppRoutes.login);
+                  } catch (_) {
+                    // Fallback: pushNamed if go_router not available at runtime
+                    Navigator.of(context).pushNamed(AppRoutes.login);
+                  }
                 },
                 child: const Text('Login'),
               )
@@ -306,6 +317,71 @@ class _OrderListPageState extends State<OrderListPage> {
                             ],
                           ),
                           const SizedBox(height: 8),
+                          // If order is complete and not yet rated, allow user to submit rating/review
+                          if (o.orderStatus.toLowerCase() == 'complete' && (o.rating == null))
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                ElevatedButton(
+                                  onPressed: () async {
+                                    final repo = context.read<OrderRepository>();
+                                    // show rating dialog
+                                    final result = await showDialog<Map<String, dynamic>>(
+                                      context: context,
+                                      builder: (ctx) {
+                                        int stars = 5;
+                                        final reviewCtr = TextEditingController();
+                                        return StatefulBuilder(builder: (ctx, setState) {
+                                          return AlertDialog(
+                                            title: const Text('Rate this service'),
+                                            content: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Row(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: List.generate(5, (i) {
+                                                    final idx = i + 1;
+                                                    return IconButton(
+                                                      icon: Icon(idx <= stars ? Icons.star : Icons.star_border, color: Colors.amber),
+                                                      onPressed: () { setState(() => stars = idx); },
+                                                    );
+                                                  }),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                TextField(controller: reviewCtr, decoration: const InputDecoration(labelText: 'Optional review')),
+                                              ],
+                                            ),
+                                            actions: [
+                                              TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+                                              ElevatedButton(
+                                                onPressed: () {
+                                                  Navigator.of(ctx).pop({'stars': stars.toDouble(), 'review': reviewCtr.text.trim()});
+                                                },
+                                                child: const Text('Submit'),
+                                              ),
+                                            ],
+                                          );
+                                        });
+                                      },
+                                    );
+
+                                    if (result != null && result['stars'] != null) {
+                                      final starsVal = result['stars'] as double;
+                                      final review = result['review'] as String?;
+                                      final ok = await repo.submitRatingForOrder(order: o, rating: starsVal, review: review);
+                                      if (ok) {
+                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Thank you for the rating')));
+                                        _loadOrders();
+                                        setState(() {});
+                                      } else {
+                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to submit rating')));
+                                      }
+                                    }
+                                  },
+                                  child: const Text('Confirm & Rate'),
+                                ),
+                              ],
+                            ),
                         ],
                       ),
                     )

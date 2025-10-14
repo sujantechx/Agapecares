@@ -14,7 +14,7 @@ import '../../data/repositories/booking_repository.dart';
 import 'checkout_event.dart';
 import 'checkout_state.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../cart/data/models/cart_item_model.dart';
+import '../../../../shared/models/cart_item_model.dart';
 
 /// CheckoutBloc orchestrates UI -> local DB -> Firestore -> payment flows.
 /// Why: keep flows testable, decoupled and offline-friendly.
@@ -86,82 +86,64 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
         createdAt: Timestamp.now(),
       );
 
-      // Create local order only (do NOT upload remotely yet). We'll upload
-      // after payment confirmation (Razorpay) or COD confirmation to avoid
-      // creating Firestore documents for incomplete/abandoned checkouts.
-      final savedLocal = await _orderRepo.createOrder(order, uploadRemote: false);
-
-      // If Razorpay flow
+      // Prefer Firestore as primary storage on confirmed checkouts. Do not save
+      // a local-only order upfront to avoid duplicate remote documents.
+      // For Razorpay we will create the remote order only after payment success.
+      // For COD we create the remote order immediately since the user confirmed.
       if (event.paymentMethod == 'razorpay') {
         debugPrint('[CheckoutBloc] Starting Razorpay payment for orderNumber=$orderNumber total=${event.request.totalAmount}');
-        final localOnly = savedLocal; // localOnly alias
         final res = await _razorpayRepo.processPayment(event.request);
         debugPrint('[CheckoutBloc] Razorpay result for orderNumber=$orderNumber: $res');
         if (res is PaymentSuccess) {
-          // update local-only order with payment info and mark success
-          final updated = localOnly.copyWith(paymentId: res.paymentId, paymentStatus: 'success');
-          await _orderRepo.updateLocalOrder(updated);
-          String? remoteId;
+          // Build order with payment details and create remote doc (preferred)
+          final paidOrder = order.copyWith(paymentId: res.paymentId, paymentStatus: 'success');
+          OrderModel savedRemote;
           try {
-            // Attempt to upload the paid order to Firestore now that payment succeeded
-            remoteId = await _orderRepo.uploadOrder(updated);
+            savedRemote = await _orderRepo.createOrder(paidOrder, uploadRemote: true);
           } catch (e) {
-            debugPrint('[CheckoutBloc] uploadOrder threw after Razorpay: $e');
-            remoteId = null;
+            debugPrint('[CheckoutBloc] createOrder(uploadRemote:true) failed after Razorpay: $e');
+            // Fallback: try uploadOrder on a local save
+            final fallback = await _orderRepo.createOrder(paidOrder, uploadRemote: false);
+            try {
+              await _orderRepo.uploadOrder(fallback);
+            } catch (_) {}
+            savedRemote = fallback;
           }
 
-          // Clear cart locally regardless of remote upload success, but surface messages accordingly
+          // Clear cart and create booking
           await _cartRepo.clearCart();
           try {
-            await _bookingRepo.createBooking(updated);
+            await _bookingRepo.createBooking(savedRemote);
           } catch (_) {}
 
-          if (remoteId != null) {
-            emit(state.copyWith(isInProgress: false, successMessage: 'Payment successful and order synced.'));
-          } else {
-            emit(state.copyWith(isInProgress: false, successMessage: 'Payment successful. Order will be uploaded when online.'));
-          }
+          emit(state.copyWith(isInProgress: false, successMessage: 'Payment successful and order processed.'));
           return;
         } else if (res is PaymentFailure) {
-          // mark local as failed
-          if (localOnly.localId != null) {
-            await _orderRepo.markLocalOrderFailed(localOnly.localId!, reason: res.message);
-          }
           emit(state.copyWith(isInProgress: false, errorMessage: 'Payment failed: ${res.message}'));
           return;
         }
       } else {
-        // COD
+        // COD: user confirmed cash-on-delivery - create remote order now
         final r = await _codRepo.processCod(event.request);
         if (r is PaymentSuccess) {
-          // COD succeeded from app perspective (order accepted) — payment remains pending until delivery.
-          final updated = savedLocal.copyWith(paymentStatus: 'pending', orderStatus: 'pending');
-          await _orderRepo.updateLocalOrder(updated);
-          String? remoteId;
+          OrderModel savedRemote;
           try {
-            // Upload now that user confirmed COD
-            remoteId = await _orderRepo.uploadOrder(updated);
+            savedRemote = await _orderRepo.createOrder(order, uploadRemote: true);
           } catch (e) {
-            debugPrint('[CheckoutBloc] uploadOrder threw (COD): $e');
-            remoteId = null;
+            debugPrint('[CheckoutBloc] createOrder(uploadRemote:true) failed (COD): $e');
+            // fallback to local save
+            savedRemote = await _orderRepo.createOrder(order, uploadRemote: false);
+            try {
+              await _orderRepo.syncUnsynced();
+            } catch (_) {}
           }
-          debugPrint('[CheckoutBloc] COD order localId=${savedLocal.localId} remoteId=$remoteId');
-          // Ensure any remaining unsynced orders are uploaded promptly
-          try {
-            await _orderRepo.syncUnsynced();
-            debugPrint('[CheckoutBloc] syncUnsynced called after COD');
-          } catch (e) {
-            debugPrint('[CheckoutBloc] syncUnsynced failed: $e');
-          }
+
           await _cartRepo.clearCart();
           try {
-            await _bookingRepo.createBooking(updated);
+            await _bookingRepo.createBooking(savedRemote);
           } catch (_) {}
-          if (remoteId != null) {
-            emit(state.copyWith(isInProgress: false, successMessage: 'Order placed (COD) and synced.'));
-          } else {
-            emit(state.copyWith(isInProgress: false, successMessage: 'Order placed (COD). Will sync when online.'));
-          }
+
+          emit(state.copyWith(isInProgress: false, successMessage: 'Order placed (COD).'));
           return;
         }
       }

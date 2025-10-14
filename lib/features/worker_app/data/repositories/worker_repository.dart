@@ -32,4 +32,39 @@ class WorkerRepository {
       return false;
     }
   }
+
+  /// Compute worker stats: completed job count, total earned (sum of order.total), and average rating.
+  Future<Map<String, dynamic>> fetchWorkerStats(String workerId) async {
+    try {
+      final q = await _firestore.collectionGroup('orders').where('workerId', isEqualTo: workerId).where('orderStatus', isEqualTo: 'complete').get();
+      final docs = q.docs;
+      double total = 0.0;
+      int count = docs.length;
+      double ratingSum = 0.0;
+      int ratingCount = 0;
+      for (final d in docs) {
+        final data = d.data();
+        final t = (data['total'] is num) ? (data['total'] as num).toDouble() : 0.0;
+        total += t;
+        final r = data['rating'];
+        if (r != null) {
+          try {
+            double rv;
+            if (r is num) {
+              rv = r.toDouble();
+            } else {
+              rv = double.parse(r.toString());
+            }
+            ratingSum += rv;
+            ratingCount += 1;
+          } catch (_) {}
+        }
+      }
+      final avgRating = ratingCount > 0 ? (ratingSum / ratingCount) : null;
+      return {'completedCount': count, 'totalEarned': total, 'avgRating': avgRating};
+    } catch (e) {
+      debugPrint('[WorkerRepository] fetchWorkerStats failed: $e');
+      return {'completedCount': 0, 'totalEarned': 0.0, 'avgRating': null};
+    }
+  }
 }

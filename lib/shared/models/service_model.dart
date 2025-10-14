@@ -1,11 +1,2 @@
-import 'package:equatable/equatable.dart';
+export 'package:agapecares/core/models/service_model.dart';
 
-class ServiceModel extends Equatable {
-  final String title;
-  final String imagePath;
-
-  const ServiceModel({required this.title, required this.imagePath});
-
-  @override
-  List<Object?> get props => [title, imagePath];
-}

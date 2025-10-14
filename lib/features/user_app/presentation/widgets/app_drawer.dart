@@ -4,8 +4,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:agapecares/shared/services/session_service.dart';
 import 'package:provider/provider.dart';
 import 'package:agapecares/shared/models/user_model.dart';
-import 'package:agapecares/routes/app_routes.dart';
 
+
+import '../../../../app/routes/app_routes.dart';
 import '../../../../shared/theme/app_theme.dart'; // Import the new package
 
 class AppDrawer extends StatelessWidget {
@@ -75,12 +76,11 @@ class AppDrawer extends StatelessWidget {
               fit: BoxFit.cover,
             ),
           ),
-          const Text(
+          Text(
             'Agapecares',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: AppTheme.textColor,
             ),
           ),
         ],
@@ -95,7 +95,6 @@ class AppDrawer extends StatelessWidget {
       child: Text(
         title,
         style: const TextStyle(
-          color: AppTheme.subtitleColor,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -104,7 +103,7 @@ class AppDrawer extends StatelessWidget {
 
   Widget _buildDrawerItem({required BuildContext context, required IconData icon, required String text, required GestureTapCallback onTap}) {
     return ListTile(
-      leading: Icon(icon, color: AppTheme.textColor),
+      leading: Icon(icon,),
       title: Text(text, style: const TextStyle(fontSize: 16)),
       onTap: () {
         Navigator.of(context).pop(); // Close the drawer

@@ -9,6 +9,11 @@ class ServiceRepositoryImpl implements ServiceRepository {
   ServiceRepositoryImpl({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
+  /// Create a new service document in the `services` collection.
+  ///
+  /// Inputs: [service] - a fully formed ServiceModel
+  /// Output: Future<void> that completes when Firestore write succeeds.
+  /// Errors: Firestore exceptions may be thrown by the caller.
   @override
   Future<void> createService(ServiceModel service) async {
     await _firestore.collection('services').add(service.toMap());
@@ -29,15 +34,40 @@ class ServiceRepositoryImpl implements ServiceRepository {
     });
   }
 
+  /// Fetch all services from Firestore.
+  ///
+  /// Steps:
+  ///  1. Query the `services` collection for documents.
+  ///  2. Convert each document's data into a strongly typed [ServiceModel]
+  ///     using `ServiceModel.fromMap`.
+  ///  3. Return the list to the caller.
+  ///
+  /// Notes and error handling:
+  ///  - If Firestore throws (network issues, permission denied, etc.) the
+  ///    exception is propagated to the caller so the UI or BLoC can surface
+  ///    an appropriate message. The BLoC currently maps exceptions into a
+  ///    generic error state.
+  ///  - This method performs a one-time read (.get()). If you need real-time
+  ///    updates use a snapshot listener (collection.snapshots()).
   @override
   Future<List<ServiceModel>> fetchServices() async {
-    final snapshot = await _firestore.collection('services').get();
-    return snapshot.docs
-        .map((doc) => ServiceModel.fromMap({
-              ...doc.data(),
-              'id': doc.id,
-            }))
-        .toList();
+    try {
+      // Step 1: Query Firestore `services` collection for all documents.
+      final snapshot = await _firestore.collection('services').get();
+
+      // Step 2: Map each DocumentSnapshot into a strongly-typed ServiceModel.
+      return snapshot.docs
+          .map((doc) => ServiceModel.fromMap({
+                ...doc.data(),
+                'id': doc.id,
+              }))
+          .toList();
+    } catch (e) {
+      // It's important to surface errors to the caller. However, returning an
+      // empty list here could hide transient problems. We rethrow the error so
+      // the BLoC can emit an error state and the UI can show a retry option.
+      rethrow;
+    }
   }
 
   @override

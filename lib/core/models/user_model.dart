@@ -51,7 +51,8 @@ class UserModel {
       'photoUrl': photoUrl,
       'addresses': addresses,
       'isVerified': isVerified,
-      'createdAt': createdAt,
+      // Note: Do NOT include 'createdAt' here — timestamps are server-managed and the
+      // security rules disallow client-supplied createdAt/updatedAt fields.
     };
   }
 
@@ -83,7 +84,7 @@ class UserModel {
       'photoUrl': photoUrl,
       'addresses': addresses,
       'isVerified': isVerified,
-      'createdAt': createdAt,
+      // 'createdAt' intentionally omitted for client writes
     };
   }
 

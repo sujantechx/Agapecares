@@ -8,7 +8,7 @@ import 'admin_routes.dart';
 
 class AppRouter {
   // Lightweight, dependency-free router for now
-  static GoRouter createRouter({String initialLocation = AppRoutes.home}) {
+  static GoRouter createRouter({String initialLocation = AppRoutes.splash}) {
     return GoRouter(
       initialLocation: initialLocation,
       routes: [
@@ -21,15 +21,5 @@ class AppRouter {
   }
 }
 
-// Retain the class below if you later add auth-gated routing. Commented out imports were removed.
-// class GoRouterRefreshStream extends ChangeNotifier {
-//   late final StreamSubscription<dynamic> _subscription;
-//   GoRouterRefreshStream(Stream<dynamic> stream) {
-//     _subscription = stream.asBroadcastStream().listen((_) => notifyListeners());
-//   }
-//   @override
-//   void dispose() {
-//     _subscription.cancel();
-//     super.dispose();
-//   }
-// }
+
+

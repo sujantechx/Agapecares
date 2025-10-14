@@ -5,7 +5,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:agapecares/core/models/cart_item_model.dart';
 import 'package:agapecares/core/models/service_option_model.dart';
-import 'package:agapecares/features/user_app/cart/data/repository/cart_repository.dart';
 import 'package:agapecares/features/user_app/features/data/fixed_data/all_services.dart';
 
 import '../features/user_app/features/cart/data/repositories/cart_repository.dart';
@@ -23,7 +22,7 @@ class _CartDebugPageState extends State<CartDebugPage> {
 
   Future<void> _reload(CartRepository repo) async {
     setState(() => _loading = true);
-    final items = await repo.getCartItems(repo);
+    final items = await repo.getCartItems();
     setState(() {
       _items = items;
       _loading = false;
@@ -37,7 +36,7 @@ class _CartDebugPageState extends State<CartDebugPage> {
       if (service == null) throw Exception('Sample service not found');
       final ServiceOption option = service.options.first;
       final id = 'debug_${service.id}_${option.id}';
-      final item = CartItemModel(
+      final debugItem = CartItemModel(
         id: id,
         serviceId: service.id,
         serviceName: service.name,
@@ -45,6 +44,14 @@ class _CartDebugPageState extends State<CartDebugPage> {
         selectedOption: option,
         quantity: 1,
       );
+      // Persist the debug item into the repository so the cart shows it
+      try {
+        await repo.addItemToCart(debugItem);
+        // Add to local view immediately so the debug UI shows the new item.
+        setState(() => _items.insert(0, debugItem));
+      } catch (e) {
+        debugPrint('Failed to add debug item: $e');
+      }
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Added debug item')));
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Add failed: $e')));

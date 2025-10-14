@@ -17,11 +17,11 @@ abstract class AuthRepository {
 
 class AuthRepositoryImpl implements AuthRepository {
   final AuthRemoteDataSource remoteDataSource;
-  final SessionService sessionService; // Add SessionService
+  final SessionService? sessionService; // Optional SessionService
 
   AuthRepositoryImpl({
     required this.remoteDataSource,
-    required this.sessionService, // Inject SessionService
+    this.sessionService, // Inject optional SessionService
   });
 
   @override
@@ -38,8 +38,10 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<Either<Failure, UserModel>> verifyOtp({required String otp}) async {
     try {
       final userModel = await remoteDataSource.verifyOtp(otp);
-      // On successful verification, save the user session
-      await sessionService.saveUser(userModel);
+      // On successful verification, save the user session if a SessionService was provided
+      try {
+        if (sessionService != null) await sessionService!.saveUser(userModel);
+      } catch (_) {}
       return Right(userModel);
     } catch (e) {
       return Left(Failure('Failed to verify OTP: ${e.toString()}'));

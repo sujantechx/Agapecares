@@ -38,7 +38,6 @@ dependencies:
   # OTP Pin Field
   pinput: ^3.0.1
 
-
   # Routing
   go_router: ^16.2.4
 

@@ -64,7 +64,7 @@ class _RegisterPageState extends State<RegisterPage> {
               'email': _emailCtrl.text.trim(),
               'phoneNumber': _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
               'role': _role,
-              'createdAt': FieldValue.serverTimestamp(),
+              // createdAt removed: server-side should set timestamps
             });
           } on FirebaseException catch (e) {
             // Permission denied or other Firestore errors -- inform user but continue
@@ -82,7 +82,7 @@ class _RegisterPageState extends State<RegisterPage> {
           // Seed cart from remote if available and notify bloc
           try {
             final cartRepo = context.read<CartRepository>();
-            await cartRepo.getCartItems(cartRepo);
+            await cartRepo.getCartItems();
           } catch (_) {}
           try {
             context.read<CartBloc>().add(CartStarted());
@@ -90,10 +90,15 @@ class _RegisterPageState extends State<RegisterPage> {
         } catch (_) {}
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registered successfully')));
         // Navigate to the appropriate dashboard based on role
-        if (_role == 'worker') {
-          context.go(AppRoutes.workerHome);
+        if (Navigator.of(context).canPop()) {
+          // If this page was pushed from Login and is awaiting a result, pop with success so the caller can show a message.
+          context.pop(true);
         } else {
-          context.go(AppRoutes.home);
+          if (_role == 'worker') {
+            context.go(AppRoutes.workerHome);
+          } else {
+            context.go(AppRoutes.home);
+          }
         }
       }
     } catch (e) {
@@ -130,7 +135,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   'email': _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
                   'phoneNumber': user.phoneNumber,
                   'role': _role,
-                  'createdAt': FieldValue.serverTimestamp(),
+                  // createdAt removed: server-side should set timestamps
                 }, SetOptions(merge: true));
               } on FirebaseException catch (e) {
                 debugPrint('Firestore write failed: ${e.code} ${e.message}');
@@ -147,7 +152,7 @@ class _RegisterPageState extends State<RegisterPage> {
               // Seed cart and notify bloc
               try {
                 final cartRepo = context.read<CartRepository>();
-                await cartRepo.getCartItems(cartRepo);
+                await cartRepo.getCartItems();
               } catch (_) {}
               try {
                 context.read<CartBloc>().add(CartStarted());
@@ -160,10 +165,14 @@ class _RegisterPageState extends State<RegisterPage> {
           } catch (_) {}
           if (!mounted) return;
           // Route based on the role selected during registration
-          if (_role == 'worker') {
-            context.go(AppRoutes.workerHome);
+          if (Navigator.of(context).canPop()) {
+            context.pop(true);
           } else {
-            context.go(AppRoutes.home);
+            if (_role == 'worker') {
+              context.go(AppRoutes.workerHome);
+            } else {
+              context.go(AppRoutes.home);
+            }
           }
         },
         verificationFailed: (e) {
@@ -171,13 +180,29 @@ class _RegisterPageState extends State<RegisterPage> {
         },
         codeSent: (verificationId, resendToken) {
           // Navigate to phone verify page with verificationId and phone
-          context.push(AppRoutes.phoneVerify, extra: {
-            'verificationId': verificationId,
-            'phone': phone,
-            'name': _nameCtrl.text.trim(),
-            'email': _emailCtrl.text.trim(),
-            'role': _role,
-          });
+          // Await the pushed route so we know if verification succeeded and can
+          // return success to the caller (Login page).
+          () async {
+            final result = await context.push(AppRoutes.phoneVerify, extra: {
+              'verificationId': verificationId,
+              'phone': phone,
+              'name': _nameCtrl.text.trim(),
+              'email': _emailCtrl.text.trim(),
+              'role': _role,
+            });
+            if (result == true) {
+              // Phone verification completed inside OTP screen. Propagate success back to Login.
+              if (Navigator.of(context).canPop()) {
+                context.pop(true);
+              } else {
+                if (_role == 'worker') {
+                  context.go(AppRoutes.workerHome);
+                } else {
+                  context.go(AppRoutes.home);
+                }
+              }
+            }
+          }();
         },
         codeAutoRetrievalTimeout: (verificationId) {},
       );
@@ -198,24 +223,20 @@ class _RegisterPageState extends State<RegisterPage> {
           key: _formKey,
           child: Column(
             children: [
-              // Role selector: user or worker
+              // Role selector: user or worker (ChoiceChips - no deprecated APIs)
               Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Expanded(
-                    child: RadioListTile<String>(
-                      title: const Text('User'),
-                      value: 'user',
-                      groupValue: _role,
-                      onChanged: (v) => setState(() => _role = v ?? 'user'),
-                    ),
+                  ChoiceChip(
+                    label: const Text('User'),
+                    selected: _role == 'user',
+                    onSelected: (s) => setState(() => _role = 'user'),
                   ),
-                  Expanded(
-                    child: RadioListTile<String>(
-                      title: const Text('Worker'),
-                      value: 'worker',
-                      groupValue: _role,
-                      onChanged: (v) => setState(() => _role = v ?? 'user'),
-                    ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Worker'),
+                    selected: _role == 'worker',
+                    onSelected: (s) => setState(() => _role = 'worker'),
                   ),
                 ],
               ),

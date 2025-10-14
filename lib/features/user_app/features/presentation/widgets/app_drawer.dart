@@ -3,14 +3,11 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../../../app/routes/app_routes.dart';
 import '../../../../../core/models/user_model.dart';
 import '../../../../../core/services/session_service.dart';
-
-
-
-
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -58,6 +55,32 @@ class AppDrawer extends StatelessWidget {
           _buildDrawerItem(context: context, icon: Icons.phone_outlined, text: 'Contact Us', onTap: () => context.push('/contact-us')),
           _buildDrawerItem(context: context, icon: Icons.email_outlined, text: 'Email', onTap: _launchEmail), // Use the special function here
           _buildDrawerItem(context: context, icon: Icons.description_outlined, text: 'Terms of Use', onTap: () => context.push('/terms')),
+          const Divider(),
+          // Logout option for signed-in users
+          Builder(builder: (ctx) {
+            try {
+              final session = ctx.read<SessionService>();
+              final u = session.getUser();
+              if (u != null) {
+                return ListTile(
+                  leading: const Icon(Icons.logout_outlined),
+                  title: const Text('Logout'),
+                  onTap: () async {
+                    Navigator.of(ctx).pop();
+                    // Clear session then sign out
+                    try {
+                      await session.clear();
+                    } catch (_) {}
+                    try {
+                      await FirebaseAuth.instance.signOut();
+                    } catch (_) {}
+                    if (ctx.mounted) GoRouter.of(ctx).go(AppRoutes.login);
+                  },
+                );
+              }
+            } catch (_) {}
+            return const SizedBox.shrink();
+          }),
         ],
       ),
     );

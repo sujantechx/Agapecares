@@ -17,6 +17,7 @@ import 'core/api/auth_service.dart';
 /// - Initializes DI (repositories/services), Firebase and global error handlers.
 /// - Passes repository providers into the widget tree, then builds BLoCs from those providers.
 Future<void> main() async {
+  debugPrint('MAIN_DEBUG: main() starting');
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize Firebase first so any repository that depends on Firestore
@@ -25,32 +26,33 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    debugPrint('MAIN_DEBUG: Firebase.initializeApp completed');
     // Ensure FirebaseAuth has initialized and emitted initial auth state.
-    // This avoids calling Firestore with an unready auth instance which can
-    // lead to empty or invalid user ids during early writes.
     try {
       // Wait for the first auth state event (may be immediate). Time out after a short period
       await FirebaseAuth.instance.authStateChanges().first.timeout(const Duration(seconds: 5));
+      debugPrint('MAIN_DEBUG: FirebaseAuth initial authStateChanges received');
     } catch (_) {
+      debugPrint('MAIN_DEBUG: FirebaseAuth initial wait timed out or failed');
       // If auth didn't become ready quickly, continue; downstream code must still guard for null user.
     }
   } catch (e, stack) {
-    // If Firebase fails to initialize, it's unsafe to create repositories
-    // that depend on Firestore. Re-throw or exit early depending on desired
-    // behavior; here we rethrow to avoid creating repos that call
-    // `FirebaseFirestore.instance` before Firebase is ready.
+    debugPrint('MAIN_DEBUG: Firebase initialization error: $e');
     // ignore: avoid_print
     print('Firebase initialization error: $e\n$stack');
     rethrow;
   }
 
+  debugPrint('MAIN_DEBUG: initializing SessionService in main');
   // Initialize session service (local prefs) early so we can cache user profile.
   final session = SessionService();
   await session.init();
+  debugPrint('MAIN_DEBUG: SessionService initialized');
 
   // Listen for auth state changes and persist/clear session user accordingly.
   final authService = AuthService();
   FirebaseAuth.instance.authStateChanges().listen((user) async {
+    debugPrint('MAIN_DEBUG: authStateChanges event: ${user?.uid}');
     if (user == null) {
       await session.clear();
     } else {
@@ -64,15 +66,19 @@ Future<void> main() async {
     }
   });
 
+  debugPrint('MAIN_DEBUG: calling init() to register DI');
   // Initialize dependency injection and receive repository providers
   final repoProviders = await init();
+  debugPrint('MAIN_DEBUG: init() completed, repoProviders.length=${repoProviders.length}');
 
   // Basic error handlers
   FlutterError.onError = (details) {
+    debugPrint('MAIN_DEBUG: FlutterError: ${details.exceptionAsString()}');
     // ignore: avoid_print
     print('FlutterError: ${details.exceptionAsString()}');
   };
   PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('MAIN_DEBUG: Uncaught error: $error');
     // ignore: avoid_print
     print('Uncaught error: $error\n$stack');
     return true;
@@ -81,10 +87,6 @@ Future<void> main() async {
   runApp(MyApp(repositoryProviders: repoProviders));
 }
 
-/// MyApp is intentionally simple and scalable:
-/// - Accepts `RepositoryProvider`s created at startup.
-/// - Mounts them at the top of the widget tree so any child can `context.read<T>()`.
-/// - Builds BLoCs using `buildBlocs(context)` after the repositories are mounted.
 class MyApp extends StatelessWidget {
   final List<RepositoryProvider> repositoryProviders;
 
@@ -95,6 +97,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('MAIN_DEBUG: MyApp.build repositoryProviders.length=${repositoryProviders.length}');
     // If no repository providers are provided (e.g. during lightweight tests),
     // skip wrapping with MultiRepositoryProvider and MultiBlocProvider to
     // avoid provider assertion errors. This keeps `MyApp()` simple and
@@ -114,6 +117,7 @@ class MyApp extends StatelessWidget {
       providers: repositoryProviders,
       // Use a Builder so the inner context can `read` repositories and build BLoCs.
       child: Builder(builder: (context) {
+        debugPrint('MAIN_DEBUG: Building MultiBlocProvider');
         return MultiBlocProvider(
           providers: buildBlocs(context),
           child: MaterialApp.router(

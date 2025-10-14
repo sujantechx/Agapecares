@@ -55,7 +55,7 @@ class _PhoneVerifyPageState extends State<PhoneVerifyPage> {
           'name': widget.name ?? '',
           'email': widget.email ?? '',
           'phoneNumber': widget.phone,
-          'createdAt': FieldValue.serverTimestamp(),
+          // createdAt removed: server-side should set timestamps
         };
         if (widget.role != null) userData['role'] = widget.role;
         await userDoc.set(userData, SetOptions(merge: true));
@@ -67,7 +67,7 @@ class _PhoneVerifyPageState extends State<PhoneVerifyPage> {
           // Seed cart from remote if available and notify bloc
           try {
             final cartRepo = context.read<CartRepository>();
-            await cartRepo.getCartItems(cartRepo);
+            await cartRepo.getCartItems();
           } catch (_) {}
           try {
             context.read<CartBloc>().add(CartStarted());
@@ -76,7 +76,13 @@ class _PhoneVerifyPageState extends State<PhoneVerifyPage> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Phone verified')));
         if (!mounted) return;
-        // Navigate to appropriate dashboard depending on role
+        // If this page was opened from Register flow (role provided), return success to caller so it can pop back to Login.
+        if (widget.role != null) {
+          // Pop this OTP screen and return `true` to the caller.
+          context.pop(true);
+          return;
+        }
+        // Otherwise (login flow), navigate to appropriate dashboard depending on role saved on the user record
         if ((widget.role ?? '').toLowerCase() == 'worker') {
           context.go(AppRoutes.workerHome);
         } else {

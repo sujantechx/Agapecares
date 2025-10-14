@@ -44,7 +44,7 @@ class CartRepositoryImpl implements CartRepository {
     final userId = _getCurrentUserId();
     if (userId == null) return;
     final snapshot =
-    await _firestore.collection('users').doc(userId).collection('cart').get();
+        await _firestore.collection('users').doc(userId).collection('cart').get();
     if (snapshot.docs.isEmpty) return;
     final batch = _firestore.batch();
     for (final doc in snapshot.docs) {
@@ -58,13 +58,16 @@ class CartRepositoryImpl implements CartRepository {
   }
 
   @override
-  Future<List<CartItemModel>> getCartItems(dynamic userId) async {
-    final uid = userId ?? _getCurrentUserId();
+  Future<List<CartItemModel>> getCartItems() async {
+    final uid = _getCurrentUserId();
     if (uid == null) return [];
     final snapshot =
-    await _firestore.collection('users').doc(uid).collection('cart').get();
-    return snapshot.docs.map((doc) => CartItemModel.fromFirestore(doc, doc.id)).toList();
+        await _firestore.collection('users').doc(uid).collection('cart').get();
+    return snapshot.docs
+        .map((doc) => CartItemModel.fromFirestore(doc, doc.id))
+        .toList();
   }
+
   @override
   Future<void> removeItemFromCart(String cartItemId) async {
     final userId = _getCurrentUserId();

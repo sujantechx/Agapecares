@@ -1,6 +1,5 @@
 /// last updated: 2025-10-14
 
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -13,64 +12,73 @@ service cloud.firestore {
     }
 
     // Use the `admins` collection (or custom claims) to determine admin status.
-    // Using exists() is safer than reading .data() and avoids null deref.
     function isAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
-    // Use the existence of a workers doc as the worker indicator.
+    // Worker detection: consider a user a worker if either:
+    // - there's an explicit admin-created /workers/{uid} doc, OR
+    // - the users/{uid} document has role == 'worker'
+    // This keeps the rules compatible with client-side registration that writes users/{uid}.role
     function isWorker() {
-      return isSignedIn() && exists(/databases/$(database)/documents/workers/$(request.auth.uid));
+      return isSignedIn()
+        && (
+            exists(/databases/$(database)/documents/workers/$(request.auth.uid))
+            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'worker'
+           );
     }
 
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Shared helper: forbid client from setting server-only fields
+    // Helper: allow a timestamp field only if absent or equal to server request.time
+    function allowedServerTimestamp(fieldName) {
+      return !(fieldName in request.resource.data) || request.resource.data[fieldName] == request.time;
+    }
+
+    // Shared helper: forbid client from setting server-only fields except when they are
+    // legitimate serverTimestamp sent via FieldValue.serverTimestamp() (which becomes request.time).
     function noServerFields() {
-      // List server-controlled fields here
+      // orderNumber, assignmentHistory, paymentRef, onboardedAt must not be set by clients.
       return !('orderNumber' in request.resource.data)
              && !('assignmentHistory' in request.resource.data)
              && !('paymentRef' in request.resource.data)
-             && !('createdAt' in request.resource.data)
-             && !('updatedAt' in request.resource.data);
-    }
-
-    // Allow admin or server-side (Cloud Functions using admin SDK will bypass rules).
-    function adminOnly() {
-      return isSignedIn() && isAdmin();
+             && allowedServerTimestamp('createdAt')
+             && allowedServerTimestamp('updatedAt')
+             && !('onboardedAt' in request.resource.data);
     }
 
     // -----------------------
     // users collection
     // -----------------------
     match /users/{userId} {
-      // Create: user may create their own profile; disallow client setting role and timestamps
+      // Create: user may create their own profile. Disallow client from setting server-only
+      // fields. Allow role to be omitted, 'user' or 'worker' to match app registration flow.
       allow create: if isSignedIn()
                     && request.auth.uid == userId
                     && (
                         !( 'role' in request.resource.data )
                         || request.resource.data.role == 'user'
+                        || request.resource.data.role == 'worker'
                        )
-                    && !('createdAt' in request.resource.data)
-                    && !('updatedAt' in request.resource.data);
+                    && noServerFields();
 
       // Read: owner or admin
       allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
 
-      // Update: admin can update anything; owner can update but cannot change `role` or server fields
+      // Update: admin can update anything. Owner can update but cannot change `role` value
+      // (must keep the same value) and cannot set server-only fields.
       allow update: if isSignedIn() && (
                       isAdmin()
-                      ||
-                      (isOwner(userId)
-                        && ( !('role' in request.resource.data) || request.resource.data.role == resource.data.role )
-                        && !('createdAt' in request.resource.data)
-                        && !('updatedAt' in request.resource.data)
-                      )
+                      || (
+                          isOwner(userId)
+                          && ( !('role' in request.resource.data) || request.resource.data.role == resource.data.role )
+                          && noServerFields()
+                        )
                     );
 
-      // Delete: owner or admin (you can restrict to admin-only if desired)
+      // Delete: owner or admin
       allow delete: if isSignedIn() && (isOwner(userId) || isAdmin());
 
       // cart subcollection
@@ -84,12 +92,10 @@ service cloud.firestore {
         allow create: if isSignedIn()
                         && isOwner(userId)
                         && noServerFields()
-                        // require orders start in allowed initial status (e.g., 'PENDING' or 'CREATED')
                         && (
                             !('status' in request.resource.data)
                             || request.resource.data.status == 'PENDING'
                            )
-                        // enforce essential fields (example)
                         && ('items' in request.resource.data)
                         && ('totalAmount' in request.resource.data);
 
@@ -120,7 +126,6 @@ service cloud.firestore {
 
         // Helper: valid worker transitions for worker role
         function workerAllowedStatusTransition(old, new) {
-          // enumerated safe transitions for workers
           return (old == 'ASSIGNED' && new == 'ACCEPTED')
                  || (old == 'ACCEPTED' && new == 'IN_PROGRESS')
                  || (old == 'IN_PROGRESS' && new == 'COMPLETED');
@@ -167,15 +172,16 @@ service cloud.firestore {
     // -----------------------
     match /workers/{workerId} {
       // create: worker themself or admin (initial registration)
-      allow create: if isSignedIn() && (request.auth.uid == workerId || isAdmin());
+      // Note: having a /workers/{uid} doc is treated as an authoritative worker marker.
+      allow create: if isSignedIn() && (request.auth.uid == workerId || isAdmin())
+                    && noServerFields();
 
       // read: admin, any worker (directory), or the worker themself
       allow read: if isSignedIn() && (isAdmin() || isWorker() || request.auth.uid == workerId);
 
-      // update: only the worker themself or admin; however disallow client from editing server-only fields
+      // update: only the worker themself or admin; disallow client from editing server-only fields
       allow update: if isSignedIn() && (isAdmin() || request.auth.uid == workerId)
-                    && !( 'onboardedAt' in request.resource.data )  // example server-set field
-                    ;
+                    && noServerFields();
 
       allow delete: if isSignedIn() && isAdmin();
     }

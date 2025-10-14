@@ -18,7 +18,7 @@ import '../../data/datasources/auth_remote_ds.dart';
 
 import 'package:agapecares/core/services/session_service.dart';
 import 'package:agapecares/core/models/user_model.dart';
-import 'package:agapecares/features/user_app/features/cart/data/repository/cart_repository.dart';
+import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
 import 'package:agapecares/features/user_app/features/cart/bloc/cart_bloc.dart';
 import 'package:agapecares/features/user_app/features/cart/bloc/cart_event.dart';
 
@@ -38,20 +38,27 @@ class LoginPage extends StatelessWidget {
     } catch (_) {
       // Provide a local AuthBloc built from the dummy remote datasource.
       return BlocProvider(
-        create: (context) => AuthBloc(
-          authRepository: AuthRepositoryImpl(
-            // Provide real Firebase instances so the fallback bloc can be used
-            // in simple/test shells without altering the constructor signature.
-            remoteDataSource: AuthRemoteDataSourceImpl(
-              firebaseAuth: FirebaseAuth.instance,
-              firestore: FirebaseFirestore.instance,
+        create: (context) {
+          // Try to read SessionService if available; otherwise pass null.
+          SessionService? session;
+          try {
+            session = context.read<SessionService>();
+          } catch (_) {
+            session = null;
+          }
+          return AuthBloc(
+            authRepository: AuthRepositoryImpl(
+              // Provide real Firebase instances so the fallback bloc can be used
+              // in simple/test shells without altering the constructor signature.
+              remoteDataSource: AuthRemoteDataSourceImpl(
+                firebaseAuth: FirebaseAuth.instance,
+                firestore: FirebaseFirestore.instance,
+              ),
+              // Optional SessionService
+              sessionService: session,
             ),
-            // Try to read a SessionService if available; if not, this will
-            // throw and the caller's catch will handle it. In most app runs
-            // a SessionService is registered at the top level.
-            sessionService: context.read<SessionService>(),
-          ),
-        ),
+          );
+        },
         child: const LoginView(),
       );
     }
@@ -117,8 +124,14 @@ class _LoginViewState extends State<LoginView> {
     // Fix: return early if form is invalid
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
-    // Read session service before any await to avoid using context across async gaps
-    final sessionService = context.read<SessionService>();
+    // Read session service before any await to avoid using context across async gaps.
+    // Read defensively because LoginPage can be used in minimal/test shells without DI.
+    SessionService? sessionService;
+    try {
+      sessionService = context.read<SessionService>();
+    } catch (_) {
+      sessionService = null;
+    }
     try {
       final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
@@ -138,33 +151,33 @@ class _LoginViewState extends State<LoginView> {
         // Save session (fire-and-forget is fine here)
         try {
           final um = UserModel(uid: user.uid, phoneNumber: user.phoneNumber ?? '', name: user.displayName ?? '', email: user.email, role: role);
-          // Await saving the session to ensure persistence before navigation.
-          await sessionService.saveUser(um);
-          // Seed cart and notify CartBloc so the UI updates immediately
-          try {
-            final cartRepo = context.read<CartRepository>();
-            await cartRepo.getCartItems();
-          } catch (_) {}
-          try {
-            context.read<CartBloc>().add(CartStarted());
-          } catch (_) {}
-        } catch (_) {}
-        if (!mounted) return;
-        // Navigate to the correct dashboard based on role
-        if (role == 'worker') {
-          context.go(AppRoutes.workerHome);
-        } else {
-          context.go(AppRoutes.home);
-        }
-      }
-    } on FirebaseAuthException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message ?? 'Login failed')));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $e')));
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
+          // Await saving the session to ensure persistence before navigation (if available).
+          if (sessionService != null) await sessionService.saveUser(um);
+           // Seed cart and notify CartBloc so the UI updates immediately
+           try {
+             final cartRepo = context.read<CartRepository>();
+             await cartRepo.getCartItems();
+           } catch (_) {}
+           try {
+             context.read<CartBloc>().add(CartStarted());
+           } catch (_) {}
+         } catch (_) {}
+         if (!mounted) return;
+         // Navigate to the correct dashboard based on role
+         if (role == 'worker') {
+           context.go(AppRoutes.workerHome);
+         } else {
+           context.go(AppRoutes.home);
+         }
+       }
+     } on FirebaseAuthException catch (e) {
+       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message ?? 'Login failed')));
+     } catch (e) {
+       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $e')));
+     } finally {
+       if (mounted) setState(() => _isLoading = false);
+     }
+   }
 
   @override
   Widget build(BuildContext context) {

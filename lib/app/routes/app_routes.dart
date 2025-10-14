@@ -1,6 +1,7 @@
 // lib/routes/app_routes.dart
 
 class AppRoutes {
+  static const String splash = '/splash';
   static const String home = '/home';
   static const String serviceDetail = '/service/:id';
   // alias for older/alternate usage

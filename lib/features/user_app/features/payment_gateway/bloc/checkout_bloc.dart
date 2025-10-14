@@ -10,7 +10,7 @@ import '../../data/repositories/order_repository.dart';
 import '../model/payment_models.dart';
 import '../repository/razorpay_payment_repository.dart';
 import '../repository/cod_payment_repository.dart';
-import '../../cart/data/repository/cart_repository.dart';
+import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
 import '../../data/repositories/booking_repository.dart';
 
 import 'checkout_event.dart';

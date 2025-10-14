@@ -45,11 +45,14 @@ import 'package:agapecares/features/user_app/features/orders/data/repositories/o
 import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository_impl.dart';
 import 'package:agapecares/features/user_app/features/services/data/repositories/service_repository_impl.dart';
 import 'package:agapecares/features/user_app/features/orders/data/repositories/order_repository_impl.dart';
-import 'package:agapecares/features/user_app/features/cart/logic/cart_bloc.dart';
+import 'package:agapecares/features/user_app/features/cart/bloc/cart_bloc.dart' as ui_cart_bloc;
 import 'package:agapecares/features/user_app/features/services/logic/service_bloc.dart';
 import 'package:agapecares/features/user_app/features/orders/logic/order_bloc.dart';
+import 'package:agapecares/features/user_app/features/data/repositories/offer_repository.dart';
 
 import '../features/common_auth/logic/blocs/auth_bloc.dart';
+import 'package:agapecares/features/common_auth/data/datasources/auth_remote_ds.dart';
+import 'package:agapecares/core/services/session_service.dart';
 
 // Repository implementations
 
@@ -64,9 +67,18 @@ Future<List<RepositoryProvider>> init() async {
   sl.registerLazySingleton<FirebaseAuth>(() => FirebaseAuth.instance);
   sl.registerLazySingleton<FirebaseFirestore>(() => FirebaseFirestore.instance);
 
+  // Ensure SessionService is available and initialized
+  final sessionService = SessionService();
+  await sessionService.init();
+  sl.registerLazySingleton<SessionService>(() => sessionService);
+
   // DataSources
   sl.registerLazySingleton<ServiceRemoteDataSource>(
       () => ServiceRemoteDataSourceImpl(firestore: sl()));
+
+  // Register auth remote data source
+  sl.registerLazySingleton<AuthRemoteDataSource>(() => AuthRemoteDataSourceImpl(firebaseAuth: sl(), firestore: sl()));
+
   // Register admin order data source
   sl.registerLazySingleton<admin_order_ds.OrderRemoteDataSource>(() => admin_order_ds_impl.OrderRemoteDataSourceImpl(firestore: sl()));
   // Admin user/worker data sources
@@ -77,6 +89,12 @@ Future<List<RepositoryProvider>> init() async {
   sl.registerLazySingleton<CartRepository>(() => CartRepositoryImpl(firestore: sl()));
   sl.registerLazySingleton<ServiceRepository>(() => ServiceRepositoryImpl(firestore: sl()));
   sl.registerLazySingleton<OrderRepository>(() => OrderRepositoryImpl(firestore: sl()));
+  // OfferRepository is a simple, in-memory/deterministic repository used by CartBloc
+  sl.registerLazySingleton<OfferRepository>(() => OfferRepository());
+
+  // Register AuthRepository (used by AuthBloc and app-wide providers)
+  sl.registerLazySingleton<AuthRepository>(() => AuthRepositoryImpl(remoteDataSource: sl(), sessionService: sl()));
+
   sl.registerLazySingleton<admin_repo.ServiceRepository>(
       () => admin_repo_impl.ServiceRepositoryImpl(remoteDataSource: sl()));
   sl.registerLazySingleton<admin_order_repo.OrderRepository>(() => admin_order_repo_impl.OrderRepositoryImpl(remote: sl()));
@@ -86,8 +104,8 @@ Future<List<RepositoryProvider>> init() async {
   // BLoC factories
   sl.registerFactory(() => AuthBloc(authRepository: sl()));
   sl.registerFactory(() => ServiceBloc(serviceRepository: sl()));
-  // CartBloc expects a userId; use current Firebase user uid if available, otherwise empty string
-  sl.registerFactory(() => CartBloc(cartRepository: sl(), userId: sl<FirebaseAuth>().currentUser?.uid ?? ''));
+  // Register the UI-facing CartBloc which expects CartRepository & OfferRepository
+  sl.registerFactory(() => ui_cart_bloc.CartBloc(cartRepository: sl(), offerRepository: sl()));
   sl.registerFactory(() => OrderBloc(orderRepository: sl()));
   sl.registerFactory(() => ServiceManagementBloc(serviceRepository: sl()));
   sl.registerFactory(() => AdminOrderBloc(repo: sl()));
@@ -104,6 +122,7 @@ Future<List<RepositoryProvider>> init() async {
     RepositoryProvider<admin_order_repo.OrderRepository>.value(value: sl()),
     RepositoryProvider<admin_user_repo.AdminUserRepository>.value(value: sl()),
     RepositoryProvider<admin_worker_repo.AdminWorkerRepository>.value(value: sl()),
+    RepositoryProvider<OfferRepository>.value(value: sl()),
   ];
 
   return providers;
@@ -112,7 +131,6 @@ Future<List<RepositoryProvider>> init() async {
 /// Build the list of BlocProvider using instances from the current context's repositories.
 List<BlocProvider> buildBlocs(BuildContext context) {
   final authRepo = context.read<AuthRepository>();
-  final cartRepo = context.read<CartRepository>();
   final serviceRepo = context.read<ServiceRepository>();
   final orderRepo = context.read<OrderRepository>();
   final adminServiceRepo = context.read<admin_repo.ServiceRepository>();
@@ -123,7 +141,12 @@ List<BlocProvider> buildBlocs(BuildContext context) {
   return [
     BlocProvider<AuthBloc>(create: (_) => AuthBloc(authRepository: authRepo)),
     BlocProvider<ServiceBloc>(create: (_) => ServiceBloc(serviceRepository: serviceRepo)),
-    BlocProvider<CartBloc>(create: (_) => CartBloc(cartRepository: cartRepo, userId: '' /* runtime replaced by auth */)),
+    BlocProvider<ui_cart_bloc.CartBloc>(
+      create: (ctx) => ui_cart_bloc.CartBloc(
+        cartRepository: ctx.read<CartRepository>(),
+        offerRepository: ctx.read<OfferRepository>(),
+      ),
+    ),
     BlocProvider<OrderBloc>(create: (_) => OrderBloc(orderRepository: orderRepo)),
     BlocProvider<ServiceManagementBloc>(create: (_) => ServiceManagementBloc(serviceRepository: adminServiceRepo)),
     BlocProvider<AdminOrderBloc>(create: (_) => AdminOrderBloc(repo: adminOrderRepo)),

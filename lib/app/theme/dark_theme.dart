@@ -8,20 +8,18 @@ final darkTheme = ThemeData(
   brightness: Brightness.dark,
   primaryColor: AppColors.primary,
   scaffoldBackgroundColor: AppColors.darkBackground,
-  colorScheme: const ColorScheme(
+  colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primary, brightness: Brightness.dark).copyWith(
     primary: AppColors.primary,
     primaryContainer: AppColors.primaryVariant,
     secondary: AppColors.secondary,
     secondaryContainer: AppColors.secondaryVariant,
     surface: AppColors.darkSurface,
-    background: AppColors.darkBackground,
+    // background/onBackground are intentionally omitted to avoid deprecated fields
     error: AppColors.darkError,
     onPrimary: AppColors.darkOnPrimary,
     onSecondary: AppColors.darkOnSecondary,
     onSurface: AppColors.darkOnSurface,
-    onBackground: AppColors.darkOnBackground,
     onError: AppColors.darkOnPrimary,
-    brightness: Brightness.dark,
   ),
   extensions: [
     AppTextTheme(
@@ -37,7 +35,7 @@ final darkTheme = ThemeData(
       ),
       subtitle1: TextStyle(
         fontSize: 16,
-        color: AppColors.darkOnBackground.withOpacity(0.7),
+        color: AppColors.darkOnBackground.withAlpha((0.7 * 255).round()),
       ),
       body: TextStyle(
         fontSize: 14,

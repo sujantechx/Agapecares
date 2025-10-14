@@ -6,7 +6,7 @@ import '../../../../../core/models/offer_model.dart';
 import '../../data/repositories/offer_repository.dart';
 import '../data/models/cart_item_model.dart';
 
-import '../data/repository/cart_repository.dart';
+import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
 
 import 'cart_event.dart';
 import 'cart_state.dart'; // Import Offer repository

@@ -24,14 +24,11 @@ class CartItemCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(item.service.name,
+                      Text(item.serviceName,
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 4),
                       Text(item.selectedOption.name,
                           style: TextStyle(color: Colors.grey[600])),
-                      if (item.subscription != null)
-                        Text(item.subscription!.name,
-                            style: TextStyle(color: Colors.blue[700])),
                     ],
                   ),
                 ),

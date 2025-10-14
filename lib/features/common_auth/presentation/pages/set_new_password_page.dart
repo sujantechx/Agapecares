@@ -53,7 +53,7 @@ class _SetNewPasswordPageState extends State<SetNewPasswordPage> {
         // Seed cart and notify CartBloc
         try {
           final cartRepo = context.read<CartRepository>();
-          await cartRepo.getCartItems(cartRepo);
+          await cartRepo.getCartItems();
         } catch (_) {}
         try {
           context.read<CartBloc>().add(CartStarted());

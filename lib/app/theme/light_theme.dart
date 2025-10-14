@@ -8,20 +8,18 @@ final lightTheme = ThemeData(
   brightness: Brightness.light,
   primaryColor: AppColors.primary,
   scaffoldBackgroundColor: AppColors.lightBackground,
-  colorScheme: const ColorScheme(
+  colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primary, brightness: Brightness.light).copyWith(
     primary: AppColors.primary,
     primaryContainer: AppColors.primaryVariant,
     secondary: AppColors.secondary,
     secondaryContainer: AppColors.secondaryVariant,
     surface: AppColors.lightSurface,
-    background: AppColors.lightBackground,
+    // avoid setting background/onBackground (deprecated) - scaffoldBackgroundColor is set above
     error: AppColors.lightError,
     onPrimary: AppColors.lightOnPrimary,
     onSecondary: AppColors.lightOnSecondary,
     onSurface: AppColors.lightOnSurface,
-    onBackground: AppColors.lightOnBackground,
     onError: AppColors.lightOnPrimary,
-    brightness: Brightness.light,
   ),
   extensions: [
     AppTextTheme(
@@ -37,7 +35,7 @@ final lightTheme = ThemeData(
       ),
       subtitle1: TextStyle(
         fontSize: 16,
-        color: AppColors.lightOnBackground.withOpacity(0.7),
+        color: AppColors.lightOnBackground.withAlpha((0.7 * 255).round()),
       ),
       body: TextStyle(
         fontSize: 14,

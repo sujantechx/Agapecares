@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pinput/pinput.dart';
 
+import 'package:agapecares/core/models/user_model.dart';
 
 import '../../logic/blocs/auth_bloc.dart';
 import '../../logic/blocs/auth_event.dart';
@@ -12,12 +13,16 @@ import '../../logic/blocs/auth_state.dart';
 class PhoneVerifyPage extends StatelessWidget {
   /// The verificationId is passed from the previous screen (e.g., LoginPage).
   final String verificationId;
+  final String? name;
+  final String? email;
+  final String? phone;
+  final UserRole? role;
 
-  const PhoneVerifyPage({super.key, required this.verificationId});
+  const PhoneVerifyPage({super.key, required this.verificationId, this.name, this.email, this.phone, this.role});
 
   void _verifyOtp(BuildContext context, String otp) {
     context.read<AuthBloc>().add(
-      AuthVerifyOtpRequested(verificationId: verificationId, otp: otp),
+      AuthVerifyOtpRequested(verificationId: verificationId, otp: otp, name: name, email: email, role: role),
     );
   }
 
@@ -33,10 +38,13 @@ class PhoneVerifyPage extends StatelessWidget {
             );
           }
           // On success, the central router will handle navigation automatically.
-          // If this page was pushed, we can pop it.
+          // If this page was pushed, we can pop it and show a success message.
           if (state is Authenticated) {
             if (context.canPop()) {
               context.pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Verification successful'), backgroundColor: Colors.green),
+              );
             }
           }
         },

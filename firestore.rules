@@ -27,7 +27,11 @@ service cloud.firestore {
         // or the users/{uid}.role field contains 'admin' (case-insensitive)
         || (
              exists(/databases/$(database)/documents/users/$(request.auth.uid))
-             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.matches('(?i)^admin$')
+             // Ensure the role field is a string before calling .matches() to avoid runtime errors
+             && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role is string)
+             // Accept values like 'admin', 'ADMIN', or 'UserRole.admin' by matching substring 'admin' case-insensitive
+             // Use word-boundary aware regex to avoid accidental matches (e.g., 'not_admin')
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.matches('(?i).*\\badmin\\b.*')
            )
       );
     }
@@ -43,7 +47,11 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/workers/$(request.auth.uid))
         || (
              exists(/databases/$(database)/documents/users/$(request.auth.uid))
-             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'worker'
+             // Ensure the role field is a string before matching to avoid runtime errors
+             && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role is string)
+             // Accept role strings containing 'worker' in any case (e.g., 'UserRole.worker')
+             // Use word-boundary aware regex to avoid accidental matches (e.g., 'not_worker')
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.matches('(?i).*\\bworker\\b.*')
            )
       );
     }
@@ -150,13 +158,6 @@ service cloud.firestore {
                              )
                         )
                     );
-
-        // Helper: valid worker transitions for worker role
-        function workerAllowedStatusTransition(old, new) {
-          return (old == 'assigned' && new == 'accepted')
-                 || (old == 'accepted' && new == 'in_progress')
-                 || (old == 'in_progress' && new == 'completed');
-        }
 
         // Update: admin can update everything.
         // Owner may update only non-assignment, non-status fields.

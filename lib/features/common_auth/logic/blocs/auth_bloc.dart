@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart'; // Needed for exceptions
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/models/user_model.dart';
+import '../../../../core/services/session_service.dart';
 import '../../data/repositories/auth_repository.dart';
 import 'auth_event.dart';
 import 'auth_state.dart';
@@ -13,10 +14,13 @@ import 'auth_state.dart';
 
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final AuthRepository _authRepository;
+  final SessionService? _sessionService;
   StreamSubscription<UserModel?>? _userSubscription;
 
-  AuthBloc({required AuthRepository authRepository})
+  /// [sessionService] is optional to allow lightweight test setups.
+  AuthBloc({required AuthRepository authRepository, SessionService? sessionService})
       : _authRepository = authRepository,
+        _sessionService = sessionService,
         super(AuthInitial()) {
     // Listen to user changes from the repository
     _userSubscription = _authRepository.user.listen((user) {
@@ -36,8 +40,20 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       if (kDebugMode) {
         debugPrint('AuthBloc: Authenticated user role=${event.user!.role} uid=${event.user!.uid}');
       }
+      // Persist the authenticated user to local session cache to keep
+      // in-sync role/identity across app restarts and lightweight flows
+      // where the SessionService is available.
+      try {
+        _sessionService?.saveUser(event.user!);
+      } catch (e) {
+        if (kDebugMode) debugPrint('Session save failed: $e');
+      }
       emit(Authenticated(event.user!));
     } else {
+      // Clear cached session when the user signs out.
+      try {
+        _sessionService?.clear();
+      } catch (_) {}
       emit(Unauthenticated());
     }
   }
@@ -88,6 +104,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       await _authRepository.verifyPhoneCode(
         verificationId: event.verificationId,
         smsCode: event.otp,
+        name: event.name,
+        email: event.email,
+        role: event.role,
       );
       // The user stream will emit a new value, and _onAuthStatusChanged will handle the state change.
     } catch (e) {

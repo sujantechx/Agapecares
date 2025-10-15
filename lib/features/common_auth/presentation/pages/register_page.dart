@@ -27,6 +27,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _passwordCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   bool _isLoading = false;
+  bool _isRegistering = false; // true when user started email registration
   UserRole _role = UserRole.user;
 
   @override
@@ -40,6 +41,9 @@ class _RegisterPageState extends State<RegisterPage> {
 
   void _registerWithEmail() {
     if (!_formKey.currentState!.validate()) return;
+    // mark that this flow is an email registration so that on success we pop back to login
+    _isRegistering = true;
+    setState(() => _isLoading = true);
     // dispatch registration event to AuthBloc which will handle Firebase and Firestore writes
     context.read<AuthBloc>().add(AuthRegisterRequested(
       email: _emailCtrl.text.trim(),
@@ -56,6 +60,19 @@ class _RegisterPageState extends State<RegisterPage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter phone number')));
       return;
     }
+
+    // Enforce email-only registration: if the user filled name/email/password and now attempts
+    // phone registration, instruct them to use email registration instead. Phone flow is for
+    // login/OTP only in this app configuration.
+    final hasFilledRegistrationFields = _nameCtrl.text.trim().isNotEmpty || _emailCtrl.text.trim().isNotEmpty || _passwordCtrl.text.trim().isNotEmpty;
+    if (hasFilledRegistrationFields) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Phone cannot be used to create a new account. Please use "Register with Email".'),
+        backgroundColor: Colors.orange,
+      ));
+      return;
+    }
+
     // Dispatch an event to send OTP; UI will navigate when AuthState changes to AuthOtpSent
     context.read<AuthBloc>().add(AuthSendOtpRequested(phone));
   }
@@ -67,7 +84,9 @@ class _RegisterPageState extends State<RegisterPage> {
       body: BlocListener<AuthBloc, AuthState>(
         listener: (context, state) {
           if (state is AuthFailure) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.message), backgroundColor: Colors.red));
+            // Explicit server-friendly message
+            final msg = state.message.isNotEmpty ? state.message : 'Registration failed. Please try again.';
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
           }
           if (state is AuthLoading) {
             setState(() => _isLoading = true);
@@ -75,11 +94,37 @@ class _RegisterPageState extends State<RegisterPage> {
             if (mounted) setState(() => _isLoading = false);
           }
           if (state is Authenticated) {
-            // Registration succeeded and repo emitted the authenticated user; navigate via router
+            // If we initiated an email registration flow, return to the login screen so the user
+            // can sign in (and to avoid automatically logging in newly created users).
+            if (_isRegistering) {
+              if (mounted) {
+                // Show success snackbar, then pop back to Login with true.
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Registration successful. Please login.'),
+                  backgroundColor: Colors.green,
+                ));
+
+                // Small delay so the user notices the snackbar before the screen closes.
+                Future.delayed(const Duration(milliseconds: 400), () {
+                  if (Navigator.of(context).canPop()) {
+                    context.pop(true);
+                  } else {
+                    context.go('/auth/login');
+                  }
+                });
+
+                // Ensure loading state is reset.
+                setState(() => _isLoading = false);
+              }
+              _isRegistering = false;
+              return;
+            }
+
+            // If this screen was pushed and we weren't the one who initiated registration, simply pop.
             if (Navigator.of(context).canPop()) {
               context.pop(true);
             } else {
-              // Route admins to admin dashboard explicitly
+              // Route admins to admin dashboard explicitly if not a registration flow
               if (state.user.role == UserRole.admin) {
                 context.go(AppRoutes.adminDashboard);
               } else if (state.user.role == UserRole.worker) {
@@ -93,10 +138,8 @@ class _RegisterPageState extends State<RegisterPage> {
             // When OTP is sent, navigate to OTP screen with arguments including name/email/role
             context.push(AppRoutes.phoneVerify, extra: {
               'verificationId': state.verificationId,
+              // For phone-only login we don't pass name/email/role because registration is email-only
               'phone': _phoneCtrl.text.trim(),
-              'name': _nameCtrl.text.trim(),
-              'email': _emailCtrl.text.trim(),
-              'role': _role,
             });
           }
         },

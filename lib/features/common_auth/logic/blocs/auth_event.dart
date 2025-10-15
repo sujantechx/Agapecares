@@ -49,7 +49,13 @@ class AuthSendOtpRequested extends AuthEvent {
 class AuthVerifyOtpRequested extends AuthEvent {
   final String verificationId;
   final String otp;
-  const AuthVerifyOtpRequested({required this.verificationId, required this.otp});
+  final String? name;
+  final String? email;
+  final UserRole? role;
+  const AuthVerifyOtpRequested({required this.verificationId, required this.otp, this.name, this.email, this.role});
+
+  @override
+  List<Object?> get props => [verificationId, otp, name, email, role];
 }
 
 /// Dispatched to sign the user out.

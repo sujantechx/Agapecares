@@ -49,16 +49,29 @@ class AuthRepository {
 
       // Build the UserModel here with resilient parsing of the 'role' field so
       // that values like 'Admin', 'ADMIN', or 'admin' are treated the same.
-      final data = doc.data() as Map<String, dynamic>? ?? {};
+      final data = doc.data() ?? <String, dynamic>{};
 
       // Normalize role string and map to enum safely without changing the model file.
       final rawRole = (data['role'] as String?) ?? '';
       final roleStr = rawRole.trim().toLowerCase();
+      // Be resilient to various role formats saved in Firestore like:
+      // - 'admin' / 'ADMIN'
+      // - 'UserRole.admin' (when some code stored the enum's toString())
+      // - 'role: "UserRole.admin"' etc.
       UserRole role = UserRole.user;
-      try {
-        role = UserRole.values.firstWhere((e) => e.name.toLowerCase() == roleStr);
-      } catch (_) {
+      if (roleStr.contains('admin')) {
+        role = UserRole.admin;
+      } else if (roleStr.contains('worker')) {
+        role = UserRole.worker;
+      } else if (roleStr.contains('user')) {
         role = UserRole.user;
+      } else {
+        // Fallback: try exact match against enum names
+        try {
+          role = UserRole.values.firstWhere((e) => e.name.toLowerCase() == roleStr);
+        } catch (_) {
+          role = UserRole.user;
+        }
       }
 
       return UserModel(
@@ -98,7 +111,7 @@ class AuthRepository {
     if (firebaseUser == null) {
       throw Exception('User creation failed.');
     }
-    // Create the user document in Firestore.
+    // Create the user document in Firestore. Use serverTimestamp for createdAt to satisfy rules.
     final userModel = UserModel(
       uid: firebaseUser.uid,
       name: name,
@@ -107,7 +120,30 @@ class AuthRepository {
       role: role,
       createdAt: Timestamp.now(),
     );
-    await _firestore.collection('users').doc(firebaseUser.uid).set(userModel.toFirestore());
+    try {
+      final data = userModel.toFirestore();
+      // Override createdAt with server timestamp so rules allow the write.
+      data['createdAt'] = FieldValue.serverTimestamp();
+      await _firestore.collection('users').doc(firebaseUser.uid).set(data);
+
+      // Fetch the stored document (which now includes server timestamp).
+      final fetched = await _fetchUserModel(firebaseUser.uid);
+      if (fetched != null) {
+        _userController.add(fetched);
+      } else {
+        // If fetch failed for any reason, emit a best-effort user model (without reliable createdAt).
+        _userController.add(userModel);
+      }
+    } catch (e) {
+      // If Firestore write fails (e.g., permission denied), remove the auth user
+      // to avoid leaving an authenticated account without a profile document.
+      try {
+        await firebaseUser.delete();
+      } catch (_) {
+        await _firebaseAuth.signOut();
+      }
+      rethrow;
+    }
   }
 
   /// Sends a verification OTP to the provided phone number.
@@ -132,24 +168,57 @@ class AuthRepository {
 
   /// Verifies the OTP and signs the user in.
   /// Also ensures a user document exists in Firestore.
-  Future<void> verifyPhoneCode({required String verificationId, required String smsCode}) async {
+  /// By default this will NOT create a user document for first-time phone sign-ins.
+  /// Set [createIfMissing] to `true` when you explicitly want to create the profile
+  /// (for example, when calling from a phone-based registration flow).
+  Future<void> verifyPhoneCode({required String verificationId, required String smsCode, String? name, String? email, UserRole? role, bool createIfMissing = false}) async {
     final credential = PhoneAuthProvider.credential(verificationId: verificationId, smsCode: smsCode);
     final userCredential = await _firebaseAuth.signInWithCredential(credential);
 
     // After sign-in, ensure a corresponding user document exists.
-    // This is crucial for users who sign in for the first time via phone.
     final user = userCredential.user;
     if (user != null) {
       final docRef = _firestore.collection('users').doc(user.uid);
       final doc = await docRef.get();
       if (!doc.exists) {
+        if (!createIfMissing) {
+          // We intentionally do NOT create a user document here. Many apps treat phone
+          // login as a sign-in method only; creation should be done through explicit
+          // registration (email flow) to control role assignment. Sign the user out
+          // and surface a clear error to the caller.
+          await _firebaseAuth.signOut();
+          throw Exception('No user profile found for this phone number. Please register using Email/Password.');
+        }
+
         final newUser = UserModel(
           uid: user.uid,
+          name: name,
+          email: email,
           phoneNumber: user.phoneNumber,
-          role: UserRole.user, // Default role for new phone sign-ups
+          role: role ?? UserRole.user, // Default role for new phone sign-ups
           createdAt: Timestamp.now(),
         );
-        await docRef.set(newUser.toFirestore());
+        try {
+          final data = newUser.toFirestore();
+          data['createdAt'] = FieldValue.serverTimestamp();
+          await docRef.set(data);
+
+          // Emit created user model to avoid race with auth state listener
+          final fetched = await _fetchUserModel(user.uid);
+          if (fetched != null) {
+            _userController.add(fetched);
+          } else {
+            _userController.add(newUser);
+          }
+        } catch (e) {
+          // If write fails, sign out to avoid partial state.
+          await _firebaseAuth.signOut();
+          rethrow;
+        }
+      } else {
+        // If profile exists, emit it so listeners get the parsed model.
+        final fetched = await _fetchUserModel(user.uid);
+        _userController.add(fetched);
       }
     }
   }

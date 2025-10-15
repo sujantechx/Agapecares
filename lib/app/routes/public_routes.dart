@@ -1,3 +1,4 @@
+import 'package:agapecares/core/models/user_model.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/common_auth/presentation/pages/login_page.dart';
@@ -26,13 +27,32 @@ final List<RouteBase> publicRoutes = [
     builder: (context, state) {
       final extra = state.extra;
       String verificationId = '';
+      String? name;
+      String? email;
+      String? phone;
+      UserRole? role;
       if (extra is String) {
         verificationId = extra;
       } else if (extra is Map<String, dynamic>) {
         verificationId = extra['verificationId'] ?? '';
+        name = extra['name'] as String?;
+        email = extra['email'] as String?;
+        phone = extra['phone'] as String?;
+        final r = extra['role'];
+        if (r is UserRole) role = r;
+        if (r is String) {
+          final normalized = r.trim().toLowerCase();
+          if (normalized.contains('admin')) role = UserRole.admin;
+          else if (normalized.contains('worker')) role = UserRole.worker;
+          else role = UserRole.user;
+        }
       }
       return PhoneVerifyPage(
         verificationId: verificationId,
+        name: name,
+        email: email,
+        phone: phone,
+        role: role,
       );
     },
   ),

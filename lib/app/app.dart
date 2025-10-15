@@ -100,7 +100,8 @@ Future<List<RepositoryProvider>> init() async {
   sl.registerLazySingleton<admin_worker_repo.AdminWorkerRepository>(() => admin_worker_repo_impl.AdminWorkerRepositoryImpl(remote: sl()));
 
   // BLoC factories
-  sl.registerFactory(() => AuthBloc(authRepository: sl()));
+  // Ensure AuthBloc receives SessionService so it can persist/clear cached user state.
+  sl.registerFactory(() => AuthBloc(authRepository: sl(), sessionService: sl()));
   sl.registerFactory(() => ServiceBloc(serviceRepository: sl()));
   // Register the UI-facing CartBloc which expects CartRepository & OfferRepository
   sl.registerFactory(() => ui_cart_bloc.CartBloc(cartRepository: sl(), offerRepository: sl()));
@@ -131,6 +132,7 @@ Future<List<RepositoryProvider>> init() async {
 /// Build the list of BlocProvider using instances from the current context's repositories.
 List<BlocProvider> buildBlocs(BuildContext context) {
   final authRepo = context.read<AuthRepository>();
+  final sessionService = context.read<SessionService>();
   final serviceRepo = context.read<ServiceRepository>();
   final orderRepo = context.read<OrderRepository>();
   final adminServiceRepo = context.read<admin_repo.ServiceRepository>();
@@ -139,7 +141,7 @@ List<BlocProvider> buildBlocs(BuildContext context) {
   final adminWorkerRepo = context.read<admin_worker_repo.AdminWorkerRepository>();
 
   return [
-    BlocProvider<AuthBloc>(create: (_) => AuthBloc(authRepository: authRepo)),
+    BlocProvider<AuthBloc>(create: (_) => AuthBloc(authRepository: authRepo, sessionService: sessionService)),
     BlocProvider<ServiceBloc>(create: (_) => ServiceBloc(serviceRepository: serviceRepo)),
     BlocProvider<ui_cart_bloc.CartBloc>(
       create: (ctx) => ui_cart_bloc.CartBloc(

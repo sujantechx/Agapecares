@@ -20,6 +20,20 @@ class _CartDebugPageState extends State<CartDebugPage> {
   List<CartItemModel> _items = [];
   bool _loading = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // Load existing cart items once the widget is mounted.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final repo = RepositoryProvider.of<CartRepository>(context);
+        _reload(repo);
+      } catch (e) {
+        debugPrint('CartDebugPage init load failed: $e');
+      }
+    });
+  }
+
   Future<void> _reload(CartRepository repo) async {
     setState(() => _loading = true);
     final items = await repo.getCartItems();
@@ -32,8 +46,9 @@ class _CartDebugPageState extends State<CartDebugPage> {
   Future<void> _addSample(CartRepository repo) async {
     setState(() => _loading = true);
     try {
-      final service = await ServiceStore.instance.fetchById('1');
-      if (service == null) throw Exception('Sample service not found');
+      // `all_services.dart` exports `allServices` (lowercase). Use that variable.
+      final service = allServices.firstWhere((s) => s.id == '1', orElse: () => throw Exception('Sample service not found'));
+      if (service.options.isEmpty) throw Exception('Sample service has no options');
       final ServiceOption option = service.options.first;
       // Build a CartItemModel using the canonical fields defined in core/models/cart_item_model.dart
       final debugItem = CartItemModel(
@@ -108,6 +123,7 @@ class _CartDebugPageState extends State<CartDebugPage> {
     );
   }
 }
+
 
 // Cart debug page removed - kept placeholder to avoid analyzer issues.
 // This file intentionally left minimal. Use LocalDatabaseService logs to debug cart persistence.

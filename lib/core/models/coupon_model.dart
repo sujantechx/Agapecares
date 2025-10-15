@@ -35,6 +35,10 @@ class CouponModel extends Equatable {
   /// A simple flag to enable or disable the coupon without deleting it.
   final bool isActive;
 
+  /// Firestore timestamps for auditing.
+  final Timestamp? createdAt;
+  final Timestamp? updatedAt;
+
   const CouponModel({
     required this.id,
     required this.description,
@@ -45,6 +49,8 @@ class CouponModel extends Equatable {
     this.usedCount = 0,
     required this.expiryDate,
     this.isActive = true,
+    this.createdAt,
+    this.updatedAt,
   });
 
   /// Creates a `CouponModel` instance from a Firestore document snapshot.
@@ -63,6 +69,8 @@ class CouponModel extends Equatable {
       usedCount: (data['usedCount'] as num?)?.toInt() ?? 0,
       expiryDate: data['expiryDate'] as Timestamp? ?? Timestamp.now(),
       isActive: data['isActive'] as bool? ?? true,
+      createdAt: data['createdAt'] as Timestamp?,
+      updatedAt: data['updatedAt'] as Timestamp?,
     );
   }
 
@@ -77,9 +85,11 @@ class CouponModel extends Equatable {
       'usedCount': usedCount,
       'expiryDate': expiryDate,
       'isActive': isActive,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
     };
   }
 
   @override
-  List<Object?> get props => [id, type, value, expiryDate, isActive];
+  List<Object?> get props => [id, type, value, expiryDate, isActive, createdAt, updatedAt];
 }

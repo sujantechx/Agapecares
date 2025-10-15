@@ -17,7 +17,26 @@ class ServiceRepositoryImpl implements ServiceRepository {
   @override
   Future<void> createService(ServiceModel service) async {
     final id = service.id.isNotEmpty ? service.id : _firestore.collection('services').doc().id;
-    await _firestore.collection('services').doc(id).set(service.toFirestore());
+    final docRef = _firestore.collection('services').doc(id);
+
+    // Prepare base payload from model. Repositories control timestamps.
+    final payload = service.toFirestore();
+
+    // If the document already exists, perform a merge update and set updatedAt.
+    final existing = await docRef.get();
+    if (existing.exists) {
+      await docRef.set({
+        ...payload,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } else {
+      // New document - set both createdAt and updatedAt to server timestamps.
+      await docRef.set({
+        ...payload,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
   }
 
   @override
@@ -54,6 +73,11 @@ class ServiceRepositoryImpl implements ServiceRepository {
 
   @override
   Future<void> updateService(ServiceModel service) async {
-    await _firestore.collection('services').doc(service.id).set(service.toFirestore(), SetOptions(merge: true));
+    final docRef = _firestore.collection('services').doc(service.id);
+    final payload = service.toFirestore();
+    await docRef.set({
+      ...payload,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 }

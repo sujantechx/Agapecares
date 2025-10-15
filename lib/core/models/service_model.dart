@@ -38,6 +38,13 @@ class ServiceModel extends Equatable {
   /// List of available subscription plans for this service.
   final List<SubscriptionPlan> subscriptionPlans;
 
+  /// Firestore server timestamp when the document was created. May be null
+  /// when creating a local instance before write completes.
+  final Timestamp? createdAt;
+
+  /// Firestore server timestamp when the document was last updated.
+  final Timestamp? updatedAt;
+
   const ServiceModel({
     required this.id,
     required this.name,
@@ -49,6 +56,8 @@ class ServiceModel extends Equatable {
     this.images = const [],
     this.options = const [],
     this.subscriptionPlans = const [],
+    this.createdAt,
+    this.updatedAt,
   });
 
   /// Creates a `ServiceModel` instance from a Firestore document snapshot.
@@ -77,6 +86,8 @@ class ServiceModel extends Equatable {
       subscriptionPlans: (data['subscriptionPlans'] as List<dynamic>?)
           ?.map((e) => SubscriptionPlan.fromMap(e as Map<String, dynamic>))
           .toList() ?? [],
+      createdAt: data['createdAt'] as Timestamp?,
+      updatedAt: data['updatedAt'] as Timestamp?,
     );
   }
 
@@ -105,6 +116,8 @@ class ServiceModel extends Equatable {
       subscriptionPlans: (data['subscriptionPlans'] as List<dynamic>?)
           ?.map((e) => SubscriptionPlan.fromMap(e as Map<String, dynamic>))
           .toList() ?? [],
+      createdAt: data['createdAt'] as Timestamp?,
+      updatedAt: data['updatedAt'] as Timestamp?,
     );
   }
 
@@ -120,9 +133,13 @@ class ServiceModel extends Equatable {
       'images': images,
       'options': options.map((o) => o.toMap()).toList(),
       'subscriptionPlans': subscriptionPlans.map((s) => s.toMap()).toList(),
+      // timestamps are intentionally not set here to allow repositories to
+      // control whether to write server timestamps using FieldValue.serverTimestamp().
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
     };
   }
 
   @override
-  List<Object?> get props => [id, name, category, basePrice, imageUrl, images];
+  List<Object?> get props => [id, name, category, basePrice, imageUrl, images, createdAt, updatedAt];
 }

@@ -19,6 +19,7 @@ class _CreateServicePageState extends State<CreateServicePage> {
   final _descCtr = TextEditingController();
   final _priceCtr = TextEditingController();
   final _vendorCtr = TextEditingController();
+  final _imagesCtr = TextEditingController();
   bool _saving = false;
 
   @override
@@ -27,6 +28,7 @@ class _CreateServicePageState extends State<CreateServicePage> {
     _descCtr.dispose();
     _priceCtr.dispose();
     _vendorCtr.dispose();
+    _imagesCtr.dispose();
     super.dispose();
   }
 
@@ -36,6 +38,11 @@ class _CreateServicePageState extends State<CreateServicePage> {
     try {
       final repo = context.read<ServiceRepository>();
       final price = double.tryParse(_priceCtr.text.trim()) ?? 0.0;
+      final images = _imagesCtr.text
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
       // Map our simple form to the canonical ServiceModel. We don't store vendor separately
       // in the current model, so put vendor into `category` as a lightweight mapping.
       final model = ServiceModel(
@@ -45,7 +52,8 @@ class _CreateServicePageState extends State<CreateServicePage> {
         category: _vendorCtr.text.trim().isNotEmpty ? _vendorCtr.text.trim() : 'General',
         basePrice: price,
         estimatedTimeMinutes: 60, // default estimate
-        imageUrl: '',
+        imageUrl: images.isNotEmpty ? images.first : '',
+        images: images,
         options: const [],
         subscriptionPlans: const [],
       );
@@ -91,6 +99,12 @@ class _CreateServicePageState extends State<CreateServicePage> {
               TextFormField(
                 controller: _vendorCtr,
                 decoration: const InputDecoration(labelText: 'Vendor Name'),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _imagesCtr,
+                decoration: const InputDecoration(labelText: 'Image URLs (comma separated)'),
+                maxLines: 2,
               ),
               const SizedBox(height: 16),
               Row(

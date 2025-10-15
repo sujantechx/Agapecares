@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:carousel_slider/carousel_slider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:agapecares/core/models/service_model.dart';
 // Use package imports so analyzer resolves types across the package.
@@ -40,16 +42,63 @@ class ServiceListItem extends StatelessWidget {
     }
   }
 
+  Widget _buildLeading() {
+    if (service.images.isNotEmpty) {
+      return SizedBox(
+        width: 72,
+        height: 72,
+        child: CarouselSlider(
+          options: CarouselOptions(
+            viewportFraction: 1.0,
+            enableInfiniteScroll: true,
+            autoPlay: true,
+            autoPlayInterval: const Duration(seconds: 3),
+            height: 72,
+          ),
+          items: service.images.map((img) {
+            final isNetwork = img.startsWith('http');
+            return Builder(builder: (ctx) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: isNetwork
+                    ? Image.network(img, width: 72, height: 72, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image))
+                    : Image.asset(img, width: 72, height: 72, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image)),
+              );
+            });
+          }).toList(),
+        ),
+      );
+    }
+
+    // Fallback icon when no images are present
+    return const Icon(Icons.cleaning_services, size: 40);
+  }
+
+  String _formatTs(Timestamp? ts) {
+    if (ts == null) return '';
+    final dt = ts.toDate();
+    return '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final created = _formatTs(service.createdAt);
+    final updated = _formatTs(service.updatedAt);
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: ListTile(
-        leading: service.imageUrl.isNotEmpty
-            ? Image.asset(service.imageUrl, width: 56, height: 56, fit: BoxFit.cover)
-            : const Icon(Icons.cleaning_services, size: 40),
+        leading: _buildLeading(),
         title: Text(service.name),
-        subtitle: Text('${service.category} • ₹${service.basePrice.toStringAsFixed(0)}'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${service.category} • ₹${service.basePrice.toStringAsFixed(0)}'),
+            if (created.isNotEmpty || updated.isNotEmpty) const SizedBox(height: 4),
+            if (created.isNotEmpty) Text('Created: $created', style: const TextStyle(fontSize: 12)),
+            if (updated.isNotEmpty) Text('Updated: $updated', style: const TextStyle(fontSize: 12)),
+          ],
+        ),
         trailing: PopupMenuButton<String>(
           onSelected: (value) async {
             if (value == 'edit') {

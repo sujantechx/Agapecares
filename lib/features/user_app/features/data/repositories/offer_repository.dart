@@ -44,8 +44,21 @@ class OfferRepository {
   // Adds or overwrites a coupon (doc id = coupon.id)
   Future<void> addOrUpdateCoupon(CouponModel coupon) async {
     final data = coupon.toFirestore();
+    final docRef = _couponCol.doc(coupon.id.toUpperCase());
     try {
-      await _couponCol.doc(coupon.id).set(data);
+      final existing = await docRef.get();
+      if (existing.exists) {
+        await docRef.set({
+          ...data,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } else {
+        await docRef.set({
+          ...data,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
     } catch (e) {
       // If Firestore is unavailable, update the fallback list
       final idx = _fallbackCoupons.indexWhere((c) => c.id == coupon.id);

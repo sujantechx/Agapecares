@@ -13,10 +13,22 @@ service cloud.firestore {
 
     // Use the `admins` collection (or custom claims) to determine admin status.
     function isAdmin() {
-      // Accept either a server-side 'admins' doc or an 'admin' custom claim on the auth token.
+      // Accept either a server-side 'admins' doc, an 'admin' custom claim,
+      // or a 'role' custom claim set to 'admin'. Also accept a users/{uid}.role
+      // field set to 'admin' (any case) so that admin detection works even
+      // without custom claims or a separate admins doc.
       return isSignedIn() && (
+        // explicit admin custom claim flag
         (request.auth.token != null && request.auth.token.admin == true)
+        // or a 'role' custom claim set to 'admin'
+        || (request.auth.token != null && request.auth.token.role == 'admin')
+        // or an entry in /admins/{uid}
         || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        // or the users/{uid}.role field contains 'admin' (case-insensitive)
+        || (
+             exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.matches('(?i)^admin$')
+           )
       );
     }
 
@@ -102,7 +114,7 @@ service cloud.firestore {
                         && noServerFields()
                         && (
                             !('status' in request.resource.data)
-                            || request.resource.data.status == 'PENDING'
+                            || request.resource.data.status == 'pending'
                            )
                         && ('items' in request.resource.data)
                         && ('totalAmount' in request.resource.data);
@@ -113,7 +125,7 @@ service cloud.firestore {
                      || isAdmin()
                      || (isWorker() && (
                           // worker can read if order is pending (in pool) or assigned to them
-                          (resource.data.status == 'PENDING')
+                          (resource.data.status == 'pending')
                           || (resource.data.workerId == request.auth.uid)
                         ))
                    );
@@ -124,19 +136,19 @@ service cloud.firestore {
                       || isOwner(userId)
                       || (
                           isWorker()
-                          // the client query must explicitly filter by the workerId == current worker OR status == 'PENDING'
+                          // the client query must explicitly filter by the workerId == current worker OR status == 'pending'
                           && (
                                (request.query.where('workerId','==', request.auth.uid))
-                               || (request.query.where('status','==', 'PENDING'))
+                               || (request.query.where('status','==', 'pending'))
                              )
                         )
                     );
 
         // Helper: valid worker transitions for worker role
         function workerAllowedStatusTransition(old, new) {
-          return (old == 'ASSIGNED' && new == 'ACCEPTED')
-                 || (old == 'ACCEPTED' && new == 'IN_PROGRESS')
-                 || (old == 'IN_PROGRESS' && new == 'COMPLETED');
+          return (old == 'assigned' && new == 'accepted')
+                 || (old == 'accepted' && new == 'in_progress')
+                 || (old == 'in_progress' && new == 'completed');
         }
 
         // Update: admin can update everything.

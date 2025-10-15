@@ -1,6 +1,7 @@
 // lib/routes/app_router.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:go_router/go_router.dart';
 
@@ -33,6 +34,7 @@ class AppRouter {
       redirect: (BuildContext context, GoRouterState state) {
         final authState = authBloc.state;
         final location = state.matchedLocation;
+        if (kDebugMode) debugPrint('AppRouter.redirect: authState=$authState location=$location');
 
         // Define which routes are public using explicit path list (avoids RouteBase API differences).
         const publicPaths = [AppRoutes.splash, AppRoutes.login, AppRoutes.register, AppRoutes.phoneVerify];
@@ -42,6 +44,7 @@ class AppRouter {
 
         // 1. If the auth state is unknown (e.g., app just started), stay on the splash screen.
         if (authState is AuthInitial || authState is AuthLoading) {
+          if (kDebugMode) debugPrint('AppRouter.redirect -> splash (auth unknown/loading)');
           return AppRoutes.splash;
         }
 
@@ -54,10 +57,13 @@ class AppRouter {
           if (isPublicRoute || location == AppRoutes.splash) {
             switch (user.role) {
               case UserRole.admin:
+                if (kDebugMode) debugPrint('AppRouter.redirect -> adminDashboard');
                 return AppRoutes.adminDashboard;
               case UserRole.worker:
+                if (kDebugMode) debugPrint('AppRouter.redirect -> workerHome');
                 return AppRoutes.workerHome;
               default:
+                if (kDebugMode) debugPrint('AppRouter.redirect -> home');
                 return AppRoutes.home;
             }
           }
@@ -65,23 +71,27 @@ class AppRouter {
           // Role-based protection:
           // If a non-admin tries to access an admin route, redirect them.
           if (location.startsWith('/admin') && user.role != UserRole.admin) {
+            if (kDebugMode) debugPrint('AppRouter.redirect -> non-admin tried admin route, redirect home');
             return AppRoutes.home; // Or show an "Access Denied" page
           }
           // If a non-worker tries to access a worker route, redirect them.
           if (location.startsWith('/worker') && user.role != UserRole.worker) {
+            if (kDebugMode) debugPrint('AppRouter.redirect -> non-worker tried worker route, redirect home');
             return AppRoutes.home; // Or show an "Access Denied" page
           }
         }
 
         // 3. If the user is unauthenticated.
         if (authState is Unauthenticated) {
-          // If they are trying to access a protected route, redirect to login.
+          // If they is trying to access a protected route, redirect to login.
           if (!isPublicRoute) {
+            if (kDebugMode) debugPrint('AppRouter.redirect -> unauthenticated user accessing protected route, redirect to login');
             return AppRoutes.login;
           }
         }
 
         // 4. No redirection needed, continue to the intended route.
+        if (kDebugMode) debugPrint('AppRouter.redirect -> no redirection');
         return null;
       },
     );

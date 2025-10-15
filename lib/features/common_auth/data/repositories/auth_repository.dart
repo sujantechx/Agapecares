@@ -46,7 +46,33 @@ class AuthRepository {
     try {
       final doc = await _firestore.collection('users').doc(uid).get();
       if (!doc.exists) return null; // Should ideally not happen for a logged-in user
-      return UserModel.fromFirestore(doc);
+
+      // Build the UserModel here with resilient parsing of the 'role' field so
+      // that values like 'Admin', 'ADMIN', or 'admin' are treated the same.
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+
+      // Normalize role string and map to enum safely without changing the model file.
+      final rawRole = (data['role'] as String?) ?? '';
+      final roleStr = rawRole.trim().toLowerCase();
+      UserRole role = UserRole.user;
+      try {
+        role = UserRole.values.firstWhere((e) => e.name.toLowerCase() == roleStr);
+      } catch (_) {
+        role = UserRole.user;
+      }
+
+      return UserModel(
+        uid: doc.id,
+        name: data['name'] as String?,
+        email: data['email'] as String?,
+        phoneNumber: data['phoneNumber'] as String?,
+        photoUrl: data['photoUrl'] as String?,
+        role: role,
+        addresses: data['addresses'] != null
+            ? List<Map<String, dynamic>>.from(data['addresses'] as List)
+            : null,
+        createdAt: data['createdAt'] as Timestamp? ?? Timestamp.now(),
+      );
     } catch (e) {
       // Handle potential errors, like network issues or permissions
       print('Error fetching user model: $e');

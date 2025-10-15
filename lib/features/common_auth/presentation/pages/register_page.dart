@@ -79,7 +79,10 @@ class _RegisterPageState extends State<RegisterPage> {
             if (Navigator.of(context).canPop()) {
               context.pop(true);
             } else {
-              if (_role == UserRole.worker) {
+              // Route admins to admin dashboard explicitly
+              if (state.user.role == UserRole.admin) {
+                context.go(AppRoutes.adminDashboard);
+              } else if (state.user.role == UserRole.worker) {
                 context.go(AppRoutes.workerHome);
               } else {
                 context.go(AppRoutes.home);

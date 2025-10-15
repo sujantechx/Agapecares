@@ -44,8 +44,10 @@ class SessionService {
     if (s == null) return null;
     try {
       final Map<String, dynamic> map = jsonDecode(s) as Map<String, dynamic>;
-      final roleStr = map['role'] as String?;
-      final role = UserRole.values.firstWhere((e) => e.name == roleStr, orElse: () => UserRole.user);
+      final roleStr = (map['role'] as String?) ?? '';
+      // Normalize role string so values like 'Admin' or 'ADMIN' map correctly.
+      final normalized = roleStr.trim().toLowerCase();
+      final role = UserRole.values.firstWhere((e) => e.name.toLowerCase() == normalized, orElse: () => UserRole.user);
       final createdAtMillis = map['createdAt'] as int?;
       final createdAt = createdAtMillis != null ? Timestamp.fromMillisecondsSinceEpoch(createdAtMillis) : Timestamp.now();
       final addressesDynamic = map['addresses'];

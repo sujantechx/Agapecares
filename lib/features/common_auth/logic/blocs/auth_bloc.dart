@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // Needed for exceptions
+import 'package:flutter/foundation.dart';
 
 import '../../../../core/models/user_model.dart';
 import '../../data/repositories/auth_repository.dart';
@@ -32,6 +33,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
   void _onAuthStatusChanged(AuthStatusChanged event, Emitter<AuthState> emit) {
     if (event.user != null) {
+      if (kDebugMode) {
+        debugPrint('AuthBloc: Authenticated user role=${event.user!.role} uid=${event.user!.uid}');
+      }
       emit(Authenticated(event.user!));
     } else {
       emit(Unauthenticated());

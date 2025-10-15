@@ -36,6 +36,7 @@ class AppRoutes {
   static const String adminOrders = '/admin/orders';
   static const String adminUsers = '/admin/users';
   static const String adminAssignWorker = '/admin/assign';
+  static const String adminProfile = '/admin/profile';
 
   // Main informational routes
   static const String aboutUs = '/about';

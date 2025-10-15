@@ -42,9 +42,14 @@ class _SplasseScreenState extends State<SplasseScreen> {
         final role = (data != null && data['role'] is String) ? (data['role'] as String) : UserRole.user.name;
         debugPrint('SPLASH_DEBUG: role = $role');
         if (!mounted) return;
-        if (role.toLowerCase() == UserRole.worker.name) {
+        // Handle worker, admin and default (user) explicitly.
+        final normalized = role.trim().toLowerCase();
+        if (normalized == UserRole.worker.name) {
           debugPrint('SPLASH_DEBUG: routing to workerHome');
           context.go(AppRoutes.workerHome);
+        } else if (normalized == UserRole.admin.name) {
+          debugPrint('SPLASH_DEBUG: routing to adminDashboard');
+          context.go(AppRoutes.adminDashboard);
         } else {
           debugPrint('SPLASH_DEBUG: routing to home');
           context.go(AppRoutes.home);

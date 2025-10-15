@@ -24,7 +24,7 @@ class LoginPage extends StatelessWidget {
   Widget build(BuildContext context) {
     // Use the AuthBloc provided at the app level (injection_container.dart).
     // If none is available (tests or minimal app shells), provide a temporary
-    // AuthBloc that uses the dummy data source so the page can build safely.
+    // AuthBloc that uses the default Firebase instances so the page can build safely.
     try {
       // Try to read an existing AuthBloc. If it doesn't exist, this will throw.
       context.read<AuthBloc>();
@@ -59,15 +59,18 @@ class _LoginViewState extends State<LoginView> {
   @override
   void initState() {
     super.initState();
-    // If a session is already present, navigate to home automatically.
+    // If a session is already present, navigate to the correct dashboard automatically.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
         final session = context.read<SessionService>();
         final u = session.getUser();
         if (u != null) {
           if (mounted) {
-            if (u.role == 'worker') {
+            // Compare enum values, not strings. Route admins to admin dashboard.
+            if (u.role == UserRole.worker) {
               context.go(AppRoutes.workerHome);
+            } else if (u.role == UserRole.admin) {
+              context.go(AppRoutes.adminDashboard);
             } else {
               context.go(AppRoutes.home);
             }
@@ -120,8 +123,11 @@ class _LoginViewState extends State<LoginView> {
           if (state is Authenticated) {
             if (mounted) setState(() => _isLoading = false);
             final role = state.user.role;
+            // Route based on enum role. Admins go to admin dashboard.
             if (role == UserRole.worker) {
               context.go(AppRoutes.workerHome);
+            } else if (role == UserRole.admin) {
+              context.go(AppRoutes.adminDashboard);
             } else {
               context.go(AppRoutes.home);
             }

@@ -69,6 +69,13 @@ service cloud.firestore {
              && !('onboardedAt' in request.resource.data);
     }
 
+    // Worker allowed status transition helper (lifted to top-level so it can be reused by top-level orders)
+    function workerAllowedStatusTransition(old, new) {
+      return (old == 'assigned' && new == 'accepted')
+             || (old == 'accepted' && new == 'in_progress')
+             || (old == 'in_progress' && new == 'completed');
+    }
+
     // -----------------------
     // users collection
     // -----------------------
@@ -158,7 +165,7 @@ service cloud.firestore {
                         isAdmin()
                         || (
                             isOwner(userId)
-                            && // owner cannot change assignment or status
+                            && // owner cannot change `workerId` or `status`
                             !( 'workerId' in request.resource.data )
                             && !( 'status' in request.resource.data )
                             && noServerFields()
@@ -212,6 +219,61 @@ service cloud.firestore {
     match /services/{serviceId} {
       allow read: if true;
       allow create, update, delete: if isSignedIn() && isAdmin();
+    }
+
+    // -----------------------
+    // top-level orders collection
+    // Admins need access to list and read orders; workers can read relevant orders.
+    // -----------------------
+    match /orders/{orderId} {
+      // Read single order: admin, owner, or relevant worker
+      allow get: if isSignedIn() && (
+        isAdmin()
+        || (resource.data.orderOwner == request.auth.uid)
+        || (isWorker() && (resource.data.workerId == request.auth.uid || resource.data.status == 'pending'))
+      );
+
+      // List (query): admin, or owner queries; workers allowed only on constrained queries
+      allow list: if isSignedIn() && (
+        isAdmin()
+        || (request.query.where('orderOwner','==', request.auth.uid))
+        || (
+          isWorker() && (
+            (request.query.where('workerId','==', request.auth.uid))
+            || (request.query.where('status','==', 'pending'))
+          )
+        )
+      );
+
+      // Create: owner can create a top-level order if they set themselves as orderOwner (app may still use users/{uid}/orders)
+      allow create: if isSignedIn()
+        && (request.resource.data.orderOwner == request.auth.uid)
+        && noServerFields()
+        && ('items' in request.resource.data)
+        && ('totalAmount' in request.resource.data);
+
+      // Update: admin can update everything. Owner limited and worker allowed status transitions when assigned.
+      allow update: if isSignedIn() && (
+        isAdmin()
+        || (
+          (resource.data.orderOwner == request.auth.uid)
+          && !( 'workerId' in request.resource.data )
+          && !( 'status' in request.resource.data )
+          && noServerFields()
+        )
+        || (
+          isWorker()
+          && resource.data.workerId == request.auth.uid
+          && noServerFields()
+          && (
+            ( 'status' in request.resource.data && workerAllowedStatusTransition(resource.data.status, request.resource.data.status) && request.resource.data.workerId == resource.data.workerId )
+            || ( !('status' in request.resource.data) && !('workerId' in request.resource.data) )
+          )
+        )
+      );
+
+      // Delete: only admin
+      allow delete: if isSignedIn() && isAdmin();
     }
 
     // -----------------------

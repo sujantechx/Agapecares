@@ -26,8 +26,11 @@ class ServiceModel extends Equatable {
   /// The estimated time in minutes to complete the service.
   final int estimatedTimeMinutes;
 
-  /// URL for the service's primary icon or image.
+  /// URL for the service's primary icon or image. Kept for compatibility.
   final String imageUrl;
+
+  /// A list of image URLs for the service (preferred for multiple images).
+  final List<String> images;
 
   /// List of selectable variations for the service (e.g., "2 BHK", "3 BHK").
   final List<ServiceOption> options;
@@ -42,7 +45,8 @@ class ServiceModel extends Equatable {
     required this.category,
     required this.basePrice,
     required this.estimatedTimeMinutes,
-    required this.imageUrl,
+    this.imageUrl = '',
+    this.images = const [],
     this.options = const [],
     this.subscriptionPlans = const [],
   });
@@ -50,6 +54,14 @@ class ServiceModel extends Equatable {
   /// Creates a `ServiceModel` instance from a Firestore document snapshot.
   factory ServiceModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
+    // Try to read images array first; fall back to single imageUrl field.
+    final imagesList = (data['images'] as List<dynamic>?)
+        ?.map((e) => e as String)
+        .toList() ??
+        ([]);
+    final imageUrlFromDoc = data['imageUrl'] as String? ?? '';
+    final resolvedImageUrl = imageUrlFromDoc.isNotEmpty ? imageUrlFromDoc : (imagesList.isNotEmpty ? imagesList.first : '');
+
     return ServiceModel(
       id: doc.id,
       name: data['name'] as String? ?? '',
@@ -57,7 +69,36 @@ class ServiceModel extends Equatable {
       category: data['category'] as String? ?? '',
       basePrice: (data['basePrice'] as num?)?.toDouble() ?? 0.0,
       estimatedTimeMinutes: (data['estimatedTimeMinutes'] as num?)?.toInt() ?? 0,
-      imageUrl: data['imageUrl'] as String? ?? '',
+      imageUrl: resolvedImageUrl,
+      images: imagesList,
+      options: (data['options'] as List<dynamic>?)
+          ?.map((e) => ServiceOption.fromMap(e as Map<String, dynamic>))
+          .toList() ?? [],
+      subscriptionPlans: (data['subscriptionPlans'] as List<dynamic>?)
+          ?.map((e) => SubscriptionPlan.fromMap(e as Map<String, dynamic>))
+          .toList() ?? [],
+    );
+  }
+
+  /// Create from a plain map. Useful when you only have the document data
+  /// (for example `doc.data()`), which may not include the document id.
+  /// If the map contains an `id` field it will be used; otherwise `id` will
+  /// be an empty string. Prefer using `fromFirestore` when you have the
+  /// `DocumentSnapshot` so the `id` is preserved.
+  static ServiceModel fromMap(Map<String, dynamic> data) {
+    final imagesList = (data['images'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [];
+    final imageUrlFromMap = data['imageUrl'] as String? ?? '';
+    final resolvedImageUrl = imageUrlFromMap.isNotEmpty ? imageUrlFromMap : (imagesList.isNotEmpty ? imagesList.first : '');
+
+    return ServiceModel(
+      id: data['id'] as String? ?? '',
+      name: data['name'] as String? ?? '',
+      description: data['description'] as String? ?? '',
+      category: data['category'] as String? ?? '',
+      basePrice: (data['basePrice'] as num?)?.toDouble() ?? 0.0,
+      estimatedTimeMinutes: (data['estimatedTimeMinutes'] as num?)?.toInt() ?? 0,
+      imageUrl: resolvedImageUrl,
+      images: imagesList,
       options: (data['options'] as List<dynamic>?)
           ?.map((e) => ServiceOption.fromMap(e as Map<String, dynamic>))
           .toList() ?? [],
@@ -76,13 +117,12 @@ class ServiceModel extends Equatable {
       'basePrice': basePrice,
       'estimatedTimeMinutes': estimatedTimeMinutes,
       'imageUrl': imageUrl,
+      'images': images,
       'options': options.map((o) => o.toMap()).toList(),
       'subscriptionPlans': subscriptionPlans.map((s) => s.toMap()).toList(),
     };
   }
 
   @override
-  List<Object?> get props => [id, name, category, basePrice];
-
-  static fromMap(Map<String, dynamic> data) {}
+  List<Object?> get props => [id, name, category, basePrice, imageUrl, images];
 }

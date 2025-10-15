@@ -10,6 +10,7 @@ import 'app/theme/app_theme.dart';
 import 'package:agapecares/app/app.dart' as di;
 import 'package:agapecares/app/routes/app_router.dart';
 import 'package:agapecares/features/common_auth/logic/blocs/auth_bloc.dart';
+import 'package:agapecares/app/theme/theme_cubit.dart';
 
 
 Future<void> main() async {
@@ -27,12 +28,19 @@ Future<void> main() async {
   // Build BlocProviders from GetIt and ensure the shared AuthBloc is used.
   final blocProviders = di.buildBlocsFromGetIt(authBloc: authBloc);
 
-  // Run the app wrapped by the repository providers and bloc providers so
-  // repositories and blocs are available above MyApp.
+  // Run the app wrapped by the repository providers, bloc providers and ThemeCubit so
+  // repositories, blocs and theme are available above MyApp.
   runApp(
     MultiRepositoryProvider(
       providers: repoProviders,
-      child: MultiBlocProvider(providers: blocProviders, child: MyApp(authBloc: authBloc)),
+      child: MultiBlocProvider(
+        providers: [
+          ...blocProviders,
+          // Provide a global ThemeCubit so the entire app can toggle themes.
+          BlocProvider<ThemeCubit>(create: (_) => ThemeCubit()),
+        ],
+        child: MyApp(authBloc: authBloc),
+      ),
     ),
   );
 }
@@ -68,11 +76,18 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     // The BlocProviders are already mounted above MyApp, so simply build the router app.
-    return MaterialApp.router(
-      title: 'Agape Cares',
-      theme: AppTheme.lightTheme,
-      debugShowCheckedModeBanner: false,
-      routerConfig: _router,
+    // Use BlocBuilder to react to ThemeCubit changes and switch between light/dark themes.
+    return BlocBuilder<ThemeCubit, ThemeMode>(
+      builder: (context, themeMode) {
+        return MaterialApp.router(
+          title: 'Agape Cares',
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: themeMode,
+          debugShowCheckedModeBanner: false,
+          routerConfig: _router,
+        );
+      },
     );
   }
 }

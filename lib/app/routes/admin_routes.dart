@@ -1,3 +1,4 @@
+import 'package:agapecares/features/admin_app/features/service_management/presentation/screens/admin_services_main_page.dart';
 import 'package:agapecares/features/admin_app/features/service_management/presentation/screens/admin_add_edit_service_screen.dart';
 import 'package:agapecares/features/admin_app/features/service_management/presentation/screens/admin_service_list_page.dart';
 import 'package:agapecares/features/admin_app/features/service_management/presentation/screens/admin_order_list_page.dart';
@@ -22,7 +23,7 @@ final List<RouteBase> adminRoutes = [
   ),
   GoRoute(
     path: AppRoutes.adminServices,
-    builder: (context, state) => AdminDashboardPage(child: const AdminServiceListScreen()),
+    builder: (context, state) => AdminDashboardPage(child: const AdminServicesMainPage()),
   ),
 
   GoRoute(

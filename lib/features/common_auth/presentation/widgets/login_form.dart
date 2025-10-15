@@ -38,9 +38,9 @@ class _LoginFormState extends State<LoginForm> {
   Widget build(BuildContext context) {
     return BlocListener<AuthBloc, AuthState>(
       listener: (context, state) {
-        if (state is AuthCodeSentSuccess) {
-          // Navigate to OTP page, pass phone number as extra
-          if (mounted) context.push(AppRoutes.otp, extra: _phoneCtrl.text.trim());
+        if (state is AuthOtpSent) {
+          // Navigate to OTP verification page, pass the verificationId as extra
+          if (mounted) context.push(AppRoutes.phoneVerify, extra: state.verificationId);
         } else if (state is AuthFailure) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.message)));
         }

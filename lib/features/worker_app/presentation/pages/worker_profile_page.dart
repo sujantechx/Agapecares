@@ -79,7 +79,7 @@ class WorkerProfilePage extends StatelessWidget {
               child: ListTile(
                 leading: const Icon(Icons.badge_outlined),
                 title: const Text('Role'),
-                subtitle: Text(u?.role ?? 'worker'),
+                subtitle: Text(u?.role.name ?? UserRole.worker.name),
               ),
             ),
             const SizedBox(height: 12),

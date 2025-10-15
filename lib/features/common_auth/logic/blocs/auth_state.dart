@@ -1,36 +1,44 @@
-// lib/features/auth/logic/blocs/auth_state.dart
+// lib/features/common_auth/logic/bloc/auth_state.dart
 
 
 import 'package:equatable/equatable.dart';
-import 'package:agapecares/core/models/user_model.dart';
+import '../../../../core/models/user_model.dart';
 
 abstract class AuthState extends Equatable {
   const AuthState();
   @override
-  List<Object> get props => [];
+  List<Object?> get props => [];
 }
 
-/// The initial state of the authentication flow.
+/// Initial state, authentication status is unknown.
 class AuthInitial extends AuthState {}
 
-/// State indicating that an authentication process is ongoing (e.g., API call).
-class AuthLoading extends AuthState {}
-
-/// State indicating that the OTP was successfully sent.
-class AuthCodeSentSuccess extends AuthState {}
-
-/// State indicating the user has successfully logged in.
-class AuthLoggedIn extends AuthState {
+/// The user is successfully authenticated.
+class Authenticated extends AuthState {
   final UserModel user;
-  const AuthLoggedIn(this.user);
+  const Authenticated(this.user);
   @override
-  List<Object> get props => [user];
+  List<Object?> get props => [user];
 }
 
-/// State indicating that an error occurred during authentication.
+/// The user is not authenticated.
+class Unauthenticated extends AuthState {}
+
+/// An authentication process is in progress.
+class AuthLoading extends AuthState {}
+
+/// An error occurred during authentication.
 class AuthFailure extends AuthState {
   final String message;
   const AuthFailure(this.message);
   @override
-  List<Object> get props => [message];
+  List<Object?> get props => [message];
+}
+
+/// A temporary state indicating an OTP has been sent and the UI should show the OTP input field.
+class AuthOtpSent extends AuthState {
+  final String verificationId;
+  const AuthOtpSent(this.verificationId);
+  @override
+  List<Object?> get props => [verificationId];
 }

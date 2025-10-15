@@ -2,6 +2,7 @@ import 'package:agapecares/core/models/user_model.dart';
 import 'package:agapecares/core/services/session_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 
 void main() {
@@ -12,7 +13,14 @@ void main() {
     final session = SessionService();
     await session.init();
 
-    final user = UserModel(uid: 'uid123', phoneNumber: '+911234567890', name: 'Alice', email: 'alice@example.com');
+    final user = UserModel(
+      uid: 'uid123',
+      phoneNumber: '+911234567890',
+      name: 'Alice',
+      email: 'alice@example.com',
+      role: UserRole.user,
+      createdAt: Timestamp.now(),
+    );
 
     // Act: save user
     await session.saveUser(user);
@@ -32,4 +40,3 @@ void main() {
     expect(session.isLoggedIn(), isFalse);
   });
 }
-

@@ -37,9 +37,10 @@ class CartBloc extends Bloc<CartEvent, CartState> {
 
   void _onRemoveItem(RemoveItem event, Emitter<CartState> emit) async {
     if (state is CartLoaded) {
+      // Build composite id used in Firestore: serviceId_optionName
       final List<CartItemModel> updatedItems = (state as CartLoaded)
           .items
-          .where((item) => item.id != event.itemId)
+          .where((item) => '${item.serviceId}_${item.optionName}' != event.itemId)
           .toList();
       await _cartRepository.removeCartItem(userId, event.itemId);
       emit(CartLoaded(updatedItems));

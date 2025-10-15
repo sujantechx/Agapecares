@@ -1,7 +1,5 @@
 // lib/injection_container.dart
-// Central dependency wiring for the app. Provides:
-//  - `init()` -> registers services/repositories/blocs and returns RepositoryProviders
-//  - `buildBlocs(BuildContext)` -> returns the list of BlocProviders used by the app
+
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -93,7 +91,7 @@ Future<List<RepositoryProvider>> init() async {
   sl.registerLazySingleton<OfferRepository>(() => OfferRepository());
 
   // Register AuthRepository (used by AuthBloc and app-wide providers)
-  sl.registerLazySingleton<AuthRepository>(() => AuthRepositoryImpl(remoteDataSource: sl(), sessionService: sl()));
+  sl.registerLazySingleton<AuthRepository>(() => AuthRepository(firebaseAuth: sl(), firestore: sl()));
 
   sl.registerLazySingleton<admin_repo.ServiceRepository>(
       () => admin_repo_impl.ServiceRepositoryImpl(remoteDataSource: sl()));
@@ -123,6 +121,8 @@ Future<List<RepositoryProvider>> init() async {
     RepositoryProvider<admin_user_repo.AdminUserRepository>.value(value: sl()),
     RepositoryProvider<admin_worker_repo.AdminWorkerRepository>.value(value: sl()),
     RepositoryProvider<OfferRepository>.value(value: sl()),
+    // Expose SessionService to the widget tree so widgets can read cached user safely
+    RepositoryProvider<SessionService>.value(value: sl()),
   ];
 
   return providers;
@@ -152,5 +152,24 @@ List<BlocProvider> buildBlocs(BuildContext context) {
     BlocProvider<AdminOrderBloc>(create: (_) => AdminOrderBloc(repo: adminOrderRepo)),
     BlocProvider<AdminUserBloc>(create: (_) => AdminUserBloc(repo: adminUserRepo)),
     BlocProvider<AdminWorkerBloc>(create: (_) => AdminWorkerBloc(repo: adminWorkerRepo)),
+  ];
+}
+
+List<BlocProvider> buildBlocsFromGetIt({AuthBloc? authBloc}) {
+  // Use the service locator to build bloc instances when we don't have a BuildContext.
+  // If an AuthBloc instance is provided, use it (so router and widget tree share it).
+  final _authBloc = authBloc ?? sl<AuthBloc>();
+
+  return [
+    BlocProvider<AuthBloc>.value(value: _authBloc),
+    BlocProvider<ServiceBloc>(create: (_) => ServiceBloc(serviceRepository: sl())),
+    BlocProvider<ui_cart_bloc.CartBloc>(
+      create: (_) => ui_cart_bloc.CartBloc(cartRepository: sl(), offerRepository: sl()),
+    ),
+    BlocProvider<OrderBloc>(create: (_) => OrderBloc(orderRepository: sl())),
+    BlocProvider<ServiceManagementBloc>(create: (_) => ServiceManagementBloc(serviceRepository: sl())),
+    BlocProvider<AdminOrderBloc>(create: (_) => AdminOrderBloc(repo: sl())),
+    BlocProvider<AdminUserBloc>(create: (_) => AdminUserBloc(repo: sl())),
+    BlocProvider<AdminWorkerBloc>(create: (_) => AdminWorkerBloc(repo: sl())),
   ];
 }

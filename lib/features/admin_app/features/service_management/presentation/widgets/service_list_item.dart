@@ -15,7 +15,7 @@ class ServiceListItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       title: Text(service.name),
-      subtitle: Text('₹${service.price.toStringAsFixed(2)}'),
+      subtitle: Text('₹${service.basePrice.toStringAsFixed(2)}'),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

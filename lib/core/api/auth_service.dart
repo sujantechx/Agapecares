@@ -32,12 +32,17 @@ class AuthService {
 
     // Create user document
     final userDoc = _firestore.collection('users').doc(cred.user!.uid);
+    final UserRole parsedRole = UserRole.values.firstWhere(
+      (e) => e.name == role,
+      orElse: () => UserRole.user,
+    );
     final model = UserModel(
       uid: cred.user!.uid,
       email: email,
       name: displayName,
-      role: role,
+      role: parsedRole,
       phoneNumber: cred.user!.phoneNumber,
+      createdAt: Timestamp.now(),
     );
     await userDoc.set(model.toFirestore());
 
@@ -107,7 +112,18 @@ class AuthService {
     final ref = _firestore.collection('users').doc(uid);
     final snap = await ref.get();
     if (!snap.exists) {
-      final model = UserModel(uid: uid, email: null, name: name, role: role, phoneNumber: phone);
+      final UserRole parsedRole = UserRole.values.firstWhere(
+        (e) => e.name == role,
+        orElse: () => UserRole.user,
+      );
+      final model = UserModel(
+        uid: uid,
+        email: null,
+        name: name,
+        role: parsedRole,
+        phoneNumber: phone,
+        createdAt: Timestamp.now(),
+      );
       await ref.set(model.toFirestore());
     }
   }

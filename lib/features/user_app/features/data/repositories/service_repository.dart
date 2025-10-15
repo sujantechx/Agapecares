@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../../../../core/models/service_list_model.dart';
+import '../../../../../core/models/service_model.dart';
 
 
 /// Simple Firestore-backed repository for services collection.
@@ -10,12 +10,11 @@ class ServiceRepository {
 
   Future<void> createService(ServiceModel service) async {
     final id = service.id.isNotEmpty ? service.id : _firestore.collection('services').doc().id;
-    await _firestore.collection('services').doc(id).set(service.toMap());
+    await _firestore.collection('services').doc(id).set(service.toFirestore());
   }
 
   Future<List<ServiceModel>> fetchAllServices() async {
     final snap = await _firestore.collection('services').get();
-    return snap.docs.map((d) => ServiceModel.fromMap(d.data())).toList();
+    return snap.docs.map((d) => ServiceModel.fromFirestore(d)).toList();
   }
 }
-

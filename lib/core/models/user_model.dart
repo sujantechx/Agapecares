@@ -1,107 +1,104 @@
-// lib/shared/models/user_model.dart
+// lib/models/user_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:equatable/equatable.dart';
 
-class UserModel {
+/// Enum to define user roles for type safety.
+enum UserRole { user, worker, admin }
+
+/// Represents a user document in the `users` collection in Firestore.
+/// This is the single source of truth for a person's identity and role.
+class UserModel extends Equatable {
+  /// The unique identifier from Firebase Authentication, same as the document ID.
   final String uid;
+
+  /// The user's full display name.
   final String? name;
+
+  /// The user's primary email address.
   final String? email;
-  final String? phoneNumber; // named phoneNumber used in codebase
-  final String role;
+
+  /// The user's phone number.
+  final String? phoneNumber;
+
+  /// The URL for the user's profile picture.
   final String? photoUrl;
+
+  /// The role of the user, which controls their access permissions.
+  final UserRole role;
+
+  /// A list of saved addresses for the user. Each address is a map.
   final List<Map<String, dynamic>>? addresses;
-  final bool isVerified;
+
+  /// Timestamp of when the user account was created.
   final Timestamp createdAt;
 
-  UserModel({
+  const UserModel({
     required this.uid,
     this.name,
     this.email,
     this.phoneNumber,
-    this.role = 'user',
     this.photoUrl,
+    required this.role,
     this.addresses,
-    this.isVerified = false,
-    Timestamp? createdAt,
-  }) : createdAt = createdAt ?? Timestamp.now();
+    required this.createdAt,
+  });
 
+  /// Creates a `UserModel` instance from a Firestore document snapshot.
   factory UserModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
     return UserModel(
       uid: doc.id,
       name: data['name'] as String?,
       email: data['email'] as String?,
-      phoneNumber: data['phone'] as String? ?? data['phoneNumber'] as String?,
-      role: data['role'] as String? ?? 'user',
+      phoneNumber: data['phoneNumber'] as String?,
       photoUrl: data['photoUrl'] as String?,
+      role: UserRole.values.firstWhere(
+            (e) => e.name == data['role'],
+        orElse: () => UserRole.user, // Default to 'user' if role is missing or invalid
+      ),
       addresses: data['addresses'] != null
           ? List<Map<String, dynamic>>.from(data['addresses'] as List)
           : null,
-      isVerified: data['isVerified'] as bool? ?? false,
-      createdAt: (data['createdAt'] as Timestamp?) ?? Timestamp.now(),
+      createdAt: data['createdAt'] as Timestamp? ?? Timestamp.now(),
     );
   }
 
+  /// Converts this `UserModel` instance into a map for storing in Firestore.
   Map<String, dynamic> toFirestore() {
     return {
       'name': name,
       'email': email,
-      'phoneNumber': phoneNumber ?? null,
-      'role': role,
-      'photoUrl': photoUrl,
-      'addresses': addresses,
-      'isVerified': isVerified,
-      // Note: Do NOT include 'createdAt' here — timestamps are server-managed and the
-      // security rules disallow client-supplied createdAt/updatedAt fields.
-    };
-  }
-
-  factory UserModel.fromJson(Map<String, dynamic> json) {
-    return UserModel(
-      uid: json['uid'] as String? ?? '',
-      name: json['name'] as String?,
-      email: json['email'] as String?,
-      phoneNumber: json['phoneNumber'] as String?,
-      role: json['role'] as String? ?? 'user',
-      photoUrl: json['photoUrl'] as String?,
-      addresses: json['addresses'] != null
-          ? List<Map<String, dynamic>>.from(json['addresses'] as List)
-          : null,
-      isVerified: json['isVerified'] as bool? ?? false,
-      createdAt: (json['createdAt'] is Timestamp)
-          ? json['createdAt'] as Timestamp
-          : Timestamp.now(),
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'uid': uid,
-      'name': name,
-      'email': email,
       'phoneNumber': phoneNumber,
-      'role': role,
       'photoUrl': photoUrl,
+      'role': role.name, // Store the enum as a string
       'addresses': addresses,
-      'isVerified': isVerified,
-      // 'createdAt' intentionally omitted for client writes
+      'createdAt': createdAt,
     };
   }
 
-  /// Create a UserModel from a [firebase_auth] User instance.
-  factory UserModel.fromFirebaseUser(User? user) {
-    if (user == null) {
-      return UserModel(uid: '', createdAt: Timestamp.now());
-    }
+  /// Creates a copy of this user with updated fields.
+  UserModel copyWith({
+    String? uid,
+    String? name,
+    String? email,
+    String? phoneNumber,
+    String? photoUrl,
+    UserRole? role,
+    List<Map<String, dynamic>>? addresses,
+    Timestamp? createdAt,
+  }) {
     return UserModel(
-      uid: user.uid,
-      name: user.displayName,
-      email: user.email,
-      phoneNumber: user.phoneNumber,
-      photoUrl: user.photoURL,
-      createdAt: Timestamp.now(),
+      uid: uid ?? this.uid,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      photoUrl: photoUrl ?? this.photoUrl,
+      role: role ?? this.role,
+      addresses: addresses ?? this.addresses,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 
-  static Future<UserModel?> fromMap(Map<String, dynamic> map) async {}
+  @override
+  List<Object?> get props => [uid, name, email, phoneNumber, photoUrl, role, addresses, createdAt];
 }

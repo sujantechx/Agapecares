@@ -10,13 +10,14 @@ class WorkerRepository {
 
   WorkerRepository({FirebaseFirestore? firestore}) : _firestore = firestore ?? FirebaseFirestore.instance;
 
+  /// Fetch a worker profile by id. Uses `UserModel.fromFirestore` which is the
+  /// single source-of-truth for user mapping. Returns null if doc doesn't exist.
   Future<UserModel?> fetchWorkerProfile(String workerId) async {
     try {
       final doc = await _firestore.collection('users').doc(workerId).get();
       if (!doc.exists) return null;
-      final data = doc.data();
-      if (data == null) return null;
-      return UserModel.fromMap({...data, 'uid': doc.id});
+      // Use the authoritative factory on UserModel to parse the document snapshot.
+      return UserModel.fromFirestore(doc);
     } catch (e) {
       debugPrint('[WorkerRepository] fetchWorkerProfile failed: $e');
       return null;

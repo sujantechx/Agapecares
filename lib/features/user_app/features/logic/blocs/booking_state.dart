@@ -1,9 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import '../../../../../core/models/service_list_model.dart';
-
-
-
+import '../../../../../core/models/service_model.dart';
 
 abstract class HomeState extends Equatable {
   const HomeState();

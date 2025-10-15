@@ -1,57 +1,86 @@
-// lib/shared/models/worker_model.dart
+// lib/models/worker_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:equatable/equatable.dart';
 
-class WorkerModel {
-  final String id;
-  final String name;
-  final double rating;
-  final double earnings;
-  final bool isAvailable;
+/// Enum for the professional status of a worker.
+enum WorkerStatus { pending, approved, disabled }
 
-  WorkerModel({
-    required this.id,
-    required this.name,
-    required this.rating,
-    required this.earnings,
-    required this.isAvailable,
+/// Represents a worker's professional profile in the `workers` collection.
+/// This data is linked to a `UserModel` by sharing the same UID.
+class WorkerModel extends Equatable {
+  /// The UID, linking this profile to a document in the `users` collection.
+  final String uid;
+
+  /// List of `serviceId`s that this worker is qualified to perform.
+  final List<String> skills;
+
+  /// The worker's current professional status (e.g., pending approval).
+  final WorkerStatus status;
+
+  /// The worker's average rating from all completed jobs.
+  final double ratingAvg;
+
+  /// The total number of ratings the worker has received.
+  final int ratingCount;
+
+  /// Timestamp of when the worker profile was created.
+  final Timestamp onboardedAt;
+
+  const WorkerModel({
+    required this.uid,
+    this.skills = const [],
+    required this.status,
+    this.ratingAvg = 0.0,
+    this.ratingCount = 0,
+    required this.onboardedAt,
   });
 
-  factory WorkerModel.fromFirestore(Map<String, dynamic> data, String documentId) {
+  /// Creates a `WorkerModel` instance from a Firestore document snapshot.
+  factory WorkerModel.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
     return WorkerModel(
-      id: documentId,
-      name: data['name'] ?? '',
-      rating: (data['rating'] ?? 0.0).toDouble(),
-      earnings: (data['earnings'] ?? 0.0).toDouble(),
-      isAvailable: data['isAvailable'] ?? false,
+      uid: doc.id,
+      skills: List<String>.from(data['skills'] ?? []),
+      status: WorkerStatus.values.firstWhere(
+            (e) => e.name == data['status'],
+        orElse: () => WorkerStatus.pending,
+      ),
+      ratingAvg: (data['ratingAvg'] as num?)?.toDouble() ?? 0.0,
+      ratingCount: (data['ratingCount'] as num?)?.toInt() ?? 0,
+      onboardedAt: data['onboardedAt'] as Timestamp? ?? Timestamp.now(),
     );
   }
 
+  /// Converts this `WorkerModel` instance into a map for storing in Firestore.
   Map<String, dynamic> toFirestore() {
     return {
-      'name': name,
-      'rating': rating,
-      'earnings': earnings,
-      'isAvailable': isAvailable,
+      'skills': skills,
+      'status': status.name,
+      'ratingAvg': ratingAvg,
+      'ratingCount': ratingCount,
+      'onboardedAt': onboardedAt,
     };
   }
 
-  factory WorkerModel.fromJson(Map<String, dynamic> json) {
+  /// Creates a copy of this worker profile with updated fields.
+  WorkerModel copyWith({
+    String? uid,
+    List<String>? skills,
+    WorkerStatus? status,
+    double? ratingAvg,
+    int? ratingCount,
+    Timestamp? onboardedAt,
+  }) {
     return WorkerModel(
-      id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
-      earnings: (json['earnings'] as num?)?.toDouble() ?? 0.0,
-      isAvailable: json['isAvailable'] as bool? ?? false,
+      uid: uid ?? this.uid,
+      skills: skills ?? this.skills,
+      status: status ?? this.status,
+      ratingAvg: ratingAvg ?? this.ratingAvg,
+      ratingCount: ratingCount ?? this.ratingCount,
+      onboardedAt: onboardedAt ?? this.onboardedAt,
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'rating': rating,
-      'earnings': earnings,
-      'isAvailable': isAvailable,
-    };
-  }
+  @override
+  List<Object?> get props => [uid, skills, status, ratingAvg, ratingCount, onboardedAt];
 }

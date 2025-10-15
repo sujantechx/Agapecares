@@ -59,8 +59,17 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     final doc = await _firestore.collection('users').doc(user.uid).get();
     if (!doc.exists) {
       // This case can happen if a user verifies but didn't complete registration
-      // We return a basic model, the app should handle this case
-      return UserModel.fromFirebaseUser(user);
+      // Build a basic UserModel from the Firebase User (models must not be changed).
+      return UserModel(
+        uid: user.uid,
+        name: user.displayName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        photoUrl: user.photoURL,
+        role: UserRole.user, // Default to 'user' for phone sign-ups
+        addresses: null,
+        createdAt: Timestamp.now(),
+      );
     }
     return UserModel.fromFirestore(doc);
   }

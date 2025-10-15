@@ -8,6 +8,8 @@ class CartItemCard extends StatelessWidget {
   final CartItemModel item;
   const CartItemCard({super.key, required this.item});
 
+  String get _compositeId => '${item.serviceId}_${item.optionName}';
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -27,14 +29,14 @@ class CartItemCard extends StatelessWidget {
                       Text(item.serviceName,
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 4),
-                      Text(item.selectedOption.name,
+                      Text(item.optionName,
                           style: TextStyle(color: Colors.grey[600])),
                     ],
                   ),
                 ),
-                // Price
+                // Price (unit price x quantity shown as unit price here)
                 Text(
-                  '₹ ${item.price.toStringAsFixed(2)}',
+                  '₹ ${item.unitPrice.toStringAsFixed(2)}',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],
@@ -49,7 +51,7 @@ class CartItemCard extends StatelessWidget {
                 IconButton(
                   icon: Icon(Icons.delete_outline, color: Colors.red[700]),
                   onPressed: () {
-                    context.read<CartBloc>().add(CartItemRemoved(item.id));
+                    context.read<CartBloc>().add(CartItemRemoved(_compositeId));
                   },
                 ),
               ],
@@ -73,7 +75,7 @@ class CartItemCard extends StatelessWidget {
             onPressed: item.quantity > 1
                 ? () => context
                 .read<CartBloc>()
-                .add(CartItemQuantityDecreased(item.id))
+                .add(CartItemQuantityDecreased(_compositeId))
                 : null, // Disable if quantity is 1
             splashRadius: 20,
           ),
@@ -82,7 +84,7 @@ class CartItemCard extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () {
-              context.read<CartBloc>().add(CartItemQuantityIncreased(item.id));
+              context.read<CartBloc>().add(CartItemQuantityIncreased(_compositeId));
             },
             splashRadius: 20,
           ),

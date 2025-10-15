@@ -1,4 +1,4 @@
-import '../../../../../core/models/service_list_model.dart';
+import '../../../../../core/models/service_model.dart';
 import 'home_repository.dart';
 import 'package:agapecares/features/user_app/features/data/fixed_data/all_services.dart';
 

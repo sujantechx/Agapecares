@@ -1,5 +1,5 @@
 import 'package:equatable/equatable.dart';
-import 'package:agapecares/core/models/service_list_model.dart';
+import 'package:agapecares/core/models/service_model.dart';
 
 
 abstract class ServiceState extends Equatable {

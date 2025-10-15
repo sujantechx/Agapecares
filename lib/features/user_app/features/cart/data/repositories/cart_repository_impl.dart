@@ -23,17 +23,21 @@ class CartRepositoryImpl implements CartRepository {
     return null;
   }
 
+  String _docIdForItem(CartItemModel item) => '${item.serviceId}_${item.optionName}';
+  String _docIdForParts(String serviceId, String optionName) => '${serviceId}_${optionName}';
+
   @override
   Future<void> addItemToCart(CartItemModel item) async {
     final userId = _getCurrentUserId();
     if (userId == null) return; // not authenticated, skip remote write
+    final docId = _docIdForItem(item);
     try {
       await _firestore
           .collection('users')
           .doc(userId)
           .collection('cart')
-          .doc(item.id)
-          .set(item.toFirestore());
+          .doc(docId)
+          .set(item.toMap());
     } on FirebaseException {
       rethrow;
     }
@@ -64,7 +68,7 @@ class CartRepositoryImpl implements CartRepository {
     final snapshot =
         await _firestore.collection('users').doc(uid).collection('cart').get();
     return snapshot.docs
-        .map((doc) => CartItemModel.fromFirestore(doc, doc.id))
+        .map((doc) => CartItemModel.fromMap(doc.data() as Map<String, dynamic>))
         .toList();
   }
 
@@ -107,14 +111,21 @@ class CartRepositoryImpl implements CartRepository {
   }
 
   @override
-  Future<void> addCartItem(String userId, CartItemModel item) {
-    // TODO: implement addCartItem
-    throw UnimplementedError();
+  Future<void> addCartItem(String userId, CartItemModel item) async {
+    final docId = _docIdForItem(item);
+    try {
+      await _firestore.collection('users').doc(userId).collection('cart').doc(docId).set(item.toMap());
+    } on FirebaseException {
+      rethrow;
+    }
   }
 
   @override
-  Future<void> removeCartItem(String userId, String itemId) {
-    // TODO: implement removeCartItem
-    throw UnimplementedError();
+  Future<void> removeCartItem(String userId, String itemId) async {
+    try {
+      await _firestore.collection('users').doc(userId).collection('cart').doc(itemId).delete();
+    } on FirebaseException {
+      rethrow;
+    }
   }
 }

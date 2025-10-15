@@ -13,7 +13,11 @@ service cloud.firestore {
 
     // Use the `admins` collection (or custom claims) to determine admin status.
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      // Accept either a server-side 'admins' doc or an 'admin' custom claim on the auth token.
+      return isSignedIn() && (
+        (request.auth.token != null && request.auth.token.admin == true)
+        || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
     }
 
     // Worker detection: consider a user a worker if either:
@@ -21,11 +25,15 @@ service cloud.firestore {
     // - the users/{uid} document has role == 'worker'
     // This keeps the rules compatible with client-side registration that writes users/{uid}.role
     function isWorker() {
-      return isSignedIn()
-        && (
-            exists(/databases/$(database)/documents/workers/$(request.auth.uid))
-            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'worker'
-           );
+      // Guard the users doc read with an exists() check to avoid runtime errors
+      // when the users document does not yet exist.
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/workers/$(request.auth.uid))
+        || (
+             exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'worker'
+           )
+      );
     }
 
     function isOwner(userId) {

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:agapecares/features/worker_app/data/repositories/worker_job_repository.dart';
 import 'package:agapecares/features/worker_app/presentation/widgets/job_card.dart';
-import 'package:agapecares/core/models/job_model.dart';
+
+import '../../../../core/models/job_model.dart';
+
 
 class WorkerOrdersPage extends StatefulWidget {
   const WorkerOrdersPage({Key? key}) : super(key: key);

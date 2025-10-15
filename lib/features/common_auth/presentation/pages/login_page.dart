@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:agapecares/app/routes/app_routes.dart';
@@ -14,13 +13,8 @@ import '../../logic/blocs/auth_bloc.dart';
 import '../../logic/blocs/auth_event.dart';
 import '../../logic/blocs/auth_state.dart';
 import '../../data/repositories/auth_repository.dart';
-import '../../data/datasources/auth_remote_ds.dart';
-
 import 'package:agapecares/core/services/session_service.dart';
 import 'package:agapecares/core/models/user_model.dart';
-import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
-import 'package:agapecares/features/user_app/features/cart/bloc/cart_bloc.dart';
-import 'package:agapecares/features/user_app/features/cart/bloc/cart_event.dart';
 
 
 class LoginPage extends StatelessWidget {
@@ -36,28 +30,10 @@ class LoginPage extends StatelessWidget {
       context.read<AuthBloc>();
       return const LoginView();
     } catch (_) {
-      // Provide a local AuthBloc built from the dummy remote datasource.
+      // Provide a local AuthBloc using the existing AuthRepository implementation.
       return BlocProvider(
         create: (context) {
-          // Try to read SessionService if available; otherwise pass null.
-          SessionService? session;
-          try {
-            session = context.read<SessionService>();
-          } catch (_) {
-            session = null;
-          }
-          return AuthBloc(
-            authRepository: AuthRepositoryImpl(
-              // Provide real Firebase instances so the fallback bloc can be used
-              // in simple/test shells without altering the constructor signature.
-              remoteDataSource: AuthRemoteDataSourceImpl(
-                firebaseAuth: FirebaseAuth.instance,
-                firestore: FirebaseFirestore.instance,
-              ),
-              // Optional SessionService
-              sessionService: session,
-            ),
-          );
+          return AuthBloc(authRepository: AuthRepository(firebaseAuth: FirebaseAuth.instance, firestore: FirebaseFirestore.instance));
         },
         child: const LoginView(),
       );
@@ -115,87 +91,40 @@ class _LoginViewState extends State<LoginView> {
     // Validate the form before proceeding.
     if (_formKey.currentState!.validate()) {
       final phoneNumber = _phoneController.text.trim();
-      // Add the event to the BLoC.
+      // Dispatch send OTP event
       context.read<AuthBloc>().add(AuthSendOtpRequested(phoneNumber));
     }
   }
 
   Future<void> _signInWithEmail() async {
-    // Fix: return early if form is invalid
+    // Validate form first
     if (!_formKey.currentState!.validate()) return;
+    // Dispatch login event to AuthBloc; the bloc/repository will handle sign-in and user fetching.
     setState(() => _isLoading = true);
-    // Read session service before any await to avoid using context across async gaps.
-    // Read defensively because LoginPage can be used in minimal/test shells without DI.
-    SessionService? sessionService;
-    try {
-      sessionService = context.read<SessionService>();
-    } catch (_) {
-      sessionService = null;
-    }
-    try {
-      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
-      final user = cred.user;
-      if (user != null) {
-        // Determine role from Firestore user doc (fallback to 'user')
-        String role = 'user';
-        try {
-          final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-          final data = doc.data();
-          if (data != null && data['role'] is String) role = data['role'] as String;
-        } catch (e) {
-          debugPrint('[LoginPage] failed to read user role from Firestore: $e');
-        }
-        // Save session (fire-and-forget is fine here)
-        try {
-          final um = UserModel(uid: user.uid, phoneNumber: user.phoneNumber ?? '', name: user.displayName ?? '', email: user.email, role: role);
-          // Await saving the session to ensure persistence before navigation (if available).
-          if (sessionService != null) await sessionService.saveUser(um);
-           // Seed cart and notify CartBloc so the UI updates immediately
-           try {
-             final cartRepo = context.read<CartRepository>();
-             await cartRepo.getCartItems();
-           } catch (_) {}
-           try {
-             context.read<CartBloc>().add(CartStarted());
-           } catch (_) {}
-         } catch (_) {}
-         if (!mounted) return;
-         // Navigate to the correct dashboard based on role
-         if (role == 'worker') {
-           context.go(AppRoutes.workerHome);
-         } else {
-           context.go(AppRoutes.home);
-         }
-       }
-     } on FirebaseAuthException catch (e) {
-       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message ?? 'Login failed')));
-     } catch (e) {
-       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $e')));
-     } finally {
-       if (mounted) setState(() => _isLoading = false);
-     }
-   }
+    context.read<AuthBloc>().add(AuthLoginWithEmailRequested(email: _emailController.text.trim(), password: _passwordController.text.trim()));
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: BlocListener<AuthBloc, AuthState>(
-        // Listen for state changes to handle navigation or show snackbars.
         listener: (context, state) {
-          if (state is AuthCodeSentSuccess) {
-            // Navigate to OTP page on success
-            context.push(AppRoutes.otp, extra: _phoneController.text.trim());
-          } else if (state is AuthFailure) {
-            // Show an error message on failure
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(state.message),
-                backgroundColor: Colors.red,
-              ),
-            );
+          if (state is AuthFailure) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.message), backgroundColor: Colors.red));
+            if (mounted) setState(() => _isLoading = false);
+          }
+          if (state is AuthOtpSent) {
+            // navigate to OTP verification page. Extra can be a map or the verificationId itself.
+            context.push(AppRoutes.phoneVerify, extra: state.verificationId);
+          }
+          if (state is Authenticated) {
+            if (mounted) setState(() => _isLoading = false);
+            final role = state.user.role;
+            if (role == UserRole.worker) {
+              context.go(AppRoutes.workerHome);
+            } else {
+              context.go(AppRoutes.home);
+            }
           }
         },
         child: Center(
@@ -263,36 +192,21 @@ class _LoginViewState extends State<LoginView> {
                       validator: Validators.validatePhoneNumber,
                     ),
                     const SizedBox(height: 24),
-                    BlocBuilder<AuthBloc, AuthState>(
-                      builder: (context, state) {
-                        return CommonButton(
-                          onPressed: _sendOtp,
-                          text: 'Send OTP',
-                          isLoading: state is AuthLoading,
-                        );
-                      },
-                    ),
+                    BlocBuilder<AuthBloc, AuthState>(builder: (context, state) {
+                      return CommonButton(onPressed: _sendOtp, text: 'Send OTP', isLoading: state is AuthLoading);
+                    }),
                   ],
 
                   const SizedBox(height: 12),
                   // Inside _LoginViewState in login_page.dart
 
 // Modify your TextButton for navigation to register page
-                  TextButton(
-                    onPressed: () async {
-                      // Navigate and wait for a result
-                      final result = await context.push(AppRoutes.register);
-                      if (result == true && mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Registration successful! Please log in.'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      }
-                    },
-                    child: const Text('Don\'t have an account? Register'),
-                  ),
+                  TextButton(onPressed: () async {
+                    final result = await context.push(AppRoutes.register);
+                    if (result == true && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registration successful!'), backgroundColor: Colors.green));
+                    }
+                  }, child: const Text('Don\'t have an account? Register')),
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: () => context.push(AppRoutes.forgotPassword),
@@ -307,3 +221,145 @@ class _LoginViewState extends State<LoginView> {
     );
   }
 }
+
+
+/*
+// lib/features/common_auth/presentation/pages/login_page.dart
+
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
+import 'package:agapecares/app/routes/app_routes.dart';
+import 'package:agapecares/core/utils/validators.dart';
+import 'package:agapecares/core/widgets/common_button.dart';
+
+import '../../logic/blocs/auth_bloc.dart';
+import '../../logic/blocs/auth_event.dart';
+import '../../logic/blocs/auth_state.dart';
+
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _phoneController = TextEditingController();
+  bool _isEmailMode = true;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+
+    final authBloc = context.read<AuthBloc>();
+
+    if (_isEmailMode) {
+      authBloc.add(AuthLoginWithEmailRequested(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      ));
+    } else {
+      // For phone login, first send OTP.
+      // The BLoC will emit AuthOtpSent state, which we listen for to navigate.
+      authBloc.add(AuthSendOtpRequested(_phoneController.text.trim()));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: BlocConsumer<AuthBloc, AuthState>(
+        listener: (context, state) {
+          if (state is AuthFailure) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(state.message), backgroundColor: Colors.red),
+            );
+          }
+          // When OTP is sent, navigate to the verification page.
+          if (state is AuthOtpSent) {
+            context.push(AppRoutes.phoneVerify, extra: state.verificationId);
+          }
+          // No need to listen for success, the router's redirect will handle it automatically.
+        },
+        builder: (context, state) {
+          final isLoading = state is AuthLoading;
+
+          return Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Welcome Back!', style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    // ... [UI for switching between email and phone] ...
+                    if (_isEmailMode)
+                      _buildEmailForm(isLoading)
+                    else
+                      _buildPhoneForm(isLoading),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      onPressed: () => context.push(AppRoutes.register),
+                      child: const Text('Don\'t have an account? Register'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildEmailForm(bool isLoading) {
+    return Column(
+      children: [
+        TextFormField(
+          controller: _emailController,
+          decoration: const InputDecoration(labelText: 'Email'),
+          keyboardType: TextInputType.emailAddress,
+          validator: Validators.validateEmail,
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _passwordController,
+          decoration: const InputDecoration(labelText: 'Password'),
+          obscureText: true,
+          validator: (v) => (v == null || v.length < 6) ? 'Enter min 6 chars' : null,
+        ),
+        const SizedBox(height: 16),
+        CommonButton(onPressed: _submit, text: 'Login', isLoading: isLoading),
+      ],
+    );
+  }
+
+  Widget _buildPhoneForm(bool isLoading) {
+    return Column(
+      children: [
+        TextFormField(
+          controller: _phoneController,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(labelText: 'Phone Number', prefixText: '+91 '),
+          validator: Validators.validatePhoneNumber,
+        ),
+        const SizedBox(height: 24),
+        CommonButton(onPressed: _submit, text: 'Send OTP', isLoading: isLoading),
+      ],
+    );
+  }
+}*/

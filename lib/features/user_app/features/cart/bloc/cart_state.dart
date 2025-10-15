@@ -1,13 +1,13 @@
 import 'package:equatable/equatable.dart';
 import '../data/models/cart_item_model.dart';
-import 'package:agapecares/core/models/offer_model.dart';
+import 'package:agapecares/core/models/coupon_model.dart';
 
 class CartState extends Equatable {
   final List<CartItemModel> items;
   final double subtotal;
-  final Offer? appliedCoupon;
+  final CouponModel? appliedCoupon;
   final double couponDiscount;
-  final Offer? extraOffer;
+  final CouponModel? extraOffer;
   final double extraDiscount;
   final double total;
   final String? error; // To show messages like "Invalid Coupon"

@@ -1,4 +1,9 @@
+// Admin User Management - Events
+// Purpose: Defines events that trigger admin user operations (load, refresh, search, update).
+// Notes: Events are designed to work with `AdminUserBloc` and `UserModel` from core models.
+
 import 'package:equatable/equatable.dart';
+import 'package:agapecares/core/models/user_model.dart'; // import enum
 
 abstract class AdminUserEvent extends Equatable {
   @override
@@ -8,7 +13,7 @@ abstract class AdminUserEvent extends Equatable {
 class LoadUsers extends AdminUserEvent {}
 class UpdateUserRoleEvent extends AdminUserEvent {
   final String uid;
-  final String role;
+  final UserRole role; // use enum instead of raw string
   UpdateUserRoleEvent({required this.uid, required this.role});
   @override
   List<Object?> get props => [uid, role];
@@ -33,4 +38,3 @@ class DeleteUserEvent extends AdminUserEvent {
   @override
   List<Object?> get props => [uid];
 }
-

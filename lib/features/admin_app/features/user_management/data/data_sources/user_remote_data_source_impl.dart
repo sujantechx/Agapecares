@@ -1,3 +1,7 @@
+// Admin User Remote DataSource - Firestore implementation
+// Purpose: Implements admin user operations (list, update role, toggle verification/disabled, delete)
+// Note: Uses `users` collection in Firestore and maps to `UserModel`.
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:agapecares/core/models/user_model.dart';
 import 'user_remote_data_source.dart';
@@ -15,8 +19,9 @@ class AdminUserRemoteDataSourceImpl implements AdminUserRemoteDataSource {
   }
 
   @override
-  Future<void> updateUserRole({required String uid, required String role}) async {
-    await _users.doc(uid).update({'role': role});
+  Future<void> updateUserRole({required String uid, required UserRole role}) async {
+    // Store enum as string in Firestore
+    await _users.doc(uid).update({'role': role.name});
   }
 
   @override
@@ -34,4 +39,3 @@ class AdminUserRemoteDataSourceImpl implements AdminUserRemoteDataSource {
     await _users.doc(uid).delete();
   }
 }
-

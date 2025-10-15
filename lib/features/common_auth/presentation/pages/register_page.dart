@@ -1,18 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 
 import '../../../../app/routes/app_routes.dart';
 import '../../../../core/models/user_model.dart';
-import '../../../../core/services/session_service.dart';
-import '../../../../core/widgets/common_button.dart';
-
 import '../../../../core/utils/validators.dart';
-import '../../../user_app/features/cart/bloc/cart_bloc.dart';
-import '../../../user_app/features/cart/bloc/cart_event.dart';
-import '../../../user_app/features/cart/data/repositories/cart_repository.dart';
+import '../../../../core/widgets/common_button.dart';
+import '../../logic/blocs/auth_bloc.dart';
+import '../../logic/blocs/auth_event.dart';
+import '../../logic/blocs/auth_state.dart';
 
 
 
@@ -30,7 +27,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _passwordCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   bool _isLoading = false;
-  String _role = 'user';
+  UserRole _role = UserRole.user;
 
   @override
   void dispose() {
@@ -41,239 +38,246 @@ class _RegisterPageState extends State<RegisterPage> {
     super.dispose();
   }
 
-  Future<void> _registerWithEmail() async {
+  void _registerWithEmail() {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
-    try {
-      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: _emailCtrl.text.trim(),
-        password: _passwordCtrl.text.trim(),
-      );
-      final user = cred.user;
-      if (user != null) {
-        final uid = user.uid.trim();
-        if (uid.isEmpty) {
-          // Unexpected: user has no uid. Inform the user and abort Firestore writes.
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registration succeeded but user id is missing. Please restart the app.')));
-        } else {
-          try {
-            final userDoc = FirebaseFirestore.instance.collection('users').doc(uid);
-            await userDoc.set({
-              'uid': uid,
-              'name': _nameCtrl.text.trim(),
-              'email': _emailCtrl.text.trim(),
-              'phoneNumber': _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-              'role': _role,
-              // createdAt removed: server-side should set timestamps
-            });
-          } on FirebaseException catch (e) {
-            // Permission denied or other Firestore errors -- inform user but continue
-            debugPrint('Firestore write failed: ${e.code} ${e.message}');
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save user data remotely: ${e.message}')));
-          } catch (e) {
-            debugPrint('Unknown error writing user doc: $e');
-          }
-        }
-        // Save session
-        try {
-          final session = context.read<SessionService>();
-          final um = UserModel(uid: user.uid, phoneNumber: _phoneCtrl.text.trim().isEmpty ? '' : _phoneCtrl.text.trim(), name: _nameCtrl.text.trim(), email: _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(), role: _role);
-          await session.saveUser(um);
-          // Seed cart from remote if available and notify bloc
-          try {
-            final cartRepo = context.read<CartRepository>();
-            await cartRepo.getCartItems();
-          } catch (_) {}
-          try {
-            context.read<CartBloc>().add(CartStarted());
-          } catch (_) {}
-        } catch (_) {}
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registered successfully')));
-        // Navigate to the appropriate dashboard based on role
-        if (Navigator.of(context).canPop()) {
-          // If this page was pushed from Login and is awaiting a result, pop with success so the caller can show a message.
-          context.pop(true);
-        } else {
-          if (_role == 'worker') {
-            context.go(AppRoutes.workerHome);
-          } else {
-            context.go(AppRoutes.home);
-          }
-        }
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Registration failed: $e')));
-    } finally {
-      setState(() => _isLoading = false);
-    }
+    // dispatch registration event to AuthBloc which will handle Firebase and Firestore writes
+    context.read<AuthBloc>().add(AuthRegisterRequested(
+      email: _emailCtrl.text.trim(),
+      password: _passwordCtrl.text.trim(),
+      name: _nameCtrl.text.trim(),
+      phone: _phoneCtrl.text.trim(),
+      role: _role,
+    ));
   }
 
-  Future<void> _startPhoneRegistration() async {
+  void _startPhoneRegistration() {
     final phone = _phoneCtrl.text.trim();
     if (phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter phone number')));
       return;
     }
-    setState(() => _isLoading = true);
-    try {
-      await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: phone,
-        verificationCompleted: (credential) async {
-          // Auto sign-in (rare). Create user doc if needed.
-          await FirebaseAuth.instance.signInWithCredential(credential);
-          final user = FirebaseAuth.instance.currentUser;
-          if (user != null) {
-            final uid = user.uid.trim();
-            if (uid.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signed in but user id not available.')));
-            } else {
-              try {
-                final userDoc = FirebaseFirestore.instance.collection('users').doc(uid);
-                await userDoc.set({
-                  'uid': uid,
-                  'name': _nameCtrl.text.trim(),
-                  'email': _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
-                  'phoneNumber': user.phoneNumber,
-                  'role': _role,
-                  // createdAt removed: server-side should set timestamps
-                }, SetOptions(merge: true));
-              } on FirebaseException catch (e) {
-                debugPrint('Firestore write failed: ${e.code} ${e.message}');
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save user data remotely: ${e.message}')));
-              } catch (e) {
-                debugPrint('Unknown error writing user doc: $e');
-              }
-            }
-            // Save session so the user stays logged in
-            try {
-              final session = context.read<SessionService>();
-              final um = UserModel(uid: user.uid, phoneNumber: user.phoneNumber ?? '', name: _nameCtrl.text.trim(), email: _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(), role: _role);
-              await session.saveUser(um);
-              // Seed cart and notify bloc
-              try {
-                final cartRepo = context.read<CartRepository>();
-                await cartRepo.getCartItems();
-              } catch (_) {}
-              try {
-                context.read<CartBloc>().add(CartStarted());
-              } catch (_) {}
-            } catch (_) {}
-          }
-          if (!mounted) return;
-          try {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signed in automatically')));
-          } catch (_) {}
-          if (!mounted) return;
-          // Route based on the role selected during registration
-          if (Navigator.of(context).canPop()) {
-            context.pop(true);
-          } else {
-            if (_role == 'worker') {
-              context.go(AppRoutes.workerHome);
-            } else {
-              context.go(AppRoutes.home);
-            }
-          }
-        },
-        verificationFailed: (e) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Phone verification failed: ${e.message}')));
-        },
-        codeSent: (verificationId, resendToken) {
-          // Navigate to phone verify page with verificationId and phone
-          // Await the pushed route so we know if verification succeeded and can
-          // return success to the caller (Login page).
-          () async {
-            final result = await context.push(AppRoutes.phoneVerify, extra: {
-              'verificationId': verificationId,
-              'phone': phone,
-              'name': _nameCtrl.text.trim(),
-              'email': _emailCtrl.text.trim(),
-              'role': _role,
-            });
-            if (result == true) {
-              // Phone verification completed inside OTP screen. Propagate success back to Login.
-              if (Navigator.of(context).canPop()) {
-                context.pop(true);
-              } else {
-                if (_role == 'worker') {
-                  context.go(AppRoutes.workerHome);
-                } else {
-                  context.go(AppRoutes.home);
-                }
-              }
-            }
-          }();
-        },
-        codeAutoRetrievalTimeout: (verificationId) {},
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to start phone auth: $e')));
-    } finally {
-      setState(() => _isLoading = false);
-    }
+    // Dispatch an event to send OTP; UI will navigate when AuthState changes to AuthOtpSent
+    context.read<AuthBloc>().add(AuthSendOtpRequested(phone));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Register')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              // Role selector: user or worker (ChoiceChips - no deprecated APIs)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ChoiceChip(
-                    label: const Text('User'),
-                    selected: _role == 'user',
-                    onSelected: (s) => setState(() => _role = 'user'),
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('Worker'),
-                    selected: _role == 'worker',
-                    onSelected: (s) => setState(() => _role = 'worker'),
-                  ),
-                ],
-              ),
-              TextFormField(
-                controller: _nameCtrl,
-                decoration: const InputDecoration(labelText: 'Full name'),
-                validator: (v) => (v == null || v.isEmpty) ? 'Enter name' : null,
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _emailCtrl,
-                decoration: const InputDecoration(labelText: 'Email'),
-                keyboardType: TextInputType.emailAddress,
-                validator: Validators.validateEmail,
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _passwordCtrl,
-                decoration: const InputDecoration(labelText: 'Password'),
-                obscureText: true,
-                validator: (v) => (v == null || v.length < 6) ? 'Enter min 6 chars' : null,
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _phoneCtrl,
-                decoration: const InputDecoration(labelText: 'Phone (include country code)'),
-                keyboardType: TextInputType.phone,
-                validator: Validators.validatePhoneNumberOptional,
-              ),
-              const SizedBox(height: 16),
-              CommonButton(onPressed: _registerWithEmail, text: 'Register with Email', isLoading: _isLoading),
-              const SizedBox(height: 8),
-              CommonButton(onPressed: _startPhoneRegistration, text: 'Register / Sign in with Phone', isLoading: _isLoading),
-            ],
+      body: BlocListener<AuthBloc, AuthState>(
+        listener: (context, state) {
+          if (state is AuthFailure) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.message), backgroundColor: Colors.red));
+          }
+          if (state is AuthLoading) {
+            setState(() => _isLoading = true);
+          } else {
+            if (mounted) setState(() => _isLoading = false);
+          }
+          if (state is Authenticated) {
+            // Registration succeeded and repo emitted the authenticated user; navigate via router
+            if (Navigator.of(context).canPop()) {
+              context.pop(true);
+            } else {
+              if (_role == UserRole.worker) {
+                context.go(AppRoutes.workerHome);
+              } else {
+                context.go(AppRoutes.home);
+              }
+            }
+          }
+          if (state is AuthOtpSent) {
+            // When OTP is sent, navigate to OTP screen with arguments including name/email/role
+            context.push(AppRoutes.phoneVerify, extra: {
+              'verificationId': state.verificationId,
+              'phone': _phoneCtrl.text.trim(),
+              'name': _nameCtrl.text.trim(),
+              'email': _emailCtrl.text.trim(),
+              'role': _role,
+            });
+          }
+        },
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                // Role selector: user or worker (ChoiceChips - no deprecated APIs)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('User'),
+                      selected: _role == UserRole.user,
+                      onSelected: (s) => setState(() => _role = UserRole.user),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('Worker'),
+                      selected: _role == UserRole.worker,
+                      onSelected: (s) => setState(() => _role = UserRole.worker),
+                    ),
+                  ],
+                ),
+                TextFormField(
+                  controller: _nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Full name'),
+                  validator: (v) => (v == null || v.isEmpty) ? 'Enter name' : null,
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _emailCtrl,
+                  decoration: const InputDecoration(labelText: 'Email'),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: Validators.validateEmail,
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _passwordCtrl,
+                  decoration: const InputDecoration(labelText: 'Password'),
+                  obscureText: true,
+                  validator: (v) => (v == null || v.length < 6) ? 'Enter min 6 chars' : null,
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _phoneCtrl,
+                  decoration: const InputDecoration(labelText: 'Phone (include country code)'),
+                  keyboardType: TextInputType.phone,
+                  validator: Validators.validatePhoneNumberOptional,
+                ),
+                const SizedBox(height: 16),
+                CommonButton(onPressed: _registerWithEmail, text: 'Register with Email', isLoading: _isLoading),
+                const SizedBox(height: 8),
+                CommonButton(onPressed: _startPhoneRegistration, text: 'Register / Sign in with Phone', isLoading: _isLoading),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 }
+
+
+/*
+// lib/features/common_auth/presentation/pages/register_page.dart
+
+import 'package:go_router/go_router.dart';
+
+import '../../../../core/models/user_model.dart'; // For UserRole enum
+import '../../../../core/utils/validators.dart';
+import '../../../../core/widgets/common_button.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../logic/blocs/auth_bloc.dart';
+import '../../logic/blocs/auth_event.dart';
+import '../../logic/blocs/auth_state.dart';
+
+
+class RegisterPage extends StatefulWidget {
+  const RegisterPage({super.key});
+
+  @override
+  State<RegisterPage> createState() => _RegisterPageState();
+}
+
+class _RegisterPageState extends State<RegisterPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  UserRole _role = UserRole.user;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _phoneCtrl.dispose();
+    super.dispose();
+  }
+
+  void _submitRegistration() {
+    if (!_formKey.currentState!.validate()) return;
+
+    context.read<AuthBloc>().add(
+      AuthRegisterRequested(
+        email: _emailCtrl.text.trim(),
+        password: _passwordCtrl.text.trim(),
+        name: _nameCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
+        role: _role,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Register')),
+      body: BlocConsumer<AuthBloc, AuthState>(
+        listener: (context, state) {
+          if (state is AuthFailure) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(state.message), backgroundColor: Colors.red),
+            );
+          }
+          // On success, the central router redirect will handle navigation automatically.
+          // We can optionally pop here if we know this screen was pushed.
+          if (state is Authenticated) {
+            if (context.canPop()) context.pop();
+          }
+        },
+        builder: (context, state) {
+          final isLoading = state is AuthLoading;
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  // ... [Role selector UI] ...
+                  TextFormField(
+                    controller: _nameCtrl,
+                    decoration: const InputDecoration(labelText: 'Full name'),
+                    validator: (v) => (v == null || v.isEmpty) ? 'Enter name' : null,
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _emailCtrl,
+                    decoration: const InputDecoration(labelText: 'Email'),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: Validators.validateEmail,
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _passwordCtrl,
+                    decoration: const InputDecoration(labelText: 'Password'),
+                    obscureText: true,
+                    validator: (v) => (v == null || v.length < 6) ? 'Enter min 6 chars' : null,
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _phoneCtrl,
+                    decoration: const InputDecoration(labelText: 'Phone (optional)'),
+                    keyboardType: TextInputType.phone,
+                    validator: Validators.validatePhoneNumberOptional,
+                  ),
+                  const SizedBox(height: 16),
+                  CommonButton(
+                    onPressed: _submitRegistration,
+                    text: 'Register',
+                    isLoading: isLoading,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}*/

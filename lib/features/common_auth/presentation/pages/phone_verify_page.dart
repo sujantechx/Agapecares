@@ -1,120 +1,68 @@
+// lib/features/common_auth/presentation/pages/phone_verify_page.dart
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pinput/pinput.dart';
 
 
-import '../../../../app/routes/app_routes.dart';
-import '../../../../core/models/user_model.dart';
-import '../../../../core/services/session_service.dart';
-import '../../../../core/widgets/common_button.dart';
-import '../../../user_app/features/cart/bloc/cart_bloc.dart';
-import '../../../user_app/features/cart/bloc/cart_event.dart';
-import '../../../user_app/features/cart/data/repositories/cart_repository.dart';
+import '../../logic/blocs/auth_bloc.dart';
+import '../../logic/blocs/auth_event.dart';
+import '../../logic/blocs/auth_state.dart';
 
-
-class PhoneVerifyPage extends StatefulWidget {
+class PhoneVerifyPage extends StatelessWidget {
+  /// The verificationId is passed from the previous screen (e.g., LoginPage).
   final String verificationId;
-  final String phone;
-  final String? name;
-  final String? email;
-  final String? role;
 
-  const PhoneVerifyPage({super.key, required this.verificationId, required this.phone, this.name, this.email, this.role});
+  const PhoneVerifyPage({super.key, required this.verificationId});
 
-  @override
-  State<PhoneVerifyPage> createState() => _PhoneVerifyPageState();
-}
-
-class _PhoneVerifyPageState extends State<PhoneVerifyPage> {
-  final _codeCtrl = TextEditingController();
-  bool _isLoading = false;
-
-  @override
-  void dispose() {
-    _codeCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _verify() async {
-    final code = _codeCtrl.text.trim();
-    if (code.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter verification code')));
-      return;
-    }
-    setState(() => _isLoading = true);
-    try {
-      final cred = PhoneAuthProvider.credential(verificationId: widget.verificationId, smsCode: code);
-      final userCred = await FirebaseAuth.instance.signInWithCredential(cred);
-      final user = userCred.user;
-      if (user != null) {
-        final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
-        final Map<String, dynamic> userData = {
-          'uid': user.uid,
-          'name': widget.name ?? '',
-          'email': widget.email ?? '',
-          'phoneNumber': widget.phone,
-          // createdAt removed: server-side should set timestamps
-        };
-        if (widget.role != null) userData['role'] = widget.role;
-        await userDoc.set(userData, SetOptions(merge: true));
-        // Save session to shared preferences
-        try {
-          final session = context.read<SessionService>();
-          final um = UserModel(uid: user.uid, phoneNumber: widget.phone, name: widget.name ?? '', email: widget.email, role: widget.role ?? 'user');
-          await session.saveUser(um);
-          // Seed cart from remote if available and notify bloc
-          try {
-            final cartRepo = context.read<CartRepository>();
-            await cartRepo.getCartItems();
-          } catch (_) {}
-          try {
-            context.read<CartBloc>().add(CartStarted());
-          } catch (_) {}
-        } catch (_) {}
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Phone verified')));
-        if (!mounted) return;
-        // If this page was opened from Register flow (role provided), return success to caller so it can pop back to Login.
-        if (widget.role != null) {
-          // Pop this OTP screen and return `true` to the caller.
-          context.pop(true);
-          return;
-        }
-        // Otherwise (login flow), navigate to appropriate dashboard depending on role saved on the user record
-        if ((widget.role ?? '').toLowerCase() == 'worker') {
-          context.go(AppRoutes.workerHome);
-        } else {
-          context.go(AppRoutes.home);
-        }
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verification failed: $e')));
-    } finally {
-      setState(() => _isLoading = false);
-    }
+  void _verifyOtp(BuildContext context, String otp) {
+    context.read<AuthBloc>().add(
+      AuthVerifyOtpRequested(verificationId: verificationId, otp: otp),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Verify Phone')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Text('Enter the SMS code sent to ${widget.phone}'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _codeCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Verification Code'),
+      appBar: AppBar(title: const Text('Verify OTP')),
+      body: BlocConsumer<AuthBloc, AuthState>(
+        listener: (context, state) {
+          if (state is AuthFailure) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(state.message), backgroundColor: Colors.red),
+            );
+          }
+          // On success, the central router will handle navigation automatically.
+          // If this page was pushed, we can pop it.
+          if (state is Authenticated) {
+            if (context.canPop()) {
+              context.pop();
+            }
+          }
+        },
+        builder: (context, state) {
+          return Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Enter Code', style: Theme.of(context).textTheme.headlineMedium),
+                  const SizedBox(height: 48),
+                  Pinput(
+                    length: 6,
+                    onCompleted: (pin) => _verifyOtp(context, pin),
+                  ),
+                  const SizedBox(height: 24),
+                  if (state is AuthLoading)
+                    const CircularProgressIndicator()
+                  else
+                    const SizedBox.shrink(), // Button is not needed as submission is automatic
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            CommonButton(onPressed: _verify, text: 'Verify', isLoading: _isLoading),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

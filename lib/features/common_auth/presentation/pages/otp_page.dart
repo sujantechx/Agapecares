@@ -5,7 +5,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pinput/pinput.dart';
 
-import 'package:agapecares/app/theme/app_theme.dart';
 import 'package:agapecares/core/widgets/common_button.dart';
 import 'package:agapecares/core/services/session_service.dart';
 import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
@@ -38,7 +37,7 @@ class OtpView extends StatefulWidget {
 
 class _OtpViewState extends State<OtpView> {
   void _verifyOtp(BuildContext context, String otp) {
-    context.read<AuthBloc>().add(AuthVerifyOtpRequested(otp));
+    context.read<AuthBloc>().add(AuthVerifyOtpRequested(verificationId: '', otp: otp));
   }
 
   @override
@@ -63,7 +62,7 @@ class _OtpViewState extends State<OtpView> {
       ),
       body: BlocListener<AuthBloc, AuthState>(
         listener: (context, state) async {
-          if (state is AuthLoggedIn) {
+          if (state is Authenticated) {
             // Save session
             try {
               final session = context.read<SessionService>();
@@ -95,6 +94,7 @@ class _OtpViewState extends State<OtpView> {
           }
         },
         child: Center(
+          child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
             child: Column(
@@ -136,6 +136,6 @@ class _OtpViewState extends State<OtpView> {
           ),
         ),
       ),
-    );
+    ));
   }
 }

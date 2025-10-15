@@ -10,14 +10,14 @@ class BookingRepository {
 
   /// Create a booking document in Firestore. Returns the generated document id.
   Future<String> createBooking(OrderModel order) async {
-    final docRef = await _firestore.collection('bookings').add(order.toFirebaseJson());
-    await docRef.update({'remoteId': docRef.id});
+    final docRef = await _firestore.collection('bookings').add(order.toFirestore());
+    try { await docRef.update({'remoteId': docRef.id}); } catch (_) {}
     return docRef.id;
   }
 
   /// Fetch bookings for a user
   Future<List<OrderModel>> fetchBookingsForUser(String userId) async {
     final snap = await _firestore.collection('bookings').where('userId', isEqualTo: userId).get();
-    return snap.docs.map((d) => OrderModel.fromSqliteMap({...d.data(), 'id': d.id, 'createdAt': (d.data()['createdAt'] is Timestamp) ? (d.data()['createdAt'] as Timestamp).toDate().toIso8601String() : DateTime.now().toIso8601String()})).toList();
+    return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
   }
 }

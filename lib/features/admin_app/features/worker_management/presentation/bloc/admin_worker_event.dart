@@ -1,3 +1,7 @@
+// Admin Worker Management - Events
+// Purpose: Events that trigger admin worker operations (load, accept job, set availability, etc.).
+// Notes: Events should map to repository methods implemented in admin worker repo.
+
 import 'package:equatable/equatable.dart';
 
 abstract class AdminWorkerEvent extends Equatable {
@@ -18,4 +22,3 @@ class DeleteWorkerEvent extends AdminWorkerEvent {
   @override
   List<Object?> get props => [workerId];
 }
-

@@ -1,3 +1,7 @@
+// Admin User Management - State definitions
+// Purpose: Defines states used by the AdminUserBloc for listing/searching/updating users.
+// Notes: These states model the UI's needs and are compatible with `UserModel` in `core/models/user_model.dart`.
+
 import 'package:equatable/equatable.dart';
 import 'package:agapecares/core/models/user_model.dart';
 
@@ -19,4 +23,3 @@ class AdminUserError extends AdminUserState {
   @override
   List<Object?> get props => [message];
 }
-

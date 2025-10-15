@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../../../core/models/service_list_model.dart';
+import '../../../../../core/models/service_model.dart';
 import 'package:agapecares/features/user_app/features/services/data/repositories/service_repository.dart';
 
 /// ServiceDetailPage
@@ -70,20 +70,21 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
               children: [
                 Text(service.name, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                Text('\$${service.price.toStringAsFixed(2)}', style: Theme.of(context).textTheme.titleMedium),
+                Text('\$${service.basePrice.toStringAsFixed(2)}', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
                 Text(service.description),
                 const SizedBox(height: 12),
-                if (service.inclusions.isNotEmpty) ...[
-                  const Text('Inclusions', style: TextStyle(fontWeight: FontWeight.bold)),
+                // ServiceModel currently exposes options and subscriptionPlans. Render options if available.
+                if (service.options.isNotEmpty) ...[
+                  const Text('Options', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
-                  ...service.inclusions.map((i) => Text('• $i')),
+                  ...service.options.map((o) => Text('• ${o.name} - \$${o.price.toStringAsFixed(2)}')),
                   const SizedBox(height: 12),
                 ],
-                if (service.exclusions.isNotEmpty) ...[
-                  const Text('Exclusions', style: TextStyle(fontWeight: FontWeight.bold)),
+                if (service.subscriptionPlans.isNotEmpty) ...[
+                  const Text('Subscription Plans', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
-                  ...service.exclusions.map((i) => Text('• $i')),
+                  ...service.subscriptionPlans.map((p) => Text('• ${p.name} — ${p.discountPercent}% off (${p.durationInMonths} mo)')),
                   const SizedBox(height: 12),
                 ],
                 const SizedBox(height: 24),

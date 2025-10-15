@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../../../../../core/models/service_list_model.dart';
+import '../../../../../../core/models/service_model.dart';
 
 import 'service_repository.dart';
 
@@ -16,7 +16,8 @@ class ServiceRepositoryImpl implements ServiceRepository {
   /// Errors: Firestore exceptions may be thrown by the caller.
   @override
   Future<void> createService(ServiceModel service) async {
-    await _firestore.collection('services').add(service.toMap());
+    final id = service.id.isNotEmpty ? service.id : _firestore.collection('services').doc().id;
+    await _firestore.collection('services').doc(id).set(service.toFirestore());
   }
 
   @override
@@ -27,11 +28,7 @@ class ServiceRepositoryImpl implements ServiceRepository {
   @override
   Future<ServiceModel> fetchServiceById(String id) async {
     final doc = await _firestore.collection('services').doc(id).get();
-    final data = doc.data();
-    return ServiceModel.fromMap({
-      if (data != null) ...data,
-      'id': doc.id,
-    });
+    return ServiceModel.fromFirestore(doc);
   }
 
   /// Fetch all services from Firestore.
@@ -51,27 +48,12 @@ class ServiceRepositoryImpl implements ServiceRepository {
   ///    updates use a snapshot listener (collection.snapshots()).
   @override
   Future<List<ServiceModel>> fetchServices() async {
-    try {
-      // Step 1: Query Firestore `services` collection for all documents.
-      final snapshot = await _firestore.collection('services').get();
-
-      // Step 2: Map each DocumentSnapshot into a strongly-typed ServiceModel.
-      return snapshot.docs
-          .map((doc) => ServiceModel.fromMap({
-                ...doc.data(),
-                'id': doc.id,
-              }))
-          .toList();
-    } catch (e) {
-      // It's important to surface errors to the caller. However, returning an
-      // empty list here could hide transient problems. We rethrow the error so
-      // the BLoC can emit an error state and the UI can show a retry option.
-      rethrow;
-    }
+    final snapshot = await _firestore.collection('services').get();
+    return snapshot.docs.map((doc) => ServiceModel.fromFirestore(doc)).toList();
   }
 
   @override
   Future<void> updateService(ServiceModel service) async {
-    await _firestore.collection('services').doc(service.id).update(service.toMap());
+    await _firestore.collection('services').doc(service.id).set(service.toFirestore(), SetOptions(merge: true));
   }
 }

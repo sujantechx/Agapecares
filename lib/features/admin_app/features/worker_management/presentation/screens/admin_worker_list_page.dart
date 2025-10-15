@@ -21,15 +21,18 @@ class AdminWorkerListPage extends StatelessWidget {
             return ListView.builder(
               itemCount: state.workers.length,
               itemBuilder: (context, i) {
-                final w = state.workers[i];
+                final dynamic w = state.workers[i];
+
                 return SwitchListTile(
-                  title: Text(w.name),
-                  subtitle: Text('Rating: ${w.rating.toStringAsFixed(1)} • Earnings: ₹${w.earnings.toStringAsFixed(2)}'),
-                  value: w.isAvailable,
-                  onChanged: (v) => context.read<AdminWorkerBloc>().add(SetAvailabilityEvent(workerId: w.id, isAvailable: v)),
+                  title: Text((w.name as String?) ?? w.toString()),
+                  subtitle: Text(
+                    'Rating: ${((w.rating as num?)?.toDouble() ?? 0.0).toStringAsFixed(1)} • Earnings: ₹${((w.earnings as num?)?.toDouble() ?? 0.0).toStringAsFixed(2)}',
+                  ),
+                  value: (w.isAvailable as bool?) ?? false,
+                  onChanged: (v) => context.read<AdminWorkerBloc>().add(SetAvailabilityEvent(workerId: w.id as String, isAvailable: v)),
                   secondary: IconButton(
                     icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () => context.read<AdminWorkerBloc>().add(DeleteWorkerEvent(w.id)),
+                    onPressed: () => context.read<AdminWorkerBloc>().add(DeleteWorkerEvent(w.id as String)),
                   ),
                 );
               },

@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../../core/models/service_list_model.dart';
+import '../../../../../core/models/service_model.dart';
 import '../../../../../app/routes/app_routes.dart';
 
 class ServiceCard extends StatelessWidget {
@@ -12,26 +12,22 @@ class ServiceCard extends StatelessWidget {
   const ServiceCard({super.key, required this.service});
 
   // A helper to get an icon based on the dummy iconUrl string
-  IconData _getIconForService(String iconName) {
-    switch (iconName) {
-      case 'cleaning':
-        return Icons.cleaning_services;
-      case 'plumbing':
-        return Icons.plumbing;
-      case 'electrical':
-        return Icons.electrical_services;
-      case 'gardening':
-        return Icons.grass;
-      default:
-        return Icons.miscellaneous_services;
-    }
+  IconData _getIconForService(String imageUrl) {
+    // Map some known image file names to icons; fall back to generic service icon.
+    final lower = imageUrl.toLowerCase();
+    if (lower.contains('kitchen')) return Icons.kitchen;
+    if (lower.contains('sofa') || lower.contains('sofa_c')) return Icons.chair;
+    if (lower.contains('bathroom')) return Icons.bathtub;
+    if (lower.contains('carpet') || lower.contains('mattress')) return Icons.layers;
+    if (lower.contains('water_tank') || lower.contains('water')) return Icons.water;
+    return Icons.miscellaneous_services;
   }
 
   @override
   Widget build(BuildContext context) {
     // The card is a purely presentational component – no business logic.
     // Navigation or actions should be provided by the parent widget.
-    final priceText = '\$${service.price.toStringAsFixed(2)}';
+    final priceText = '\$${service.basePrice.toStringAsFixed(2)}';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16.0),
@@ -50,7 +46,7 @@ class ServiceCard extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                _getIconForService(service.iconUrl),
+                _getIconForService(service.imageUrl),
                 // color: AppTheme.primaryColor,
                 size: 40,
               ),

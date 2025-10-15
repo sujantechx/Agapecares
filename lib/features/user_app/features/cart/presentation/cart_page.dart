@@ -159,7 +159,7 @@ class _CartPageState extends State<CartPage> {
 
           if (state.couponDiscount > 0 && state.appliedCoupon != null)
             _priceRow(
-              'Coupon (${state.appliedCoupon!.code})',
+              'Coupon (${state.appliedCoupon!.id})',
               '- ₹ ${state.couponDiscount.toStringAsFixed(2)}',
               color: Colors.green,
             ),

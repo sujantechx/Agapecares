@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -46,19 +47,30 @@ class _SetNewPasswordPageState extends State<SetNewPasswordPage> {
       // user is signed in (OTP-based reset or auto sign-in). Update password.
       await user.updatePassword(pwd);
       // Refresh and save session (email/phone/name may be updated by auth)
-      try {
-        final session = context.read<SessionService>();
-        final um = UserModel(uid: user.uid, phoneNumber: user.phoneNumber ?? '', name: user.displayName ?? '', email: user.email);
-        await session.saveUser(um);
-        // Seed cart and notify CartBloc
-        try {
-          final cartRepo = context.read<CartRepository>();
-          await cartRepo.getCartItems();
-        } catch (_) {}
-        try {
-          context.read<CartBloc>().add(CartStarted());
-        } catch (_) {}
-      } catch (_) {}
+
+    try {
+    final session = context.read<SessionService>();
+    final um = UserModel(
+      uid: user.uid,
+      name: user.displayName ?? '',
+      email: user.email,
+      phoneNumber: user.phoneNumber ?? '',
+      photoUrl: null,
+      role: UserRole.user,
+      addresses: null,
+      createdAt: Timestamp.now(),
+    );
+    await session.saveUser(um);
+    // Seed cart and notify CartBloc
+    try {
+    final cartRepo = context.read<CartRepository>();
+    await cartRepo.getCartItems();
+    } catch (_) {}
+    try {
+    context.read<CartBloc>().add(CartStarted());
+    } catch (_) {}
+    } catch (_) {}
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password updated successfully')));
       if (!mounted) return;

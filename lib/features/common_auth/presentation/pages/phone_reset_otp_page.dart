@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-
-
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/models/user_model.dart';
 import '../../../../core/services/session_service.dart';
 import '../../../../core/widgets/common_button.dart';
@@ -48,7 +47,14 @@ class _PhoneResetOtpPageState extends State<PhoneResetOtpPage> {
         // Save session so user remains logged in
         try {
           final session = context.read<SessionService>();
-          final um = UserModel(uid: user.uid, phoneNumber: widget.phone, name: user.displayName ?? '', email: user.email);
+          // Provide a safe default role ('user') when saving a session after phone sign-in.
+          final um = UserModel(
+            uid: user.uid,
+            phoneNumber: widget.phone,
+            name: user.displayName ?? '',
+            email: user.email,
+            role: UserRole.user,
+            createdAt: Timestamp.fromDate(user.metadata.creationTime ?? DateTime.now()),          );
           await session.saveUser(um);
           // Seed cart and notify CartBloc
           try {
@@ -60,16 +66,16 @@ class _PhoneResetOtpPageState extends State<PhoneResetOtpPage> {
           } catch (_) {}
         } catch (_) {}
         if (!mounted) return;
-        // Navigate to set new password page where user can set a new password
-        // Use literal path to avoid any constant lookup issue in analyzer
-        context.push('/set-new-password');
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verification failed: $e')));
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
+         // Navigate to set new password page where user can set a new password
+         // Use literal path to avoid any constant lookup issue in analyzer
+         context.push('/set-new-password');
+       }
+     } catch (e) {
+       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verification failed: $e')));
+     } finally {
+       if (mounted) setState(() => _isLoading = false);
+     }
+   }
 
   @override
   Widget build(BuildContext context) {

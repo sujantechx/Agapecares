@@ -1,3 +1,7 @@
+// Admin Worker Management - States
+// Purpose: Defines states used by AdminWorkerBloc to represent loading/loaded/error states for workers.
+// Notes: States include lists of worker models and error messages.
+
 import 'package:equatable/equatable.dart';
 import 'package:agapecares/core/models/worker_model.dart';
 
@@ -19,4 +23,3 @@ class AdminWorkerError extends AdminWorkerState {
   @override
   List<Object?> get props => [message];
 }
-

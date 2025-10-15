@@ -28,13 +28,22 @@ class AppDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Determine if current session user is a worker
-    bool showWorkerMenu = false;
+    // Read session user safely
+    UserModel? u;
     try {
       final session = context.read<SessionService>();
-      final UserModel? u = session.getUser();
-      if (u != null && u.role == 'worker') showWorkerMenu = true;
-    } catch (_) {}
+      u = session.getUser();
+    } catch (_) {
+      u = null;
+    }
+
+    // Use enum comparison (UserRole) instead of string-based checks.
+    bool showWorkerMenu = false;
+    if (u != null) {
+      // If role is stored as UserRole enum, compare directly. This is the
+      // canonical shape used by `UserModel`.
+      showWorkerMenu = u.role == UserRole.worker;
+    }
 
     return Drawer(
       child: ListView(

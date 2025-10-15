@@ -1,46 +1,51 @@
-import 'package:agapecares/core/models/offer_model.dart';
-// historic shared path replaced by canonical core models
-
+import 'package:agapecares/core/models/coupon_model.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class OfferRepository {
-  // A dummy list of available offers in our system
-  static final List<Offer> _availableOffers = [
-    const Offer(
-      code: 'AGAPE10',
-      type: OfferType.percentage,
-      value: 10, // 10%
+  // A dummy list of available coupons in our system represented by CouponModel
+  static final List<CouponModel> _availableCoupons = [
+    CouponModel(
+      id: 'AGAPE10',
       description: 'Get 10% off your total order.',
-      minimumSpend: 500,
+      type: CouponType.percentage,
+      value: 10.0,
+      minOrderValue: 500.0,
+      usedCount: 0,
+      expiryDate: Timestamp.fromDate(DateTime.now().add(const Duration(days: 365))),
+      // expiryDate will be set here correctly
     ),
-    const Offer(
-      code: 'FLAT150',
-      type: OfferType.flat,
-      value: 150, // ₹150
+    CouponModel(
+      id: 'FLAT150',
       description: 'Get a flat ₹150 off.',
-      minimumSpend: 1000,
+      type: CouponType.fixedAmount,
+      value: 150.0,
+      minOrderValue: 1000.0,
+      usedCount: 0,
+      expiryDate: Timestamp.now(),
     ),
   ];
 
-  // Finds an offer by its code
-  Future<Offer?> getOfferByCode(String code) async {
-    await Future.delayed(const Duration(milliseconds: 300)); // Simulate network latency
+  // Finds a coupon by its code
+  Future<CouponModel?> getOfferByCode(String code) async {
+    await Future.delayed(const Duration(milliseconds: 300)); // Simulate latency
     try {
-      return _availableOffers.firstWhere(
-            (offer) => offer.code.toUpperCase() == code.toUpperCase(),
-      );
+      return _availableCoupons.firstWhere((c) => c.id.toUpperCase() == code.toUpperCase());
     } catch (e) {
-      return null; // Offer not found
+      return null;
     }
   }
 
-  // Gets an automatic "extra" offer based on the current total
-  Offer? getExtraOffer(double currentTotal) {
+  // Gets an automatic "extra" coupon based on the current total
+  CouponModel? getExtraOffer(double currentTotal) {
     if (currentTotal >= 2000) {
-      return const Offer(
-        code: 'EXTRA5',
-        type: OfferType.percentage,
-        value: 5, // 5%
-        description: 'Extra 5% off for orders\n above ₹2000!',
+      return CouponModel(
+        id: 'EXTRA5',
+        description: 'Extra 5% off for orders above ₹2000!',
+        type: CouponType.percentage,
+        value: 5.0,
+        minOrderValue: 2000.0,
+        usedCount: 0,
+        expiryDate: Timestamp.now(),
       );
     }
     return null;

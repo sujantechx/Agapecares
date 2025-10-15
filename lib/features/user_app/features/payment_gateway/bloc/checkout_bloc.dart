@@ -2,6 +2,9 @@
 import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:agapecares/core/services/session_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 
 import '../../../../../core/models/cart_item_model.dart';
@@ -15,7 +18,6 @@ import '../../data/repositories/booking_repository.dart';
 
 import 'checkout_event.dart';
 import 'checkout_state.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 
 /// CheckoutBloc orchestrates UI -> local DB -> Firestore -> payment flows.
@@ -68,24 +70,82 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
       // Convert UI items to CartItemModel as cartItem if already in that shape this is a no-op.
       final itemsModel = event.request.items.map((i) {
         if (i is CartItemModel) return i;
-        final json = (i as dynamic).toJson() as Map<String, dynamic>;
-        return CartItemModel.fromJson(json);
+        final dynamic maybeJson = (i as dynamic);
+        Map<String, dynamic> json;
+        try {
+          json = (maybeJson.toJson() as Map<String, dynamic>);
+        } catch (_) {
+          json = Map<String, dynamic>.from(maybeJson as Map);
+        }
+        return CartItemModel.fromMap(json);
       }).toList();
 
+      // Determine user address: prefer explicit request, then local session, then Firestore user doc
+      String? effectiveAddress;
+      final reqAddress = event.request.userAddress.trim().isEmpty ? null : event.request.userAddress.trim();
+      if (reqAddress != null && reqAddress.isNotEmpty) {
+        effectiveAddress = reqAddress;
+      }
+
+      // Helper: safely extract a string address from a dynamic entry which may be a String or Map
+      String? extractAddress(dynamic entry) {
+        if (entry == null) return null;
+        if (entry is String) return entry;
+        if (entry is Map) {
+          final a = entry['address'];
+          if (a is String) return a;
+        }
+        return null;
+      }
+
+      // Try session-based address if we don't have one yet
+      if (effectiveAddress == null || effectiveAddress.isEmpty) {
+        try {
+          final session = SessionService();
+          final su = session.getUser();
+          if (su != null && su.addresses != null && su.addresses!.isNotEmpty) {
+            final addrCandidate = extractAddress(su.addresses!.first);
+            if (addrCandidate != null && addrCandidate.isNotEmpty) effectiveAddress = addrCandidate;
+          }
+        } catch (_) {
+          // ignore and try Firestore next
+        }
+      }
+
+      // Try Firestore user doc as a final fallback
+      if (effectiveAddress == null || effectiveAddress.isEmpty) {
+        try {
+          final firebaseUser = FirebaseAuth.instance.currentUser;
+          final uidForAddress = firebaseUser?.uid ?? userId;
+          if (uidForAddress != null && uidForAddress.isNotEmpty) {
+            final doc = await FirebaseFirestore.instance.collection('users').doc(uidForAddress).get();
+            if (doc.exists) {
+              final data = doc.data();
+              if (data != null && data['addresses'] is List && (data['addresses'] as List).isNotEmpty) {
+                final addrCandidate = extractAddress((data['addresses'] as List).first);
+                if (addrCandidate != null && addrCandidate.isNotEmpty) effectiveAddress = addrCandidate;
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
       final order = OrderModel(
-        userId: userId,
+        id: '',
         orderNumber: orderNumber,
+        userId: userId,
+        workerId: null,
         items: itemsModel,
-        subtotal: event.request.totalAmount, // assume subtotal ~ total for simplicity
-        discount: 0,
+        addressSnapshot: {'address': effectiveAddress ?? ''},
+        subtotal: event.request.totalAmount,
+        discount: 0.0,
+        tax: 0.0,
         total: event.request.totalAmount,
-        paymentMethod: event.paymentMethod,
-        paymentId: null,
-        userName: event.request.userName,
-        userEmail: event.request.userEmail,
-        userPhone: event.request.userPhone,
-        userAddress: event.request.userAddress, // include address from request
+        orderStatus: OrderStatus.pending,
+        paymentStatus: PaymentStatus.pending,
+        scheduledAt: Timestamp.now(),
         createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
       );
 
       // Prefer Firestore as primary storage on confirmed checkouts. Do not save
@@ -97,19 +157,37 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
         final res = await _razorpayRepo.processPayment(event.request);
         debugPrint('[CheckoutBloc] Razorpay result for orderNumber=$orderNumber: $res');
         if (res is PaymentSuccess) {
-          // Build order with payment details and create remote doc (preferred)
-          final paidOrder = order.copyWith(paymentId: res.paymentId, paymentStatus: 'success');
+          // Build order with payment status and create remote doc (preferred)
+          final paidOrder = OrderModel(
+            id: '',
+            orderNumber: order.orderNumber,
+            userId: order.userId,
+            workerId: null,
+            items: order.items,
+            addressSnapshot: order.addressSnapshot,
+            subtotal: order.subtotal,
+            discount: order.discount,
+            tax: order.tax,
+            total: order.total,
+            orderStatus: OrderStatus.pending,
+            paymentStatus: PaymentStatus.paid,
+            scheduledAt: order.scheduledAt,
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
+          );
           OrderModel savedRemote;
           try {
-            savedRemote = await _orderRepo.createOrder(paidOrder, uploadRemote: true);
+            savedRemote = await _orderRepo.createOrder(paidOrder, userId: userId);
           } catch (e) {
-            debugPrint('[CheckoutBloc] createOrder(uploadRemote:true) failed after Razorpay: $e');
-            // Fallback: try uploadOrder on a local save
-            final fallback = await _orderRepo.createOrder(paidOrder, uploadRemote: false);
+            debugPrint('[CheckoutBloc] createOrder(userId:$userId) failed after Razorpay: $e');
+            // Fallback: try uploadOrder
             try {
-              await _orderRepo.uploadOrder(fallback);
-            } catch (_) {}
-            savedRemote = fallback;
+              final remoteId = await _orderRepo.uploadOrder(order: paidOrder);
+              // read back saved remote
+              savedRemote = (await _orderRepo.getAllOrdersForUser(userId)).firstWhere((o) => o.id == remoteId, orElse: () => paidOrder);
+            } catch (_) {
+              savedRemote = paidOrder;
+            }
           }
 
           // Clear cart and create booking
@@ -130,14 +208,16 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
         if (r is PaymentSuccess) {
           OrderModel savedRemote;
           try {
-            savedRemote = await _orderRepo.createOrder(order, uploadRemote: true);
+            savedRemote = await _orderRepo.createOrder(order, userId: userId);
           } catch (e) {
-            debugPrint('[CheckoutBloc] createOrder(uploadRemote:true) failed (COD): $e');
-            // fallback to local save
-            savedRemote = await _orderRepo.createOrder(order, uploadRemote: false);
+            debugPrint('[CheckoutBloc] createOrder(userId:$userId) failed (COD): $e');
+            // fallback to uploadOrder
             try {
-              await _orderRepo.syncUnsynced();
-            } catch (_) {}
+              final rid = await _orderRepo.uploadOrder(order: order);
+              savedRemote = (await _orderRepo.getAllOrdersForUser(userId)).firstWhere((o) => o.id == rid, orElse: () => order);
+            } catch (_) {
+              savedRemote = order;
+            }
           }
 
           await _cartRepo.clearCart();

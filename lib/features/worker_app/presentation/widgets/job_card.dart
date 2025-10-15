@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:agapecares/core/models/job_model.dart';
 
+
 typedef StatusCallback = Future<void> Function(String newStatus);
 
 class JobCard extends StatelessWidget {

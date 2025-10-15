@@ -14,7 +14,6 @@ class WorkerJobRepository {
     _jobs.addAll([
       JobModel(
         id: 'job1',
-        orderNumber: 'ORD-1001',
         serviceName: 'Full Home Cleaning',
         inclusions: ['Deep cleaning', 'Floor polishing', 'Window cleaning'],
         scheduledAt: now.add(const Duration(hours: 3)),
@@ -26,7 +25,6 @@ class WorkerJobRepository {
       ),
       JobModel(
         id: 'job2',
-        orderNumber: 'ORD-1002',
         serviceName: 'Sofa Deep Cleaning',
         inclusions: ['Shampoo', 'Spot treatment'],
         scheduledAt: now,
@@ -38,7 +36,6 @@ class WorkerJobRepository {
       ),
       JobModel(
         id: 'job3',
-        orderNumber: 'ORD-1003',
         serviceName: 'Bathroom Deep Cleaning',
         inclusions: ['Disinfection', 'Tile scrubbing'],
         scheduledAt: now.subtract(const Duration(days: 1)),
@@ -55,7 +52,7 @@ class WorkerJobRepository {
     await Future.delayed(const Duration(milliseconds: 200));
     _ensureInit();
     // Return a shallow copy to avoid external mutation
-    return _jobs.map((j) => j).toList();
+    return List<JobModel>.from(_jobs);
   }
 
   Future<JobModel?> getJobById(String id) async {
@@ -72,7 +69,9 @@ class WorkerJobRepository {
     _ensureInit();
     final idx = _jobs.indexWhere((j) => j.id == id);
     if (idx == -1) return null;
-    _jobs[idx].status = status;
+    // JobModel is immutable, use copyWith to create updated instance
+    final updated = _jobs[idx].copyWith(status: status);
+    _jobs[idx] = updated;
     // Simulate small delay as if network/db call
     await Future.delayed(const Duration(milliseconds: 120));
     return _jobs[idx];

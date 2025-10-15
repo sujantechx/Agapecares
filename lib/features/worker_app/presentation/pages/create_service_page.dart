@@ -2,7 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:agapecares/features/user_app/features/data/repositories/service_repository.dart';
-import 'package:agapecares/core/models/service_list_model.dart';
+
+import '../../../../core/models/service_model.dart';
+
 
 class CreateServicePage extends StatefulWidget {
   const CreateServicePage({Key? key}) : super(key: key);
@@ -34,21 +36,18 @@ class _CreateServicePageState extends State<CreateServicePage> {
     try {
       final repo = context.read<ServiceRepository>();
       final price = double.tryParse(_priceCtr.text.trim()) ?? 0.0;
+      // Map our simple form to the canonical ServiceModel. We don't store vendor separately
+      // in the current model, so put vendor into `category` as a lightweight mapping.
       final model = ServiceModel(
         id: '',
         name: _nameCtr.text.trim(),
         description: _descCtr.text.trim(),
-        price: price,
-        originalPrice: price,
-        iconUrl: '',
-        detailImageUrl: '',
-        vendorName: _vendorCtr.text.trim(),
-        estimatedTime: '',
-        offer: '',
-        inclusions: const [],
-        exclusions: const [],
+        category: _vendorCtr.text.trim().isNotEmpty ? _vendorCtr.text.trim() : 'General',
+        basePrice: price,
+        estimatedTimeMinutes: 60, // default estimate
+        imageUrl: '',
         options: const [],
-        subscriptionPlans: null,
+        subscriptionPlans: const [],
       );
       await repo.createService(model);
       Navigator.of(context).pop(true);

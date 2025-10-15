@@ -64,9 +64,9 @@ class _SubscriptionOptionsWidgetState extends State<SubscriptionOptionsWidget> {
             // 2. Chips for each Subscription Plan
             ...widget.plans.map((plan) {
               return ChoiceChip(
-                label: Text('${plan.name} (${plan.discount.round()}% off)'),
-                // This chip is selected if its ID matches the selected plan's ID.
-                selected: _selectedPlan?.id == plan.id,
+                label: Text('${plan.name} (${plan.discountPercent.round()}% off)'),
+                // This chip is selected if its name matches the selected plan's name.
+                selected: _selectedPlan?.name == plan.name,
                 onSelected: (isSelected) {
                   if (isSelected) {
                     setState(() {

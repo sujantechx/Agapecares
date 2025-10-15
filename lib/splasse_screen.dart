@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 
 import 'app/routes/app_routes.dart';
+import 'package:agapecares/core/models/user_model.dart';
 
 class SplasseScreen extends StatefulWidget {
   const SplasseScreen({super.key});
@@ -38,10 +39,10 @@ class _SplasseScreenState extends State<SplasseScreen> {
       try {
         final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
         final data = doc.data();
-        final role = (data != null && data['role'] is String) ? (data['role'] as String) : 'user';
+        final role = (data != null && data['role'] is String) ? (data['role'] as String) : UserRole.user.name;
         debugPrint('SPLASH_DEBUG: role = $role');
         if (!mounted) return;
-        if (role.toLowerCase() == 'worker') {
+        if (role.toLowerCase() == UserRole.worker.name) {
           debugPrint('SPLASH_DEBUG: routing to workerHome');
           context.go(AppRoutes.workerHome);
         } else {

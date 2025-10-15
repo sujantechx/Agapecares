@@ -24,13 +24,15 @@ final List<RouteBase> publicRoutes = [
   GoRoute(
     path: AppRoutes.phoneVerify,
     builder: (context, state) {
-      final extra = state.extra as Map<String, dynamic>?;
+      final extra = state.extra;
+      String verificationId = '';
+      if (extra is String) {
+        verificationId = extra;
+      } else if (extra is Map<String, dynamic>) {
+        verificationId = extra['verificationId'] ?? '';
+      }
       return PhoneVerifyPage(
-        verificationId: extra?['verificationId'] ?? '',
-        phone: extra?['phone'] ?? '',
-        name: extra?['name'],
-        email: extra?['email'],
-        role: extra?['role'],
+        verificationId: verificationId,
       );
     },
   ),

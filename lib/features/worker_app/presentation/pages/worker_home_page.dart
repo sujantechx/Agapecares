@@ -5,13 +5,14 @@ import 'package:agapecares/core/models/user_model.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart';
-import 'package:agapecares/core/models/service_list_model.dart';
 import 'package:agapecares/core/models/order_model.dart';
 import 'package:agapecares/features/worker_app/presentation/pages/create_service_page.dart';
 import 'package:agapecares/core/services/session_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'package:agapecares/app/routes/app_routes.dart';
+
+import '../../../../core/models/service_model.dart';
 
 class WorkerHomePage extends StatefulWidget {
   const WorkerHomePage({Key? key}) : super(key: key);
@@ -55,7 +56,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
       try {
         final session = context.read<SessionService>();
         final sUser = session.getUser();
-        if (sUser != null && sUser.role == 'worker' && sUser.uid.isNotEmpty) {
+        if (sUser != null && sUser.role == UserRole.worker && sUser.uid.isNotEmpty) {
           resolvedWorkerId = sUser.uid;
         }
         if (sUser != null && sUser.phoneNumber != null && sUser.phoneNumber!.isNotEmpty) resolvedPhone = sUser.phoneNumber;
@@ -70,7 +71,12 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
       // Fallback: query users collection by phoneNumber if we still don't have a uid
       if ((resolvedWorkerId == null || resolvedWorkerId.isEmpty) && resolvedPhone != null && resolvedPhone.isNotEmpty) {
         try {
-          final snap = await FirebaseFirestore.instance.collection('users').where('phoneNumber', isEqualTo: resolvedPhone).where('role', isEqualTo: 'worker').limit(1).get();
+          final snap = await FirebaseFirestore.instance
+              .collection('users')
+              .where('phoneNumber', isEqualTo: resolvedPhone)
+              .where('role', isEqualTo: UserRole.worker.name)
+              .limit(1)
+              .get();
           if (snap.docs.isNotEmpty) {
             resolvedWorkerId = snap.docs.first.id;
           }
@@ -98,12 +104,15 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
     }
   }
 
+
   void _subscribeServices() {
     // Cancel previous subscription
     _servicesSub?.cancel();
     _servicesSub = FirebaseFirestore.instance.collection('services').snapshots().listen((snap) {
       try {
-        final list = snap.docs.map((d) => ServiceModel.fromMap(d.data())).toList();
+        final List<ServiceModel> list = snap.docs
+            .map<ServiceModel>((d) => ServiceModel.fromMap(d.data() as Map<String, dynamic>))
+            .toList();
         debugPrint('[WorkerHomePage] services snapshot count=${list.length}');
         if (mounted) setState(() => _services = list);
       } catch (e) {
@@ -114,6 +123,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
     });
   }
 
+
   void _subscribeAssignedOrders(String workerId) {
     _assignedSub?.cancel();
     _assignedSub = FirebaseFirestore.instance
@@ -123,41 +133,13 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
         .snapshots()
         .listen((snap) {
       try {
-        final list = snap.docs.map((d) {
-          final data = d.data();
-          final itemsRaw = (data['items'] as List<dynamic>?) ?? <dynamic>[];
-          final items = itemsRaw.map((e) {
-            if (e is Map<String, dynamic>) return OrderModel.cartItemFromMap(e);
-            if (e is Map) return OrderModel.cartItemFromMap(Map<String, dynamic>.from(e));
-            return OrderModel.cartItemFromMap(null);
-          }).toList();
-          return OrderModel(
-            localId: null,
-            isSynced: true,
-            id: d.id,
-            userId: data['userId'] as String? ?? '',
-            items: items.cast(),
-            subtotal: (data['subtotal'] as num?)?.toDouble() ?? 0.0,
-            discount: (data['discount'] as num?)?.toDouble() ?? 0.0,
-            total: (data['total'] as num?)?.toDouble() ?? 0.0,
-            paymentMethod: data['paymentMethod'] as String? ?? '',
-            paymentId: data['paymentId'] as String?,
-            orderStatus: data['orderStatus'] as String? ?? 'Placed',
-            userName: data['userName'] as String? ?? '',
-            userEmail: data['userEmail'] as String? ?? '',
-            userPhone: data['userPhone'] as String? ?? '',
-            userAddress: data['userAddress'] as String? ?? '',
-            workerId: data['workerId'] as String?,
-            workerName: data['workerName'] as String?,
-            acceptedAt: data['acceptedAt'] is Timestamp ? data['acceptedAt'] as Timestamp : null,
-            createdAt: data['createdAt'] is Timestamp ? data['createdAt'] as Timestamp : Timestamp.now(), orderNumber: '',
-          );
-        }).toList();
+        final list = snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
         if (mounted) {
           setState(() {
             _assignedOrdersPreview = list.take(10).toList();
-            _assignedCount = list.where((o) => o.orderStatus.toLowerCase() != 'completed').length;
-            _completedCount = list.where((o) => o.orderStatus.toLowerCase() == 'completed').length;
+            // orderStatus is an enum on OrderModel; use `.name` for string comparisons
+            _assignedCount = list.where((o) => o.orderStatus != OrderStatus.completed).length;
+            _completedCount = list.where((o) => o.orderStatus == OrderStatus.completed).length;
           });
         }
         debugPrint('[WorkerHomePage] assigned snapshot count=${list.length}');
@@ -172,11 +154,24 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
   Future<void> _loadCounts(OrderRepository orderRepo, String workerId) async {
     try {
       // incoming: orders placed and not yet assigned
-      final incoming = await orderRepo.getIncomingOrdersForWorker(withinHours: 24);
-      // assigned & completed for this worker
-      final assigned = await orderRepo.getAssignedOrdersForWorker(workerId);
-      final completed = assigned.where((o) => o.orderStatus.toLowerCase() == 'completed').toList();
-      final inProgress = assigned.where((o) => o.orderStatus.toLowerCase() != 'completed').toList();
+      final cutoff = Timestamp.fromDate(DateTime.now().subtract(const Duration(hours: 24)));
+      final incomingSnap = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('workerId', isNull: true)
+          .where('createdAt', isGreaterThanOrEqualTo: cutoff)
+          .get();
+      final incoming = incomingSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+
+      // assigned & completed for this worker: query Firestore directly
+      final assignedSnap = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('workerId', isEqualTo: workerId)
+          .get();
+      final assigned = assignedSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+
+      // orderStatus is an enum on OrderModel; compare against OrderStatus.completed
+      final completed = assigned.where((o) => o.orderStatus == OrderStatus.completed).toList();
+      final inProgress = assigned.where((o) => o.orderStatus != OrderStatus.completed).toList();
       setState(() {
         _incomingCount = incoming.length;
         _assignedCount = inProgress.length;
@@ -194,6 +189,29 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
       appBar: AppBar(
         title: const Text('Worker Dashboard'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Logout',
+            onPressed: () async {
+              try {
+                // Clear local session if available
+                try {
+                  final session = context.read<SessionService>();
+                  await session.clear();
+                } catch (_) {}
+                await FirebaseAuth.instance.signOut();
+              } catch (e) {
+                debugPrint('[WorkerHomePage] logout failed: $e');
+              }
+              // Route back to login
+              try {
+                final go = (context as dynamic).go as void Function(String);
+                go('/login');
+              } catch (_) {
+                Navigator.of(context).pushReplacementNamed('/login');
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
@@ -338,7 +356,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
                                     children: [
                                       Text(s.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                                       const SizedBox(height: 6),
-                                      Text('₹${s.price.toStringAsFixed(2)}'),
+                                      Text('₹${s.basePrice.toStringAsFixed(2)}'),
                                       const SizedBox(height: 6),
                                       Expanded(child: Text(s.description, maxLines: 3, overflow: TextOverflow.ellipsis)),
                                     ],
@@ -361,9 +379,9 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
                               return Card(
                                 margin: const EdgeInsets.symmetric(vertical: 6),
                                 child: ListTile(
-                                  title: Text('Order • ${o.orderNumber.isNotEmpty ? o.orderNumber : (o.id ?? 'Local:${o.localId ?? '-'}')}'),
-                                  subtitle: Text('${o.userName} • ₹${o.total.toStringAsFixed(2)}'),
-                                  trailing: Text(o.orderStatus),
+                                  title: Text('Order • ${o.orderNumber.isNotEmpty ? o.orderNumber : o.id}'),
+                                  subtitle: Text('${o.userId} • ₹${o.total.toStringAsFixed(2)}'),
+                                  trailing: Text(o.orderStatus.name),
                                   onTap: () {
                                     final go = (context as dynamic).go as void Function(String);
                                     try {

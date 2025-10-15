@@ -31,7 +31,7 @@ class AdminOrderListPage extends StatelessWidget {
                 final o = state.orders[i];
                 return ListTile(
                   title: Text('#${o.orderNumber} • ${o.orderStatus}'),
-                  subtitle: Text('Total: ₹${o.total.toStringAsFixed(2)}\nUser: ${o.userName ?? o.userId}'),
+                  subtitle: Text('Total: ₹${o.total.toStringAsFixed(2)}\nUser: ${o.userId}'),
                   isThreeLine: true,
                   trailing: PopupMenuButton<String>(
                     onSelected: (val) async {

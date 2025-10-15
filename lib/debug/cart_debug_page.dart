@@ -35,14 +35,14 @@ class _CartDebugPageState extends State<CartDebugPage> {
       final service = await ServiceStore.instance.fetchById('1');
       if (service == null) throw Exception('Sample service not found');
       final ServiceOption option = service.options.first;
-      final id = 'debug_${service.id}_${option.id}';
+      // Build a CartItemModel using the canonical fields defined in core/models/cart_item_model.dart
       final debugItem = CartItemModel(
-        id: id,
         serviceId: service.id,
         serviceName: service.name,
-        unitPrice: option.price,
-        selectedOption: option,
+        // Store option snapshot as a simple string
+        optionName: option.name,
         quantity: 1,
+        unitPrice: option.price,
       );
       // Persist the debug item into the repository so the cart shows it
       try {
@@ -96,8 +96,8 @@ class _CartDebugPageState extends State<CartDebugPage> {
                     final it = _items[index];
                     return ListTile(
                       title: Text(it.serviceName),
-                      subtitle: Text('Option: ${it.selectedOption.name}  qty: ${it.quantity}'),
-                      trailing: Text('₹ ${it.price.toStringAsFixed(2)}'),
+                      subtitle: Text('Option: ${it.optionName}  qty: ${it.quantity}'),
+                      trailing: Text('₹ ${it.unitPrice.toStringAsFixed(2)}'),
                     );
                   },
                 ),

@@ -8,7 +8,6 @@ import '../../../../../core/models/order_model.dart';
 
 import 'package:flutter/services.dart';
 
-import '../../../../../core/services/local_database_service.dart';
 import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart';
 
 class OrderListPage extends StatefulWidget {
@@ -53,27 +52,6 @@ class _OrderListPageState extends State<OrderListPage> {
       debugPrint('[OrderListPage] _loadOrdersFromRepo mergedCount=${merged.length}');
       if (merged.isNotEmpty) return merged;
 
-      // If remote returned empty, also try local unsynced orders (covers COD or offline orders)
-      try {
-        final localDb = context.read<LocalDatabaseService>();
-        final localUnsynced = await localDb.getUnsyncedOrders();
-        debugPrint('[OrderListPage] localUnsynced count=${localUnsynced.length}');
-        final fbUser = FirebaseAuth.instance.currentUser;
-        final localForUser = localUnsynced.where((o) {
-          final oUser = (o.userId).trim();
-          if (oUser.isNotEmpty && oUser == userId) return true;
-          if (oUser.isEmpty && fbUser != null) {
-            final uid = fbUser.uid.trim();
-            final phone = fbUser.phoneNumber?.trim();
-            if ((uid.isNotEmpty && uid == userId) || (phone != null && phone == userId)) return true;
-          }
-          return false;
-        }).toList();
-        if (localForUser.isNotEmpty) return localForUser;
-      } catch (e, s) {
-        debugPrint('[OrderListPage] failed to read local unsynced orders: $e\n$s');
-      }
-
       return merged;
     } catch (e, s) {
       debugPrint('[OrderListPage] _loadOrdersFromRepo failed: $e\n$s');
@@ -93,44 +71,36 @@ class _OrderListPageState extends State<OrderListPage> {
     return '${two(d.day)}-${two(d.month)}-${d.year} ${two(d.hour)}:${two(d.minute)}';
   }
 
-  Color _statusColor(String status, String paymentMethod) {
-    final s = status.toLowerCase();
-    if (s.contains('success') || s == 'success') return Colors.green.shade600;
-    if (s.contains('fail') || s == 'failed') return Colors.red.shade600;
-    if (s == 'assigned') return Colors.orange.shade700;
-    if (s == 'complete') return Colors.green.shade700;
-    return Colors.blueGrey.shade600; // pending or unknown
-  }
-
-  String _orderStatusLabel(String status) {
-    final s = status.toLowerCase();
-    switch (s) {
-      case 'pending':
-        return 'Pending';
-      case 'assigned':
-        return 'Assigned';
-      case 'complete':
-        return 'Complete';
-      default:
-        return status.isNotEmpty ? status : 'Pending';
+  Color _statusColor(OrderStatus status) {
+    switch (status) {
+      case OrderStatus.pending:
+        return Colors.blueGrey.shade600;
+      case OrderStatus.accepted:
+      case OrderStatus.assigned:
+        return Colors.orange.shade700;
+      case OrderStatus.in_progress:
+        return Colors.orange.shade600;
+      case OrderStatus.completed:
+        return Colors.green.shade700;
+      case OrderStatus.cancelled:
+        return Colors.red.shade600;
     }
   }
 
-  String _paymentStatusLabel(String paymentStatus, String paymentMethod) {
-    final p = paymentStatus.toLowerCase();
-    if (p == 'success' || p == 'paid') return 'Paid';
-    if (p == 'failed' || p == 'failure') return 'Failed';
-    // For COD, pending payment is expected
-    if (paymentMethod.toLowerCase() == 'cod') return 'COD';
-    return 'Pending';
-  }
+  String _orderStatusLabel(OrderStatus status) => status.name.replaceAll('_', ' ').toUpperCase();
 
-  Color _paymentStatusColor(String paymentStatus, String paymentMethod) {
-    final p = paymentStatus.toLowerCase();
-    if (p == 'success' || p == 'paid') return Colors.green.shade600;
-    if (p == 'failed' || p == 'failure') return Colors.red.shade600;
-    if (paymentMethod.toLowerCase() == 'cod') return Colors.orange.shade700;
-    return Colors.blueGrey.shade600;
+  String _paymentStatusLabel(PaymentStatus status) => status.name.toUpperCase();
+  Color _paymentStatusColor(PaymentStatus status) {
+    switch (status) {
+      case PaymentStatus.pending:
+        return Colors.blueGrey.shade600;
+      case PaymentStatus.paid:
+        return Colors.green.shade600;
+      case PaymentStatus.failed:
+        return Colors.red.shade600;
+      case PaymentStatus.refunded:
+        return Colors.orange.shade600;
+    }
   }
 
   @override
@@ -235,17 +205,17 @@ class _OrderListPageState extends State<OrderListPage> {
                 }
 
                 // Use _orderStatusLabel (existing helper) and _statusColor for display
-                final statusColor = _statusColor(o.orderStatus, o.paymentMethod);
+                final statusColor = _statusColor(o.orderStatus);
 
                 return ExpansionTile(
-                  key: ValueKey(o.id ?? o.localId ?? index),
+                  key: ValueKey(o.id.isNotEmpty ? o.id : index),
                   title: Row(
                     children: [
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Order • ${o.orderNumber.isNotEmpty ? o.orderNumber : (o.id ?? 'Local:${o.localId ?? "-"}')}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                            Text('Order • ${o.orderNumber.isNotEmpty ? o.orderNumber : (o.id.isNotEmpty ? o.id : '-')}', style: const TextStyle(fontWeight: FontWeight.bold)),
                             const SizedBox(height: 4),
                             Text('Placed: ${_formatDateTime(createdDate)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
                           ],
@@ -264,8 +234,8 @@ class _OrderListPageState extends State<OrderListPage> {
                               ),
                               const SizedBox(width: 6),
                               Chip(
-                                label: Text(_paymentStatusLabel(o.paymentStatus, o.paymentMethod), style: const TextStyle(color: Colors.white, fontSize: 12)),
-                                backgroundColor: _paymentStatusColor(o.paymentStatus, o.paymentMethod),
+                                label: Text(_paymentStatusLabel(o.paymentStatus), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                backgroundColor: _paymentStatusColor(o.paymentStatus),
                               ),
                             ],
                           )
@@ -282,20 +252,17 @@ class _OrderListPageState extends State<OrderListPage> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              // userName is nullable, handle gracefully
-                              Text((o.userName != null && o.userName!.isNotEmpty) ? o.userName! : 'Name not provided', style: const TextStyle(fontWeight: FontWeight.w600)),
-                              Text(o.paymentMethod.toUpperCase(), style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                              // Show userId (uid) as identifier and fallback
+                              Text(o.userId.isNotEmpty ? o.userId : 'Unknown User', style: const TextStyle(fontWeight: FontWeight.w600)),
+                              Text(_paymentStatusLabel(o.paymentStatus), style: const TextStyle(fontSize: 12, color: Colors.black54)),
                             ],
                           ),
                           const SizedBox(height: 6),
-                          Text('Phone: ${o.userPhone}', style: const TextStyle(fontSize: 13)),
+                          // Address snapshot
                           const SizedBox(height: 6),
-                          Text('Address: ${o.userAddress}', style: const TextStyle(fontSize: 13)),
+                          Text('Address: ${o.addressSnapshot['address'] ?? 'Not provided'}', style: const TextStyle(fontSize: 13)),
                           const SizedBox(height: 8),
-                          if (o.paymentId != null && (o.paymentId ?? '').isNotEmpty) ...[
-                            Text('Payment id: ${o.paymentId}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                            const SizedBox(height: 8),
-                          ],
+                          // payment id not stored on OrderModel by default
                           const Divider(),
                           const SizedBox(height: 6),
                           const Text('Items:', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -305,8 +272,8 @@ class _OrderListPageState extends State<OrderListPage> {
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Expanded(child: Text('${it.service} × ${it.quantity}', style: const TextStyle(fontSize: 14))),
-                                    Text('₹${(it.price * it.quantity).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                    Expanded(child: Text('${it.serviceName} × ${it.quantity}', style: const TextStyle(fontSize: 14))),
+                                    Text('₹${(it.unitPrice * it.quantity).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600)),
                                   ],
                                 ),
                               )),
@@ -320,71 +287,7 @@ class _OrderListPageState extends State<OrderListPage> {
                             ],
                           ),
                           const SizedBox(height: 8),
-                          // If order is complete and not yet rated, allow user to submit rating/review
-                          if (o.orderStatus.toLowerCase() == 'complete' && (o.rating == null))
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                ElevatedButton(
-                                  onPressed: () async {
-                                    final repo = context.read<OrderRepository>();
-                                    // show rating dialog
-                                    final result = await showDialog<Map<String, dynamic>>(
-                                      context: context,
-                                      builder: (ctx) {
-                                        int stars = 5;
-                                        final reviewCtr = TextEditingController();
-                                        return StatefulBuilder(builder: (ctx, setState) {
-                                          return AlertDialog(
-                                            title: const Text('Rate this service'),
-                                            content: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Row(
-                                                  mainAxisAlignment: MainAxisAlignment.center,
-                                                  children: List.generate(5, (i) {
-                                                    final idx = i + 1;
-                                                    return IconButton(
-                                                      icon: Icon(idx <= stars ? Icons.star : Icons.star_border, color: Colors.amber),
-                                                      onPressed: () { setState(() => stars = idx); },
-                                                    );
-                                                  }),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                TextField(controller: reviewCtr, decoration: const InputDecoration(labelText: 'Optional review')),
-                                              ],
-                                            ),
-                                            actions: [
-                                              TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-                                              ElevatedButton(
-                                                onPressed: () {
-                                                  Navigator.of(ctx).pop({'stars': stars.toDouble(), 'review': reviewCtr.text.trim()});
-                                                },
-                                                child: const Text('Submit'),
-                                              ),
-                                            ],
-                                          );
-                                        });
-                                      },
-                                    );
-
-                                    if (result != null && result['stars'] != null) {
-                                      final starsVal = result['stars'] as double;
-                                      final review = result['review'] as String?;
-                                      final ok = await repo.submitRatingForOrder(order: o, rating: starsVal, review: review);
-                                      if (ok) {
-                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Thank you for the rating')));
-                                        _loadOrders();
-                                        setState(() {});
-                                      } else {
-                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to submit rating')));
-                                      }
-                                    }
-                                  },
-                                  child: const Text('Confirm & Rate'),
-                                ),
-                              ],
-                            ),
+                          // Rating not available on current OrderModel; remove rating UI
                         ],
                       ),
                     )

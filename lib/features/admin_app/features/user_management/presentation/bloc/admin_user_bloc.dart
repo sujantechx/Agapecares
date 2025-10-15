@@ -1,3 +1,7 @@
+// Admin User Management - BLoC
+// Purpose: Business logic for admin operations on users (load, update role, verify, disable, delete).
+// Notes: Uses `AdminUserRepository` and `UserModel` from core models; no model changes applied.
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/repositories/user_repository.dart';
 import 'admin_user_event.dart';
@@ -49,4 +53,3 @@ class AdminUserBloc extends Bloc<AdminUserEvent, AdminUserState> {
     });
   }
 }
-

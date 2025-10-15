@@ -1,3 +1,7 @@
+// Admin Worker Management - BLoC
+// Purpose: Business logic for admin operations on workers (load, update status, assign jobs).
+// Notes: Uses AdminWorkerRepository and core models; no structural model changes.
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/repositories/worker_repository.dart';
 import 'admin_worker_event.dart';
@@ -33,4 +37,3 @@ class AdminWorkerBloc extends Bloc<AdminWorkerEvent, AdminWorkerState> {
     });
   }
 }
-

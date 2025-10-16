@@ -1,5 +1,5 @@
 import 'package:equatable/equatable.dart';
-import '../data/models/cart_item_model.dart';
+import 'package:agapecares/core/models/cart_item_model.dart';
 import 'package:agapecares/core/models/coupon_model.dart';
 
 class CartState extends Equatable {

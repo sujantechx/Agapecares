@@ -1,6 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:agapecares/features/admin_app/features/service_management/presentation/screens/admin_services_main_page.dart';
 import 'package:agapecares/features/admin_app/features/service_management/presentation/screens/admin_add_edit_service_screen.dart';
-import 'package:agapecares/features/admin_app/features/service_management/presentation/screens/admin_service_list_page.dart';
 import 'package:agapecares/features/admin_app/features/service_management/presentation/screens/admin_order_list_page.dart';
 import 'package:agapecares/features/admin_app/presentation/screens/admin_user_worker_tab_page.dart';
 import 'package:agapecares/features/admin_app/presentation/screens/admin_dashboard_page.dart';
@@ -19,35 +19,56 @@ import '../../features/admin_app/presentation/screens/admin_profile.dart';
 final List<RouteBase> adminRoutes = [
   GoRoute(
     path: AppRoutes.adminDashboard,
-    builder: (context, state) => AdminDashboardPage(child: const AdminHomePage()),
+    pageBuilder: (context, state) => MaterialPage(
+      key: state.pageKey,
+      child: AdminDashboardPage(child: const AdminHomePage()),
+    ),
   ),
   GoRoute(
     path: AppRoutes.adminServices,
-    builder: (context, state) => AdminDashboardPage(child: const AdminServicesMainPage()),
+    pageBuilder: (context, state) => MaterialPage(
+      key: state.pageKey,
+      child: AdminDashboardPage(child: const AdminServicesMainPage()),
+    ),
   ),
 
   GoRoute(
     path: AppRoutes.adminAddService,
-    builder: (context, state) => AdminDashboardPage(child: const AdminAddEditServiceScreen()),
+    pageBuilder: (context, state) => MaterialPage(
+      key: state.pageKey,
+      child: AdminDashboardPage(child: const AdminAddEditServiceScreen()),
+    ),
   ),
   GoRoute(
     path: AppRoutes.adminEditService,
-    builder: (context, state) {
+    pageBuilder: (context, state) {
       final service = state.extra as ServiceModel?;
-      return AdminDashboardPage(child: AdminAddEditServiceScreen(service: service));
+      return MaterialPage(
+        key: state.pageKey,
+        child: AdminDashboardPage(child: AdminAddEditServiceScreen(service: service)),
+      );
     },
   ),
   GoRoute(
     path: AppRoutes.adminOrders,
-    builder: (context, state) => AdminDashboardPage(child: const AdminOrderListPage()),
+    pageBuilder: (context, state) => MaterialPage(
+      key: state.pageKey,
+      child: AdminDashboardPage(child: const AdminOrderListPage()),
+    ),
   ),
   GoRoute(
     path: AppRoutes.adminUsers,
-    builder: (context, state) => AdminDashboardPage(child: const AdminUserWorkerTabPage()),
+    pageBuilder: (context, state) => MaterialPage(
+      key: state.pageKey,
+      child: AdminDashboardPage(child: const AdminUserWorkerTabPage()),
+    ),
   ),
   // Admin-specific profile route (separate from shared user profile)
   GoRoute(
     path: AppRoutes.adminProfile,
-    builder: (context, state) => AdminDashboardPage(child: const AdminProfilePage()),
+    pageBuilder: (context, state) => MaterialPage(
+      key: state.pageKey,
+      child: AdminDashboardPage(child: const AdminProfilePage()),
+    ),
   ),
 ];

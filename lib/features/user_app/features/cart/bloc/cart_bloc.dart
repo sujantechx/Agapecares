@@ -1,10 +1,7 @@
 import 'package:bloc/bloc.dart';
-import 'package:equatable/equatable.dart';
-
-
-import '../../../../../core/models/coupon_model.dart';
-import '../../data/repositories/offer_repository.dart';
-import '../data/models/cart_item_model.dart';
+import 'package:agapecares/core/models/coupon_model.dart';
+import 'package:agapecares/features/user_app/features/data/repositories/offer_repository.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
 
@@ -32,14 +29,18 @@ class CartBloc extends Bloc<CartEvent, CartState> {
   }
 
   Future<void> _onCartCouponApplied(CartCouponApplied event, Emitter<CartState> emit) async {
+    if (kDebugMode) debugPrint('CART_DEBUG: Applying coupon "${event.couponCode}" (start_console)');
     final coupon = await _offerRepository.getOfferByCode(event.couponCode);
     await _recalculateState(emit, appliedCoupon: coupon, couponError: coupon == null ? "Invalid Coupon Code" : null);
+    if (kDebugMode) debugPrint('CART_DEBUG: Coupon applied (finished)');
   }
 
   // A helper to calculate totals using canonical CartItemModel fields
   Future<void> _recalculateState(Emitter<CartState> emit, {CouponModel? appliedCoupon, String? couponError}) async {
+    if (kDebugMode) debugPrint('CART_DEBUG: Recalculating cart state (start_console)');
     final items = await _cartRepository.getCartItems();
     if (items.isEmpty) {
+      if (kDebugMode) debugPrint('CART_DEBUG: Cart is empty after recalculation');
       return emit(const CartState(items: [])); // Reset if cart is empty
     }
 
@@ -69,6 +70,8 @@ class CartBloc extends Bloc<CartEvent, CartState> {
 
     final total = priceAfterCoupon - extraDiscount;
 
+    if (kDebugMode) debugPrint('CART_DEBUG: Recalculated totals subtotal=$subtotal couponDiscount=$couponDiscount extraDiscount=$extraDiscount total=$total');
+
     emit(CartState(
       items: items,
       subtotal: subtotal,
@@ -82,29 +85,40 @@ class CartBloc extends Bloc<CartEvent, CartState> {
   }
 
   Future<void> _onCartStarted(CartStarted event, Emitter<CartState> emit) async {
+    if (kDebugMode) debugPrint('CART_DEBUG: CartStarted received (start_console)');
     await _recalculateState(emit);
+    if (kDebugMode) debugPrint('CART_DEBUG: CartStarted processed (finished)');
   }
 
   Future<void> _onCartItemAdded(CartItemAdded event, Emitter<CartState> emit) async {
     // The CartRepository expects a CartItemModel; ensure caller provides that.
+    if (kDebugMode) debugPrint('CART_DEBUG: Adding item to cart: ${event.item.serviceName} | option=${event.item.optionName} (start_console)');
     await _cartRepository.addItemToCart(event.item);
+    if (kDebugMode) debugPrint('CART_DEBUG: addItemToCart call returned, recalculating state');
     await _recalculateState(emit);
+    if (kDebugMode) debugPrint('CART_DEBUG: Item added and state updated (finished)');
   }
 
   Future<void> _onCartItemRemoved(CartItemRemoved event, Emitter<CartState> emit) async {
+    if (kDebugMode) debugPrint('CART_DEBUG: Removing cart item id=${event.cartItemId} (start_console)');
     await _cartRepository.removeItemFromCart(event.cartItemId);
     await _recalculateState(emit);
+    if (kDebugMode) debugPrint('CART_DEBUG: Item removed and state updated (finished)');
   }
 
   Future<void> _onCartItemQuantityIncreased(CartItemQuantityIncreased event, Emitter<CartState> emit) async {
+    if (kDebugMode) debugPrint('CART_DEBUG: Increasing quantity for ${event.cartItemId} (start_console)');
     final item = state.items.firstWhere((i) => (i.serviceId + '_' + i.optionName) == event.cartItemId);
     await _cartRepository.updateItemQuantity(event.cartItemId, item.quantity + 1);
     await _recalculateState(emit);
+    if (kDebugMode) debugPrint('CART_DEBUG: Quantity increased (finished)');
   }
 
   Future<void> _onCartItemQuantityDecreased(CartItemQuantityDecreased event, Emitter<CartState> emit) async {
+    if (kDebugMode) debugPrint('CART_DEBUG: Decreasing quantity for ${event.cartItemId} (start_console)');
     final item = state.items.firstWhere((i) => (i.serviceId + '_' + i.optionName) == event.cartItemId);
     await _cartRepository.updateItemQuantity(event.cartItemId, item.quantity - 1);
     await _recalculateState(emit);
+    if (kDebugMode) debugPrint('CART_DEBUG: Quantity decreased (finished)');
   }
 }

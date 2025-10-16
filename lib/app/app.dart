@@ -47,6 +47,11 @@ import 'package:agapecares/features/user_app/features/cart/bloc/cart_bloc.dart' 
 import 'package:agapecares/features/user_app/features/services/logic/service_bloc.dart';
 import 'package:agapecares/features/user_app/features/orders/logic/order_bloc.dart';
 import 'package:agapecares/features/user_app/features/data/repositories/offer_repository.dart';
+import 'package:agapecares/features/user_app/features/data/repositories/booking_repository.dart';
+import 'package:agapecares/features/user_app/features/payment_gateway/repository/razorpay_payment_repository.dart';
+import 'package:agapecares/features/user_app/features/payment_gateway/repository/cod_payment_repository.dart';
+
+// Removed unused import of checkout_bloc.dart
 
 import '../features/common_auth/logic/blocs/auth_bloc.dart';
 import 'package:agapecares/features/common_auth/data/datasources/auth_remote_ds.dart';
@@ -90,6 +95,11 @@ Future<List<RepositoryProvider>> init() async {
   // OfferRepository is a simple, in-memory/deterministic repository used by CartBloc
   sl.registerLazySingleton<OfferRepository>(() => OfferRepository());
 
+  // New: Booking and Payment repositories
+  sl.registerLazySingleton<BookingRepository>(() => BookingRepository(firestore: sl()));
+  sl.registerLazySingleton<RazorpayPaymentRepository>(() => RazorpayPaymentRepository(backendCreateOrderUrl: 'https://example.com/create-order'));
+  sl.registerLazySingleton<CodPaymentRepository>(() => CodPaymentRepository());
+
   // Register AuthRepository (used by AuthBloc and app-wide providers)
   sl.registerLazySingleton<AuthRepository>(() => AuthRepository(firebaseAuth: sl(), firestore: sl()));
 
@@ -110,6 +120,7 @@ Future<List<RepositoryProvider>> init() async {
   sl.registerFactory(() => AdminOrderBloc(repo: sl()));
   sl.registerFactory(() => AdminUserBloc(repo: sl()));
   sl.registerFactory(() => AdminWorkerBloc(repo: sl()));
+  // CheckoutBloc is provided at the checkout route to ensure correct dependencies and lifecycle.
 
   // Build repository providers to mount at app root
   final providers = <RepositoryProvider>[
@@ -124,6 +135,10 @@ Future<List<RepositoryProvider>> init() async {
     RepositoryProvider<OfferRepository>.value(value: sl()),
     // Expose SessionService to the widget tree so widgets can read cached user safely
     RepositoryProvider<SessionService>.value(value: sl()),
+    // Expose booking/payment repositories
+    RepositoryProvider<BookingRepository>.value(value: sl()),
+    RepositoryProvider<RazorpayPaymentRepository>.value(value: sl()),
+    RepositoryProvider<CodPaymentRepository>.value(value: sl()),
   ];
 
   return providers;
@@ -150,6 +165,7 @@ List<BlocProvider> buildBlocs(BuildContext context) {
       ),
     ),
     BlocProvider<OrderBloc>(create: (_) => OrderBloc(orderRepository: orderRepo)),
+    // CheckoutBloc provided locally in route; do not register globally to avoid duplicate instances.
     BlocProvider<ServiceManagementBloc>(create: (_) => ServiceManagementBloc(serviceRepository: adminServiceRepo)),
     BlocProvider<AdminOrderBloc>(create: (_) => AdminOrderBloc(repo: adminOrderRepo)),
     BlocProvider<AdminUserBloc>(create: (_) => AdminUserBloc(repo: adminUserRepo)),
@@ -169,6 +185,7 @@ List<BlocProvider> buildBlocsFromGetIt({AuthBloc? authBloc}) {
       create: (_) => ui_cart_bloc.CartBloc(cartRepository: sl(), offerRepository: sl()),
     ),
     BlocProvider<OrderBloc>(create: (_) => OrderBloc(orderRepository: sl())),
+    // CheckoutBloc is created on the checkout route instead of globally.
     BlocProvider<ServiceManagementBloc>(create: (_) => ServiceManagementBloc(serviceRepository: sl())),
     BlocProvider<AdminOrderBloc>(create: (_) => AdminOrderBloc(repo: sl())),
     BlocProvider<AdminUserBloc>(create: (_) => AdminUserBloc(repo: sl())),

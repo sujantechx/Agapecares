@@ -6,15 +6,16 @@ class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
   final FirebaseFirestore _firestore;
   OrderRemoteDataSourceImpl({required FirebaseFirestore firestore}) : _firestore = firestore;
 
-  CollectionReference<Map<String, dynamic>> get _orders => _firestore.collection('orders');
+  // Keep a getter for convenience; we primarily read orders via collectionGroup
+  CollectionReference<Map<String, dynamic>> get _topLevelOrders => _firestore.collection('orders');
 
   @override
   Future<List<OrderModel>> getAllOrders() async {
     try {
-      final snap = await _orders.orderBy('createdAt', descending: true).get();
+      // Use collectionGroup to read orders stored under users/{userId}/orders as well as any top-level orders
+      final snap = await _firestore.collectionGroup('orders').orderBy('createdAt', descending: true).get();
       return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
     } on FirebaseException catch (e) {
-      // Surface permission errors more clearly to the caller
       if (e.code == 'permission-denied' || e.message?.toLowerCase().contains('permission') == true) {
         throw Exception('Firestore permission denied when fetching orders. Check Firestore rules and ensure your account has admin access. (${e.message})');
       }
@@ -22,10 +23,31 @@ class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
     }
   }
 
+  // Helper: find the first DocumentReference for an order by a stored 'remoteId' or by id match.
+  Future<DocumentReference<Map<String, dynamic>>?> _findOrderDocRefById(String orderId) async {
+    if (orderId.isEmpty) return null;
+    // First try to find a document whose 'remoteId' equals orderId (this is set when orders are created)
+    final q1 = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: orderId).limit(1).get();
+    if (q1.docs.isNotEmpty) return q1.docs.first.reference;
+
+    // Fallback: try to match documents whose document id equals orderId by scanning collectionGroup
+    // Note: direct filtering by documentId in collectionGroup may not be supported in all environments; do a simple scan as last resort
+    final q2 = await _firestore.collectionGroup('orders').where('orderNumber', isEqualTo: orderId).limit(1).get();
+    if (q2.docs.isNotEmpty) return q2.docs.first.reference;
+
+    // As a last fallback, try to get from top-level orders collection
+    final topDoc = await _topLevelOrders.doc(orderId).get();
+    if (topDoc.exists) return topDoc.reference as DocumentReference<Map<String, dynamic>>;
+
+    return null;
+  }
+
   @override
   Future<void> updateOrderStatus({required String orderId, required String status}) async {
     try {
-      await _orders.doc(orderId).update({
+      final ref = await _findOrderDocRefById(orderId);
+      if (ref == null) throw Exception('Order not found: $orderId');
+      await ref.update({
         'orderStatus': status,
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -40,7 +62,9 @@ class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
   @override
   Future<void> assignWorker({required String orderId, required String workerId, String? workerName}) async {
     try {
-      await _orders.doc(orderId).update({
+      final ref = await _findOrderDocRefById(orderId);
+      if (ref == null) throw Exception('Order not found: $orderId');
+      await ref.update({
         'workerId': workerId,
         if (workerName != null) 'workerName': workerName,
         'orderStatus': 'assigned',
@@ -58,7 +82,9 @@ class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
   @override
   Future<void> deleteOrder(String orderId) async {
     try {
-      await _orders.doc(orderId).delete();
+      final ref = await _findOrderDocRefById(orderId);
+      if (ref == null) throw Exception('Order not found: $orderId');
+      await ref.delete();
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         throw Exception('Permission denied deleting order. Check Firestore rules.');

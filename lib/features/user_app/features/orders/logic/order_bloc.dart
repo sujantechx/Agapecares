@@ -24,8 +24,9 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
       final orders = await _orderRepository.fetchOrdersForUser(event.userId);
       emit(OrderLoaded(orders));
     } catch (e) {
-      // Keep simple error state - UI can react and offer retry
-      emit(OrderError());
+      // Surface error message so UI can display it (e.g., permission-denied from Firestore)
+      final message = e is FirebaseException ? (e.message ?? e.toString()) : e.toString();
+      emit(OrderError(message));
     }
   }
 
@@ -64,7 +65,7 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
 
     // Try to persist the order. If it fails, keep optimistic UI and attempt a reconciliation fetch.
     try {
-      await _orderRepository.createOrder(orderToSave);
+      await _orderRepository.createOrder(orderToSave, userId: orderToSave.userId);
     } catch (e) {
       // Persistence failed. Attempt to re-sync by refetching the authoritative list.
       try {
@@ -101,7 +102,7 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
       try {
         final firebaseUser = FirebaseAuth.instance.currentUser;
         final uid = firebaseUser?.uid ?? order.userId;
-        if (uid != null && uid.isNotEmpty) {
+        if (uid.isNotEmpty) {
           final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
           if (doc.exists) {
             final data = doc.data();

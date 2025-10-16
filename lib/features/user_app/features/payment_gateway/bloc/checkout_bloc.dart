@@ -6,10 +6,9 @@ import 'package:agapecares/core/services/session_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-
 import '../../../../../core/models/cart_item_model.dart';
 import '../../../../../core/models/order_model.dart';
-import '../../data/repositories/order_repository.dart';
+import '../../orders/data/repositories/order_repository.dart';
 import '../model/payment_models.dart';
 import '../repository/razorpay_payment_repository.dart';
 import '../repository/cod_payment_repository.dart';
@@ -29,6 +28,7 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
   final BookingRepository _bookingRepo;
   final CartRepository _cartRepo;
   final Future<String?> Function() _getCurrentUserId;
+  final dynamic _firestore;
 
   CheckoutBloc({
     required OrderRepository orderRepo,
@@ -37,22 +37,28 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
     required CartRepository cartRepo,
     required BookingRepository bookingRepo,
     required Future<String?> Function() getCurrentUserId,
-  })  : _orderRepo = orderRepo,
+    dynamic firestore,
+  })
+      : _orderRepo = orderRepo,
         _razorpayRepo = razorpayRepo,
         _codRepo = codRepo,
         _bookingRepo = bookingRepo,
         _cartRepo = cartRepo,
         _getCurrentUserId = getCurrentUserId,
+        _firestore = firestore ?? FirebaseFirestore.instance,
         super(const CheckoutState()) {
     on<CheckoutSubmitted>(_onCheckoutSubmitted);
   }
 
-  Future<void> _onCheckoutSubmitted(CheckoutSubmitted event, Emitter<CheckoutState> emit) async {
-    emit(state.copyWith(isInProgress: true, errorMessage: null, successMessage: null));
+  Future<void> _onCheckoutSubmitted(CheckoutSubmitted event,
+      Emitter<CheckoutState> emit) async {
+    emit(state.copyWith(
+        isInProgress: true, errorMessage: null, successMessage: null));
     try {
       final userId = await _getCurrentUserId();
       if (userId == null || userId.isEmpty) {
-        emit(state.copyWith(isInProgress: false, errorMessage: 'Please log in to place an order.'));
+        emit(state.copyWith(isInProgress: false,
+            errorMessage: 'Please log in to place an order.'));
         return;
       }
 
@@ -61,10 +67,12 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
       try {
         orderNumber = await _orderRepo.generateOrderNumber();
       } catch (e) {
-        debugPrint('[CheckoutBloc] failed to generate orderNumber via repo: $e');
+        debugPrint(
+            '[CheckoutBloc] failed to generate orderNumber via repo: $e');
         // Fallback to a timestamp-based ORD id to avoid blocking checkout
         final now = DateTime.now().toUtc();
-        orderNumber = 'ORD${now.millisecondsSinceEpoch}${now.microsecond % 1000}';
+        orderNumber =
+        'ORD${now.millisecondsSinceEpoch}${now.microsecond % 1000}';
       }
 
       // Convert UI items to CartItemModel as cartItem if already in that shape this is a no-op.
@@ -82,7 +90,9 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
 
       // Determine user address: prefer explicit request, then local session, then Firestore user doc
       String? effectiveAddress;
-      final reqAddress = event.request.userAddress.trim().isEmpty ? null : event.request.userAddress.trim();
+      final reqAddress = event.request.userAddress
+          .trim()
+          .isEmpty ? null : event.request.userAddress.trim();
       if (reqAddress != null && reqAddress.isNotEmpty) {
         effectiveAddress = reqAddress;
       }
@@ -105,7 +115,8 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
           final su = session.getUser();
           if (su != null && su.addresses != null && su.addresses!.isNotEmpty) {
             final addrCandidate = extractAddress(su.addresses!.first);
-            if (addrCandidate != null && addrCandidate.isNotEmpty) effectiveAddress = addrCandidate;
+            if (addrCandidate != null && addrCandidate.isNotEmpty)
+              effectiveAddress = addrCandidate;
           }
         } catch (_) {
           // ignore and try Firestore next
@@ -117,13 +128,19 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
         try {
           final firebaseUser = FirebaseAuth.instance.currentUser;
           final uidForAddress = firebaseUser?.uid ?? userId;
-          if (uidForAddress != null && uidForAddress.isNotEmpty) {
-            final doc = await FirebaseFirestore.instance.collection('users').doc(uidForAddress).get();
+          if (uidForAddress.isNotEmpty) {
+            final doc = await _firestore
+                .collection('users')
+                .doc(uidForAddress)
+                .get();
             if (doc.exists) {
               final data = doc.data();
-              if (data != null && data['addresses'] is List && (data['addresses'] as List).isNotEmpty) {
-                final addrCandidate = extractAddress((data['addresses'] as List).first);
-                if (addrCandidate != null && addrCandidate.isNotEmpty) effectiveAddress = addrCandidate;
+              if (data != null && data['addresses'] is List &&
+                  (data['addresses'] as List).isNotEmpty) {
+                final addrCandidate = extractAddress(
+                    (data['addresses'] as List).first);
+                if (addrCandidate != null && addrCandidate.isNotEmpty)
+                  effectiveAddress = addrCandidate;
               }
             }
           }
@@ -153,9 +170,12 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
       // For Razorpay we will create the remote order only after payment success.
       // For COD we create the remote order immediately since the user confirmed.
       if (event.paymentMethod == 'razorpay') {
-        debugPrint('[CheckoutBloc] Starting Razorpay payment for orderNumber=$orderNumber total=${event.request.totalAmount}');
+        debugPrint(
+            '[CheckoutBloc] Starting Razorpay payment for orderNumber=$orderNumber total=${event
+                .request.totalAmount}');
         final res = await _razorpayRepo.processPayment(event.request);
-        debugPrint('[CheckoutBloc] Razorpay result for orderNumber=$orderNumber: $res');
+        debugPrint(
+            '[CheckoutBloc] Razorpay result for orderNumber=$orderNumber: $res');
         if (res is PaymentSuccess) {
           // Build order with payment status and create remote doc (preferred)
           final paidOrder = OrderModel(
@@ -175,57 +195,139 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now(),
           );
-          OrderModel savedRemote;
+          // Create remote order using the repository. Capture the created document id
+          String? createdOrderId;
           try {
-            savedRemote = await _orderRepo.createOrder(paidOrder, userId: userId);
+            createdOrderId = await _orderRepo.uploadOrder(paidOrder);
           } catch (e) {
-            debugPrint('[CheckoutBloc] createOrder(userId:$userId) failed after Razorpay: $e');
-            // Fallback: try uploadOrder
-            try {
-              final remoteId = await _orderRepo.uploadOrder(order: paidOrder);
-              // read back saved remote
-              savedRemote = (await _orderRepo.getAllOrdersForUser(userId)).firstWhere((o) => o.id == remoteId, orElse: () => paidOrder);
-            } catch (_) {
-              savedRemote = paidOrder;
-            }
+            debugPrint('[CheckoutBloc] uploadOrder failed after Razorpay: $e');
           }
 
-          // Clear cart and create booking
+          // Build an OrderModel that includes the remote id when available
+          final orderForPersist = (createdOrderId != null && createdOrderId.isNotEmpty)
+              ? OrderModel(
+                  id: createdOrderId,
+                  orderNumber: paidOrder.orderNumber,
+                  userId: paidOrder.userId,
+                  workerId: paidOrder.workerId,
+                  items: paidOrder.items,
+                  addressSnapshot: paidOrder.addressSnapshot,
+                  subtotal: paidOrder.subtotal,
+                  discount: paidOrder.discount,
+                  tax: paidOrder.tax,
+                  total: paidOrder.total,
+                  orderStatus: paidOrder.orderStatus,
+                  paymentStatus: paidOrder.paymentStatus,
+                  scheduledAt: paidOrder.scheduledAt,
+                  createdAt: paidOrder.createdAt,
+                  updatedAt: paidOrder.updatedAt,
+                )
+              : paidOrder;
+
+          // Persist payment record under top-level `payments` so admin/tools can query by orderOwner/userId
+          try {
+            final paymentsCol = _firestore.collection('payments');
+            final paymentMap = {
+              'orderId': orderForPersist.orderNumber,
+              'orderOwner': userId,
+              'userId': userId,
+              'amount': orderForPersist.total,
+              'currency': 'INR',
+              'method': 'razorpay',
+              'status': 'successful',
+              'gatewayTransactionId': res.paymentId,
+              'gatewayResponse': {'orderId': res.orderId},
+              'createdAt': FieldValue.serverTimestamp(),
+            };
+            final docRef = await paymentsCol.add(paymentMap);
+            try {
+              await docRef.update({'remoteId': docRef.id});
+            } catch (_) {}
+          } catch (e) {
+            debugPrint('[CheckoutBloc] Failed to persist payment record: $e');
+          }
+
+          // Clear cart and create booking. Ensure we pass the order that contains the remote id when available.
           await _cartRepo.clearCart();
           try {
-            await _bookingRepo.createBooking(savedRemote);
-          } catch (_) {}
+            await _bookingRepo.createBooking(orderForPersist);
+          } catch (e) {
+            debugPrint('[CheckoutBloc] Failed to create booking after Razorpay: $e');
+          }
 
-          emit(state.copyWith(isInProgress: false, successMessage: 'Payment successful and order processed.'));
+          emit(state.copyWith(isInProgress: false,
+              successMessage: 'Payment successful and order processed.'));
           return;
         } else if (res is PaymentFailure) {
-          emit(state.copyWith(isInProgress: false, errorMessage: 'Payment failed: ${res.message}'));
+          emit(state.copyWith(isInProgress: false,
+              errorMessage: 'Payment failed: ${res.message}'));
           return;
         }
       } else {
         // COD: user confirmed cash-on-delivery - create remote order now
         final r = await _codRepo.processCod(event.request);
         if (r is PaymentSuccess) {
-          OrderModel savedRemote;
+          // Create the remote order and then persist a COD payment record
+          String? createdOrderId;
           try {
-            savedRemote = await _orderRepo.createOrder(order, userId: userId);
+            createdOrderId = await _orderRepo.uploadOrder(order);
           } catch (e) {
-            debugPrint('[CheckoutBloc] createOrder(userId:$userId) failed (COD): $e');
-            // fallback to uploadOrder
-            try {
-              final rid = await _orderRepo.uploadOrder(order: order);
-              savedRemote = (await _orderRepo.getAllOrdersForUser(userId)).firstWhere((o) => o.id == rid, orElse: () => order);
-            } catch (_) {
-              savedRemote = order;
-            }
+            debugPrint('[CheckoutBloc] uploadOrder failed (COD): $e');
           }
 
+          final orderForPersistCod = (createdOrderId != null && createdOrderId.isNotEmpty)
+              ? OrderModel(
+                  id: createdOrderId,
+                  orderNumber: order.orderNumber,
+                  userId: order.userId,
+                  workerId: order.workerId,
+                  items: order.items,
+                  addressSnapshot: order.addressSnapshot,
+                  subtotal: order.subtotal,
+                  discount: order.discount,
+                  tax: order.tax,
+                  total: order.total,
+                  orderStatus: order.orderStatus,
+                  paymentStatus: order.paymentStatus,
+                  scheduledAt: order.scheduledAt,
+                  createdAt: order.createdAt,
+                  updatedAt: order.updatedAt,
+                )
+              : order;
+
+          // Create a payment placeholder for COD under top-level `payments` with pending status
+          try {
+            final paymentsCol = _firestore.collection('payments');
+            final paymentMap = {
+              'orderId': orderForPersistCod.orderNumber,
+              'orderOwner': userId,
+              'userId': userId,
+              'amount': orderForPersistCod.total,
+              'currency': 'INR',
+              'method': 'cod',
+              'status': 'pending',
+              'gatewayTransactionId': null,
+              'gatewayResponse': null,
+              'createdAt': FieldValue.serverTimestamp(),
+            };
+            final docRef = await paymentsCol.add(paymentMap);
+            try {
+              await docRef.update({'remoteId': docRef.id});
+            } catch (_) {}
+          } catch (e) {
+            debugPrint('[CheckoutBloc] Failed to persist COD payment record: $e');
+          }
+
+          // Clear cart and create booking
           await _cartRepo.clearCart();
           try {
-            await _bookingRepo.createBooking(savedRemote);
-          } catch (_) {}
+            await _bookingRepo.createBooking(orderForPersistCod);
+          } catch (e) {
+            debugPrint('[CheckoutBloc] Failed to create booking after COD: $e');
+          }
 
-          emit(state.copyWith(isInProgress: false, successMessage: 'Order placed (COD).'));
+          emit(state.copyWith(
+              isInProgress: false, successMessage: 'Order placed (COD).'));
           return;
         }
       }

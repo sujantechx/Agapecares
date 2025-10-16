@@ -83,16 +83,22 @@ class _RegisterPageState extends State<RegisterPage> {
       appBar: AppBar(title: const Text('Register')),
       body: BlocListener<AuthBloc, AuthState>(
         listener: (context, state) {
-          if (state is AuthFailure) {
-            // Explicit server-friendly message
-            final msg = state.message.isNotEmpty ? state.message : 'Registration failed. Please try again.';
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
-          }
+          // Reset loading flag on any non-loading state
           if (state is AuthLoading) {
-            setState(() => _isLoading = true);
+            if (mounted) setState(() => _isLoading = true);
+            return;
           } else {
             if (mounted) setState(() => _isLoading = false);
           }
+
+          if (state is AuthFailure) {
+            // Explicit server-friendly message and reset register flag so subsequent success flows behave correctly
+            final msg = state.message.isNotEmpty ? state.message : 'Registration failed. Please try again.';
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+            _isRegistering = false;
+            return;
+          }
+
           if (state is Authenticated) {
             // If we initiated an email registration flow, return to the login screen so the user
             // can sign in (and to avoid automatically logging in newly created users).
@@ -106,15 +112,18 @@ class _RegisterPageState extends State<RegisterPage> {
 
                 // Small delay so the user notices the snackbar before the screen closes.
                 Future.delayed(const Duration(milliseconds: 400), () {
+                  if (!mounted) return;
+                  // If this page was pushed, pop with a positive result so callers can show success.
                   if (Navigator.of(context).canPop()) {
                     context.pop(true);
                   } else {
-                    context.go('/auth/login');
+                    // As a fallback, route to login explicitly.
+                    context.go(AppRoutes.login);
                   }
                 });
 
                 // Ensure loading state is reset.
-                setState(() => _isLoading = false);
+                if (mounted) setState(() => _isLoading = false);
               }
               _isRegistering = false;
               return;
@@ -134,6 +143,7 @@ class _RegisterPageState extends State<RegisterPage> {
               }
             }
           }
+
           if (state is AuthOtpSent) {
             // When OTP is sent, navigate to OTP screen with arguments including name/email/role
             context.push(AppRoutes.phoneVerify, extra: {

@@ -38,6 +38,27 @@ class AuthRepository {
     } else {
       final userModel = await _fetchUserModel(firebaseUser.uid);
       _userController.add(userModel);
+
+      // If the user is an admin, ensure a marker document exists at /admins/{uid}.
+      // This helps Firestore security rules detect admin users without requiring
+      // custom claims or manual console changes. It's a best-effort client-side
+      // creation: if the write fails due to rules, we log and continue.
+      try {
+        if (userModel != null && userModel.role == UserRole.admin) {
+          final adminDoc = _firestore.collection('admins').doc(firebaseUser.uid);
+          final adminSnap = await adminDoc.get();
+          if (!adminSnap.exists) {
+            await adminDoc.set({
+              'uid': firebaseUser.uid,
+              'email': userModel.email,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      } catch (e) {
+        // Log but don't break auth flow; permission errors may occur if rules prevent creation.
+        print('Could not ensure admin marker doc: $e');
+      }
     }
   }
 
@@ -126,6 +147,20 @@ class AuthRepository {
       data['createdAt'] = FieldValue.serverTimestamp();
       await _firestore.collection('users').doc(firebaseUser.uid).set(data);
 
+      // If the registered role is admin, create a marker document in /admins/{uid}
+      if (role == UserRole.admin) {
+        try {
+          await _firestore.collection('admins').doc(firebaseUser.uid).set({
+            'createdAt': FieldValue.serverTimestamp(),
+            'uid': firebaseUser.uid,
+            'email': email,
+          });
+        } catch (e) {
+          // Log but don't fail the registration; admin marker is helpful for rules.
+          print('Failed to create admin marker doc: $e');
+        }
+      }
+
       // Fetch the stored document (which now includes server timestamp).
       final fetched = await _fetchUserModel(firebaseUser.uid);
       if (fetched != null) {
@@ -202,6 +237,19 @@ class AuthRepository {
           final data = newUser.toFirestore();
           data['createdAt'] = FieldValue.serverTimestamp();
           await docRef.set(data);
+
+          // If the role is admin, create admin marker as well
+          if (newUser.role == UserRole.admin) {
+            try {
+              await _firestore.collection('admins').doc(user.uid).set({
+                'createdAt': FieldValue.serverTimestamp(),
+                'uid': user.uid,
+                'phone': user.phoneNumber,
+              });
+            } catch (e) {
+              print('Failed to create admin marker for phone registration: $e');
+            }
+          }
 
           // Emit created user model to avoid race with auth state listener
           final fetched = await _fetchUserModel(user.uid);

@@ -21,5 +21,12 @@ class OrderLoaded extends OrderState {
   List<Object> get props => [orders];
 }
 
-class OrderError extends OrderState {}
+class OrderError extends OrderState {
+  final String? message;
+  const OrderError([this.message]);
 
+  @override
+  List<Object> get props => [message ?? ''];
+  @override
+  String toString() => 'OrderError: ${message ?? 'Unknown error'}';
+}

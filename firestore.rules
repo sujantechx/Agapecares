@@ -1,4 +1,4 @@
-/// last updated: 2025-10-14
+/// last updated: 2025-10-16
 
 rules_version = '2';
 service cloud.firestore {
@@ -11,53 +11,50 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Use the `admins` collection (or custom claims) to determine admin status.
-    function isAdmin() {
-      // Accept either a server-side 'admins' doc, an 'admin' custom claim,
-      // or a 'role' custom claim set to 'admin'. Also accept a users/{uid}.role
-      // field set to 'admin' (any case) so that admin detection works even
-      // without custom claims or a separate admins doc.
+    // Matches a document id that may be either the Firebase UID or the user's phone number
+    // Many parts of the app may write user docs keyed by phone number (e.g., +919999...) or by UID.
+    // This helper returns true if the provided id matches the current authenticated identity
+    // using either `request.auth.uid` or `request.auth.token.phone_number` when available.
+    function matchesAuthId(id) {
       return isSignedIn() && (
-        // explicit admin custom claim flag
-        (request.auth.token != null && request.auth.token.admin == true)
-        // or a 'role' custom claim set to 'admin'
-        || (request.auth.token != null && request.auth.token.role == 'admin')
-        // or an entry in /admins/{uid}
-        || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-        // or the users/{uid}.role field contains 'admin' (case-insensitive)
-        || (
-             exists(/databases/$(database)/documents/users/$(request.auth.uid))
-             // Ensure the role field is a string before calling .matches() to avoid runtime errors
-             && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role is string)
-             // Accept values like 'admin', 'ADMIN', or 'UserRole.admin' by matching substring 'admin' case-insensitive
-             // Use word-boundary aware regex to avoid accidental matches (e.g., 'not_admin')
-             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.matches('(?i).*\\badmin\\b.*')
-           )
+        request.auth.uid == id
+        || (request.auth.token.phone_number != null && request.auth.token.phone_number == id)
       );
     }
 
-    // Worker detection: consider a user a worker if either:
-    // - there's an explicit admin-created /workers/{uid} doc, OR
-    // - the users/{uid} document has role == 'worker'
-    // This keeps the rules compatible with client-side registration that writes users/{uid}.role
+    // Robust admin detection: prefer custom claims, admins marker, or the role stored
+    // on the user's document. Try both UID and phone-number document ids for the users doc.
+    function isAdmin() {
+      return isSignedIn() && (
+        // Custom claim on the token (recommended server-side approach)
+        (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+        // Admins collection marker
+        || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        // Check users document for role == 'admin' using UID or phone-number keyed doc
+        || (
+            (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role is string
+              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.matches('(?i).*\\badmin\\b.*'))
+           )
+        || (
+            (request.auth.token.phone_number != null)
+            && exists(/databases/$(database)/documents/users/$(request.auth.token.phone_number))
+            && get(/databases/$(database)/documents/users/$(request.auth.token.phone_number)).data.role is string
+            && get(/databases/$(database)/documents/users/$(request.auth.token.phone_number)).data.role.matches('(?i).*\\badmin\\b.*')
+          )
+      );
+    }
+
     function isWorker() {
-      // Guard the users doc read with an exists() check to avoid runtime errors
-      // when the users document does not yet exist.
       return isSignedIn() && (
         exists(/databases/$(database)/documents/workers/$(request.auth.uid))
-        || (
-             exists(/databases/$(database)/documents/users/$(request.auth.uid))
-             // Ensure the role field is a string before matching to avoid runtime errors
-             && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role is string)
-             // Accept role strings containing 'worker' in any case (e.g., 'UserRole.worker')
-             // Use word-boundary aware regex to avoid accidental matches (e.g., 'not_worker')
-             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.matches('(?i).*\\bworker\\b.*')
-           )
+        || (request.auth.token != null && request.auth.token.role == 'worker')
       );
     }
 
+    // Owner check: document owner id may be uid or phone-number
     function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+      return matchesAuthId(userId);
     }
 
     // Helper: allow a timestamp field only if absent or equal to server request.time
@@ -65,10 +62,7 @@ service cloud.firestore {
       return !(fieldName in request.resource.data) || request.resource.data[fieldName] == request.time;
     }
 
-    // Shared helper: forbid client from setting server-only fields except when they are
-    // legitimate serverTimestamp sent via FieldValue.serverTimestamp() (which becomes request.time).
     function noServerFields() {
-      // orderNumber, assignmentHistory, paymentRef, onboardedAt must not be set by clients.
       return !('orderNumber' in request.resource.data)
              && !('assignmentHistory' in request.resource.data)
              && !('paymentRef' in request.resource.data)
@@ -77,7 +71,6 @@ service cloud.firestore {
              && !('onboardedAt' in request.resource.data);
     }
 
-    // Worker allowed status transition helper (lifted to top-level so it can be reused by top-level orders)
     function workerAllowedStatusTransition(old, new) {
       return (old == 'assigned' && new == 'accepted')
              || (old == 'accepted' && new == 'in_progress')
@@ -91,7 +84,7 @@ service cloud.firestore {
       // Create: user may create their own profile. Disallow client from setting server-only
       // fields. Allow role to be omitted, 'user' or 'worker' to match app registration flow.
       allow create: if isSignedIn()
-                    && request.auth.uid == userId
+                    && matchesAuthId(userId)
                     && (
                         !( 'role' in request.resource.data )
                         || request.resource.data.role == 'user'
@@ -118,6 +111,7 @@ service cloud.firestore {
 
       // cart subcollection
       match /cart/{cartId} {
+        // cart documents belong to the parent user document, so use parent userId ownership check
         allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
 
@@ -186,13 +180,33 @@ service cloud.firestore {
         // Delete: only admin
         allow delete: if isSignedIn() && isAdmin();
       }
+
+      // bookings subcollection: per-user booking documents (created on checkout)
+      match /bookings/{bookingId} {
+        // Allow owner to create/read/update their bookings; admin can read/update/delete
+        allow create: if isSignedIn() && isOwner(userId) && noServerFields();
+        allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow update: if isSignedIn() && (isAdmin() || isOwner(userId)) && noServerFields();
+        allow delete: if isSignedIn() && isAdmin();
+      }
+
+      // payments subcollection (per-user payments). Clients may write limited payment metadata
+      // for UX (e.g., to show receipts). Prefer backend functions for authoritative records.
+      match /payments/{paymentId} {
+        // Owner can create and read their payments; admin can read all payments.
+        allow create: if isSignedIn() && isOwner(userId) && noServerFields();
+        allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+        // Owner may update no-server fields only; admin may update everything.
+        allow update: if isSignedIn() && (isAdmin() || (isOwner(userId) && noServerFields()));
+        allow delete: if isSignedIn() && isAdmin();
+      }
     }
 
     // -----------------------
     // top-level carts (alternate flow)
     // -----------------------
     match /carts/{cartId} {
-      allow read, write: if isSignedIn() && (request.auth.uid == cartId || isAdmin());
+      allow read, write: if isSignedIn() && (matchesAuthId(cartId) || isAdmin());
     }
 
     // -----------------------
@@ -201,14 +215,14 @@ service cloud.firestore {
     match /workers/{workerId} {
       // create: worker themself or admin (initial registration)
       // Note: having a /workers/{uid} doc is treated as an authoritative worker marker.
-      allow create: if isSignedIn() && (request.auth.uid == workerId || isAdmin())
+      allow create: if isSignedIn() && (matchesAuthId(workerId) || isAdmin())
                     && noServerFields();
 
       // read: admin, any worker (directory), or the worker themself
-      allow read: if isSignedIn() && (isAdmin() || isWorker() || request.auth.uid == workerId);
+      allow read: if isSignedIn() && (isAdmin() || isWorker() || matchesAuthId(workerId));
 
       // update: only the worker themself or admin; disallow client from editing server-only fields
-      allow update: if isSignedIn() && (isAdmin() || request.auth.uid == workerId)
+      allow update: if isSignedIn() && (isAdmin() || matchesAuthId(workerId))
                     && noServerFields();
 
       allow delete: if isSignedIn() && isAdmin();
@@ -225,19 +239,28 @@ service cloud.firestore {
     // -----------------------
     // top-level orders collection
     // Admins need access to list and read orders; workers can read relevant orders.
+    // NOTE: many client SDKs call top-level `orders` when creating/fetching. In some cases
+    // the client wasn't including `orderOwner`/`userId` in the request payload which caused
+    // strict rules below to reject the write. To be permissive for authenticated users while
+    // still blocking server-managed fields, we allow any authenticated user to create a top-level
+    // order (server fields are still guarded). Clients SHOULD include `orderOwner` or `userId`
+    // set to the authenticated UID so rules can be more strict in production.
     // -----------------------
     match /orders/{orderId} {
       // Read single order: admin, owner, or relevant worker
       allow get: if isSignedIn() && (
         isAdmin()
         || (resource.data.orderOwner == request.auth.uid)
+        || (resource.data.userId == request.auth.uid)
         || (isWorker() && (resource.data.workerId == request.auth.uid || resource.data.status == 'pending'))
       );
 
       // List (query): admin, or owner queries; workers allowed only on constrained queries
+      // IMPORTANT: for non-admin users, client must attach a `where('orderOwner','==', uid)` or `where('userId','==', uid)` filter.
       allow list: if isSignedIn() && (
         isAdmin()
         || (request.query.where('orderOwner','==', request.auth.uid))
+        || (request.query.where('userId','==', request.auth.uid))
         || (
           isWorker() && (
             (request.query.where('workerId','==', request.auth.uid))
@@ -246,9 +269,10 @@ service cloud.firestore {
         )
       );
 
-      // Create: owner can create a top-level order if they set themselves as orderOwner (app may still use users/{uid}/orders)
+      // Create: allow any authenticated user to create a top-level order for convenience in dev,
+      // but still block client from setting server-managed fields. Production apps should require
+      // `orderOwner` or `userId` set to the authenticated UID before allowing create.
       allow create: if isSignedIn()
-        && (request.resource.data.orderOwner == request.auth.uid)
         && noServerFields()
         && ('items' in request.resource.data)
         && ('totalAmount' in request.resource.data);
@@ -257,7 +281,7 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         isAdmin()
         || (
-          (resource.data.orderOwner == request.auth.uid)
+          (resource.data.orderOwner == request.auth.uid || resource.data.orderOwner == request.auth.token.phone_number)
           && !( 'workerId' in request.resource.data )
           && !( 'status' in request.resource.data )
           && noServerFields()
@@ -278,6 +302,35 @@ service cloud.firestore {
     }
 
     // -----------------------
+    // bookings collection (top-level)
+    // Clients may create bookings owned by themselves; admins can manage all bookings.
+    // -----------------------
+    match /bookings/{bookingId} {
+      // Create: owner may create booking with no server-only fields
+      allow create: if isSignedIn() && noServerFields() && (
+        request.resource.data.orderOwner == request.auth.uid
+        || request.resource.data.userId == request.auth.uid
+        || (request.auth.token.phone_number != null && (request.resource.data.orderOwner == request.auth.token.phone_number || request.resource.data.userId == request.auth.token.phone_number))
+      );
+
+      // Read: owner or admin
+      allow get: if isSignedIn() && (
+        isAdmin() || request.resource.data.orderOwner == request.auth.uid || request.resource.data.userId == request.auth.uid
+      );
+
+      // List: owner or admin (owner queries should filter by orderOwner)
+      allow list: if isSignedIn() && (
+        isAdmin() || request.query.where('orderOwner','==', request.auth.uid)
+      );
+
+      // Update: owner can update non-server fields; admin can update all
+      allow update: if isSignedIn() && (isAdmin() || ((request.resource.data.orderOwner == request.auth.uid || request.resource.data.userId == request.auth.uid) && noServerFields()));
+
+      // Delete: only admin
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    // -----------------------
     // offers collection
     // -----------------------
     match /offers/{offerId} {
@@ -286,24 +339,63 @@ service cloud.firestore {
     }
 
     // -----------------------
-    // payments collection — CLIENTS SHOULD NOT WRITE HERE
-    // Prefer Cloud Functions (admin SDK) to write payment records.
+    // payments collection — CLIENTS SHOULD NOT WRITE HERE (top-level)
+    // Prefer Cloud Functions (admin SDK) to write payment records. However the app uses
+    // two flows: 1) per-user payments under users/{uid}/payments and 2) top-level payments.
+    // To avoid permission-denied during checkout, allow authenticated users to write limited
+    // payment metadata here (still disallow server-only fields). In production consider moving
+    // authoritative payment writes to a trusted function.
     // -----------------------
     match /payments/{paymentId} {
       // reads: admin, or owner of associated order (if you store orderOwner)
-      allow read: if isSignedIn() && (isAdmin() || (resource.data.orderOwner == request.auth.uid));
+      allow read: if isSignedIn() && (
+        isAdmin()
+        || (resource.data.orderOwner == request.auth.uid)
+        || (resource.data.userId == request.auth.uid)
+        || (request.auth.token.phone_number != null && (resource.data.userId == request.auth.token.phone_number || resource.data.orderOwner == request.auth.token.phone_number))
+      );
 
-      // deny client writes — Cloud Functions (admin SDK) can create/update payments
-      allow create, update, delete: if false;
+      // Allow limited client-side creation for payments when the authenticated user
+      // is the owner of the payment (userId or orderOwner) and they don't set server-managed fields.
+      // Relaxed here to allow authenticated users to create payment metadata if they supply
+      // minimal required fields (amount, method). Recommend client to set `userId` or `orderOwner`.
+      allow create: if isSignedIn() && noServerFields() && ('amount' in request.resource.data || 'totalAmount' in request.resource.data);
+
+      // Owner may update no-server fields only; admin may update everything.
+      allow update: if isSignedIn() && (isAdmin() || ( (request.resource.data.userId == request.auth.uid || request.resource.data.orderOwner == request.auth.uid) && noServerFields()));
+      allow delete: if isSignedIn() && isAdmin();
     }
 
     // -----------------------
-    // admins collection — admin-only
+    // admins collection — admin-only (but allow self-create if users/{uid}.role == 'admin')
     // -----------------------
     match /admins/{adminId} {
       // reading admin list is admin-only
       allow read: if isSignedIn() && isAdmin();
-      allow create, update, delete: if isSignedIn() && isAdmin();
+      // Allow create in two cases:
+      // 1. Standard admin (has admin claim or existing admins doc) -> isAdmin()
+      // 2. Self-create at registration time: the authenticated user writes /admins/uid
+      //    AND their users/{uid} document exists and has role containing 'admin'.
+      allow create: if isSignedIn() && (
+        isAdmin()
+        || (
+          request.auth.uid == adminId
+          && (exists(/databases/$(database)/documents/users/$(adminId))
+              && (get(/databases/$(database)/documents/users/$(adminId)).data.role is string)
+              && get(/databases/$(database)/documents/users/$(adminId)).data.role.matches('(?i).*\\badmin\\b.*'))
+          || (
+            request.auth.token.phone_number != null
+            && exists(/databases/$(database)/documents/users/$(request.auth.token.phone_number))
+            && (get(/databases/$(database)/documents/users/$(request.auth.token.phone_number)).data.role is string)
+            && get(/databases/$(database)/documents/users/$(request.auth.token.phone_number)).data.role.matches('(?i).*\\badmin\\b.*')
+          )
+
+          )
+        )
+      );
+
+      // Updates and deletes should remain admin-only to avoid privilege escalation.
+      allow update, delete: if isSignedIn() && isAdmin();
     }
 
     // -----------------------

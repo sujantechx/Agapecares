@@ -68,7 +68,7 @@ class DashboardPage extends StatelessWidget {
         // selectedItemColor: AppTheme.primaryColor,
         // unselectedItemColor: AppTheme.subtitleColor,
         showUnselectedLabels: true,
-        backgroundColor: Colors.white,
+        // backgroundColor: Colors.white,
         // 🎯 The 'type' property is needed when you have more than 3 items
         // to ensure all items are displayed correctly.
         type: BottomNavigationBarType.fixed,
@@ -89,11 +89,11 @@ class DashboardPage extends StatelessWidget {
             activeIcon: Icon(Icons.person),
             label: 'Profile',
           ),
-          BottomNavigationBarItem(
+    /*      BottomNavigationBarItem(
             icon: Icon(Icons.message_outlined),
             activeIcon: Icon(Icons.message),
             label: 'Chat',
-          ),
+          ),*/
         ],
       ),
     );

@@ -1,5 +1,4 @@
-
-import '../data/models/cart_item_model.dart';
+import 'package:agapecares/core/models/cart_item_model.dart';
 import 'package:equatable/equatable.dart';
 
 abstract class CartEvent extends Equatable {

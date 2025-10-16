@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agapecares/core/models/cart_item_model.dart';
+import 'package:flutter/foundation.dart';
 
 import 'cart_repository.dart';
 
@@ -24,7 +25,6 @@ class CartRepositoryImpl implements CartRepository {
   }
 
   String _docIdForItem(CartItemModel item) => '${item.serviceId}_${item.optionName}';
-  String _docIdForParts(String serviceId, String optionName) => '${serviceId}_${optionName}';
 
   @override
   Future<void> addItemToCart(CartItemModel item) async {
@@ -32,12 +32,14 @@ class CartRepositoryImpl implements CartRepository {
     if (userId == null) return; // not authenticated, skip remote write
     final docId = _docIdForItem(item);
     try {
+      if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.addItemToCart start_console user=$userId doc=$docId');
       await _firestore
           .collection('users')
           .doc(userId)
           .collection('cart')
           .doc(docId)
           .set(item.toMap());
+      if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.addItemToCart finished user=$userId doc=$docId');
     } on FirebaseException {
       rethrow;
     }
@@ -55,7 +57,9 @@ class CartRepositoryImpl implements CartRepository {
       batch.delete(doc.reference);
     }
     try {
+      if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.clearCart start_console user=$userId');
       await batch.commit();
+      if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.clearCart finished user=$userId');
     } on FirebaseException {
       rethrow;
     }
@@ -65,11 +69,13 @@ class CartRepositoryImpl implements CartRepository {
   Future<List<CartItemModel>> getCartItems() async {
     final uid = _getCurrentUserId();
     if (uid == null) return [];
+    if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.getCartItems start_console user=$uid');
     final snapshot =
         await _firestore.collection('users').doc(uid).collection('cart').get();
-    return snapshot.docs
-        .map((doc) => CartItemModel.fromMap(doc.data() as Map<String, dynamic>))
-        .toList();
+    // QueryDocumentSnapshot.data() returns Map<String, dynamic> for Firestore
+    final items = snapshot.docs.map((doc) => CartItemModel.fromMap(doc.data())).toList();
+    if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.getCartItems finished user=$uid count=${items.length}');
+    return items;
   }
 
   @override
@@ -77,12 +83,14 @@ class CartRepositoryImpl implements CartRepository {
     final userId = _getCurrentUserId();
     if (userId == null) return;
     try {
+      if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.removeItemFromCart start_console user=$userId id=$cartItemId');
       await _firestore
           .collection('users')
           .doc(userId)
           .collection('cart')
           .doc(cartItemId)
           .delete();
+      if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.removeItemFromCart finished user=$userId id=$cartItemId');
     } on FirebaseException {
       rethrow;
     }
@@ -93,12 +101,14 @@ class CartRepositoryImpl implements CartRepository {
     final userId = _getCurrentUserId();
     if (userId == null) return;
     try {
+      if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.updateItemQuantity start_console user=$userId id=$cartItemId qty=$quantity');
       await _firestore
           .collection('users')
           .doc(userId)
           .collection('cart')
           .doc(cartItemId)
           .update({'quantity': quantity});
+      if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.updateItemQuantity finished user=$userId id=$cartItemId qty=$quantity');
     } on FirebaseException {
       rethrow;
     }
@@ -114,7 +124,9 @@ class CartRepositoryImpl implements CartRepository {
   Future<void> addCartItem(String userId, CartItemModel item) async {
     final docId = _docIdForItem(item);
     try {
+      if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.addCartItem start_console user=$userId doc=$docId');
       await _firestore.collection('users').doc(userId).collection('cart').doc(docId).set(item.toMap());
+      if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.addCartItem finished user=$userId doc=$docId');
     } on FirebaseException {
       rethrow;
     }
@@ -123,7 +135,9 @@ class CartRepositoryImpl implements CartRepository {
   @override
   Future<void> removeCartItem(String userId, String itemId) async {
     try {
+      if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.removeCartItem start_console user=$userId id=$itemId');
       await _firestore.collection('users').doc(userId).collection('cart').doc(itemId).delete();
+      if (kDebugMode) debugPrint('CART_DEBUG: CartRepository.removeCartItem finished user=$userId id=$itemId');
     } on FirebaseException {
       rethrow;
     }

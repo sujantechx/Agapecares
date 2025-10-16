@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../bloc/cart_bloc.dart';
-import '../../bloc/cart_event.dart';
-import '../../data/models/cart_item_model.dart';
+import 'package:agapecares/features/user_app/features/cart/bloc/cart_bloc.dart';
+import 'package:agapecares/features/user_app/features/cart/bloc/cart_event.dart';
+import 'package:agapecares/core/models/cart_item_model.dart';
 
 class CartItemCard extends StatelessWidget {
   final CartItemModel item;

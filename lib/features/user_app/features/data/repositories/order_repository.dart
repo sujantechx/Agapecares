@@ -13,7 +13,7 @@ class OrderRepository {
 
   /// Generate a daily order number in the format YYYYMMDD + 5-digit suffix (e.g. 2025101200100)
   /// The suffix starts at 00100 for the first order of the day and increments.
-  /// Strategy: try a Firestore collectionGroup query for today's max orderNumber; fallback to local DB if remote fails.
+  /// Strategy: try a Firestore counter document; fallback to querying the top-level 'orders' collection.
   Future<String> generateOrderNumber() async {
     final now = DateTime.now().toUtc();
     final y = now.year.toString().padLeft(4, '0');
@@ -45,11 +45,11 @@ class OrderRepository {
       debugPrint('[OrderRepository] generateOrderNumber failed, falling back: $e');
     }
 
-    // Fallback: query collectionGroup for today's max
+    // Fallback: query top-level 'orders' collection for today's max
     try {
       final start = prefix;
       final end = '$prefix\uf8ff';
-      final q = _firestore.collectionGroup('orders').where('orderNumber', isGreaterThanOrEqualTo: start).where('orderNumber', isLessThanOrEqualTo: end).orderBy('orderNumber', descending: true).limit(1);
+      final q = _firestore.collection('orders').where('orderNumber', isGreaterThanOrEqualTo: start).where('orderNumber', isLessThanOrEqualTo: end).orderBy('orderNumber', descending: true).limit(1);
       final snap = await q.get();
       if (snap.docs.isNotEmpty) {
         final last = snap.docs.first.data()['orderNumber'] as String? ?? '';
@@ -62,47 +62,73 @@ class OrderRepository {
         }
       }
     } catch (e) {
-      debugPrint('[OrderRepository] generateOrderNumber collectionGroup fallback failed: $e');
+      debugPrint('[OrderRepository] generateOrderNumber collection fallback failed: $e');
     }
 
     return '${prefix}00100';
   }
 
-  /// Create order in Firestore under users/{userId}/orders. Returns the created OrderModel (with remote id and timestamps).
+  /// Create order in Firestore under top-level `orders` collection. Returns the created OrderModel (with remote id and timestamps).
   Future<OrderModel> createOrder(OrderModel order, {required String userId}) async {
     try {
-      final ordersCol = _firestore.collection('users').doc(userId).collection('orders');
-      final orderNumber = order.orderNumber.isNotEmpty ? order.orderNumber : await generateOrderNumber();
-      final data = order.toFirestore();
-      data['orderNumber'] = orderNumber;
-      if (data['createdAt'] == null) data['createdAt'] = Timestamp.now();
-
-      final doc = ordersCol.doc();
-      await doc.set(data);
+      // Persist a minimal top-level order document. Include orderOwner for rules and admin queries.
+      final ordersCol = _firestore.collection('orders');
+      final data = <String, dynamic>{
+        'orderOwner': userId,
+        'userId': order.userId,
+        'items': order.items.map((i) => i.toMap()).toList(),
+        'addressSnapshot': order.addressSnapshot,
+        'subtotal': order.subtotal,
+        'discount': order.discount,
+        'tax': order.tax,
+        'totalAmount': order.total,
+        // keep both 'orderStatus' and 'status' fields for compatibility with rules
+        'orderStatus': order.orderStatus.name,
+        'status': order.orderStatus.name,
+        'paymentStatus': order.paymentStatus.name,
+        'scheduledAt': order.scheduledAt,
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+      final doc = await ordersCol.add(data);
       try { await doc.update({'remoteId': doc.id}); } catch (_) {}
-      final created = await doc.get();
-      return OrderModel.fromFirestore(created);
+
+      // Return an OrderModel built from what we know; remote fields will be populated by the backend if needed.
+      return OrderModel(
+        id: doc.id,
+        orderNumber: order.orderNumber,
+        userId: userId,
+        workerId: order.workerId,
+        items: order.items,
+        addressSnapshot: order.addressSnapshot,
+        subtotal: order.subtotal,
+        discount: order.discount,
+        tax: order.tax,
+        total: order.total,
+        orderStatus: order.orderStatus,
+        paymentStatus: order.paymentStatus,
+        scheduledAt: order.scheduledAt,
+        createdAt: Timestamp.now(),
+        updatedAt: order.updatedAt,
+      );
     } catch (e) {
       debugPrint('[OrderRepository] createOrder failed: $e');
       rethrow;
     }
   }
 
-  /// UploadOrder kept for compatibility: takes an OrderModel (preferably created by createOrder)
-  /// and writes/merges it to Firestore under users/{userId}/orders.
+  /// UploadOrder - writes/merges under top-level `orders` collection.
   Future<String> uploadOrder({required OrderModel order}) async {
     try {
       final userId = order.userId;
       if (userId.isEmpty) throw Exception('Missing userId on order');
-      final ordersCol = _firestore.collection('users').doc(userId).collection('orders');
-      // If order.id is provided and exists, merge; otherwise create new doc.
+      final ordersCol = _firestore.collection('orders');
       if (order.id.isNotEmpty) {
         final ref = ordersCol.doc(order.id);
-        await ref.set(order.toFirestore(), SetOptions(merge: true));
+        await ref.set({...order.toFirestore(), 'orderOwner': userId, 'status': order.orderStatus.name}, SetOptions(merge: true));
         return ref.id;
       }
       final ref = ordersCol.doc();
-      await ref.set(order.toFirestore());
+      await ref.set({...order.toFirestore(), 'orderOwner': userId, 'status': order.orderStatus.name});
       try { await ref.update({'remoteId': ref.id}); } catch (_) {}
       return ref.id;
     } catch (e) {
@@ -111,11 +137,11 @@ class OrderRepository {
     }
   }
 
-  /// Update the local copy of an order (e.g. set paymentId, orderStatus)
+  /// Update the remote copy of an order (top-level)
   Future<void> updateOrder(OrderModel order) async {
     try {
       if (order.userId.isEmpty) return;
-      final ref = _firestore.collection('users').doc(order.userId).collection('orders').doc(order.id);
+      final ref = _firestore.collection('orders').doc(order.id);
       await ref.set(order.toFirestore(), SetOptions(merge: true));
     } catch (e) {
       debugPrint('[OrderRepository] updateOrder failed: $e');
@@ -123,10 +149,10 @@ class OrderRepository {
     }
   }
 
-  /// Get all orders for a user (merged remote list). Returns empty list if none.
+  /// Get all orders for a user by querying the root 'orders' collection and filtering by orderOwner/userId.
   Future<List<OrderModel>> getAllOrdersForUser(String userId) async {
     try {
-      final snap = await _firestore.collection('users').doc(userId).collection('orders').orderBy('createdAt', descending: true).get();
+      final snap = await _firestore.collection('orders').where('orderOwner', isEqualTo: userId).orderBy('createdAt', descending: true).get();
       return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
     } catch (e) {
       debugPrint('[OrderRepository] getAllOrdersForUser failed: $e');
@@ -139,7 +165,7 @@ class OrderRepository {
   Future<bool> submitRatingForOrder({required OrderModel order, required double rating, String? review}) async {
     try {
       if (order.id.isNotEmpty && order.userId.isNotEmpty) {
-        final ref = _firestore.collection('users').doc(order.userId).collection('orders').doc(order.id);
+        final ref = _firestore.collection('orders').doc(order.id);
         await ref.set({'rating': rating, 'review': review ?? ''}, SetOptions(merge: true));
       }
       return true;
@@ -149,13 +175,11 @@ class OrderRepository {
     }
   }
 
-  /// Administrative helper: find duplicate remote orders for the given user+orderNumber
-  /// and keep a single canonical document (earliest createdAt), deleting the rest.
-  /// Use carefully (run once during migration/cleanup).
+  /// Administrative helper: find duplicate remote orders and keep a single canonical document.
   Future<void> dedupeRemoteOrdersForUser({required String userId, required String orderNumber}) async {
     try {
       if (userId.trim().isEmpty || orderNumber.trim().isEmpty) return;
-      final q = await _firestore.collectionGroup('orders').where('orderNumber', isEqualTo: orderNumber).where('userId', isEqualTo: userId).get();
+      final q = await _firestore.collection('orders').where('orderNumber', isEqualTo: orderNumber).where('orderOwner', isEqualTo: userId).get();
       final docs = q.docs;
       if (docs.length <= 1) return;
       docs.sort((a, b) {
@@ -176,10 +200,10 @@ class OrderRepository {
     }
   }
 
-  /// Get all orders assigned to a worker (collectionGroup on 'orders' for any user)
+  /// Get all orders assigned to a worker
   Future<List<OrderModel>> fetchOrdersForWorker(String workerId) async {
     try {
-      final snap = await _firestore.collectionGroup('orders').where('workerId', isEqualTo: workerId).orderBy('createdAt', descending: true).get();
+      final snap = await _firestore.collection('orders').where('workerId', isEqualTo: workerId).orderBy('createdAt', descending: true).get();
       return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
     } catch (e) {
       debugPrint('[OrderRepository] fetchOrdersForWorker failed: $e');

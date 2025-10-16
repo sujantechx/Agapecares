@@ -181,7 +181,9 @@ class _CartPageState extends State<CartPage> {
               onPressed: () {
                 // Navigate to the checkout page to complete the order.
                 // Passing no extra data signals a full-cart checkout.
-                context.push(AppRoutes.checkout);
+                // Use `go` so we navigate within the ShellRoute's navigator instead of
+                // pushing a new page which can produce duplicate page keys.
+                context.go(AppRoutes.checkout);
               },
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),

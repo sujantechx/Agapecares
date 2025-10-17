@@ -10,7 +10,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 // Repository interfaces
 import 'package:agapecares/features/common_auth/data/repositories/auth_repository.dart';
 
-
 // Admin-specific imports
 import 'package:agapecares/features/admin_app/features/service_management/data/data_sources/service_remote_data_source.dart';
 import 'package:agapecares/features/admin_app/features/service_management/data/data_sources/service_remote_data_source_impl.dart';
@@ -39,13 +38,15 @@ import 'package:agapecares/features/admin_app/features/worker_management/present
 // User-specific imports
 import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
 import 'package:agapecares/features/user_app/features/services/data/repositories/service_repository.dart';
-import 'package:agapecares/features/user_app/features/orders/data/repositories/order_repository.dart';
+
 import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository_impl.dart';
 import 'package:agapecares/features/user_app/features/services/data/repositories/service_repository_impl.dart';
-import 'package:agapecares/features/user_app/features/orders/data/repositories/order_repository_impl.dart';
+
 import 'package:agapecares/features/user_app/features/cart/bloc/cart_bloc.dart' as ui_cart_bloc;
 import 'package:agapecares/features/user_app/features/services/logic/service_bloc.dart';
 import 'package:agapecares/features/user_app/features/orders/logic/order_bloc.dart';
+// Import the user-app OrderRepository (interface + implementation) with a prefix
+import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
 import 'package:agapecares/features/user_app/features/data/repositories/offer_repository.dart';
 import 'package:agapecares/features/user_app/features/data/repositories/booking_repository.dart';
 import 'package:agapecares/features/user_app/features/payment_gateway/repository/razorpay_payment_repository.dart';
@@ -91,7 +92,8 @@ Future<List<RepositoryProvider>> init() async {
   // Repositories
   sl.registerLazySingleton<CartRepository>(() => CartRepositoryImpl(firestore: sl()));
   sl.registerLazySingleton<ServiceRepository>(() => ServiceRepositoryImpl(firestore: sl()));
-  sl.registerLazySingleton<OrderRepository>(() => OrderRepositoryImpl(firestore: sl()));
+  // Register the user-facing OrderRepository implementation under the user-order interface
+  sl.registerLazySingleton<user_orders_repo.OrderRepository>(() => user_orders_repo.OrderRepositoryImpl(firestore: sl()));
   // OfferRepository is a simple, in-memory/deterministic repository used by CartBloc
   sl.registerLazySingleton<OfferRepository>(() => OfferRepository());
 
@@ -127,7 +129,8 @@ Future<List<RepositoryProvider>> init() async {
     RepositoryProvider<AuthRepository>.value(value: sl()),
     RepositoryProvider<CartRepository>.value(value: sl()),
     RepositoryProvider<ServiceRepository>.value(value: sl()),
-    RepositoryProvider<OrderRepository>.value(value: sl()),
+    // Expose the user-order repository under a specific typed provider to avoid collisions
+    RepositoryProvider<user_orders_repo.OrderRepository>.value(value: sl()),
     RepositoryProvider<admin_repo.ServiceRepository>.value(value: sl()),
     RepositoryProvider<admin_order_repo.OrderRepository>.value(value: sl()),
     RepositoryProvider<admin_user_repo.AdminUserRepository>.value(value: sl()),
@@ -149,7 +152,6 @@ List<BlocProvider> buildBlocs(BuildContext context) {
   final authRepo = context.read<AuthRepository>();
   final sessionService = context.read<SessionService>();
   final serviceRepo = context.read<ServiceRepository>();
-  final orderRepo = context.read<OrderRepository>();
   final adminServiceRepo = context.read<admin_repo.ServiceRepository>();
   final adminOrderRepo = context.read<admin_order_repo.OrderRepository>();
   final adminUserRepo = context.read<admin_user_repo.AdminUserRepository>();
@@ -164,7 +166,7 @@ List<BlocProvider> buildBlocs(BuildContext context) {
         offerRepository: ctx.read<OfferRepository>(),
       ),
     ),
-    BlocProvider<OrderBloc>(create: (_) => OrderBloc(orderRepository: orderRepo)),
+    BlocProvider<OrderBloc>(create: (_) => OrderBloc(orderRepository: sl<user_orders_repo.OrderRepository>())),
     // CheckoutBloc provided locally in route; do not register globally to avoid duplicate instances.
     BlocProvider<ServiceManagementBloc>(create: (_) => ServiceManagementBloc(serviceRepository: adminServiceRepo)),
     BlocProvider<AdminOrderBloc>(create: (_) => AdminOrderBloc(repo: adminOrderRepo)),
@@ -184,7 +186,7 @@ List<BlocProvider> buildBlocsFromGetIt({AuthBloc? authBloc}) {
     BlocProvider<ui_cart_bloc.CartBloc>(
       create: (_) => ui_cart_bloc.CartBloc(cartRepository: sl(), offerRepository: sl()),
     ),
-    BlocProvider<OrderBloc>(create: (_) => OrderBloc(orderRepository: sl())),
+    BlocProvider<OrderBloc>(create: (_) => OrderBloc(orderRepository: sl<user_orders_repo.OrderRepository>())),
     // CheckoutBloc is created on the checkout route instead of globally.
     BlocProvider<ServiceManagementBloc>(create: (_) => ServiceManagementBloc(serviceRepository: sl())),
     BlocProvider<AdminOrderBloc>(create: (_) => AdminOrderBloc(repo: sl())),

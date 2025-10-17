@@ -37,7 +37,7 @@ class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
 
     // As a last fallback, try to get from top-level orders collection
     final topDoc = await _topLevelOrders.doc(orderId).get();
-    if (topDoc.exists) return topDoc.reference as DocumentReference<Map<String, dynamic>>;
+    if (topDoc.exists) return topDoc.reference;
 
     return null;
   }

@@ -8,7 +8,8 @@ import '../../../../../../core/models/order_model.dart';
 
 import 'package:flutter/services.dart';
 
-import 'package:agapecares/features/user_app/features/orders/data/repositories/order_repository.dart';
+
+import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
 import '../../logic/order_bloc.dart';
 import '../../logic/order_event.dart';
 import '../../logic/order_state.dart';
@@ -79,7 +80,7 @@ class _OrderListPageState extends State<OrderListPage> {
 
   Future<List<OrderModel>> _loadOrdersFromRepo(String userId) async {
     try {
-      final repo = context.read<OrderRepository>();
+      final repo = context.read<user_orders_repo.OrderRepository>();
       final fetched = await repo.fetchOrdersForUser(userId);
       debugPrint('[OrderListPage] _loadOrdersFromRepo fetched=${fetched.length} for user=$userId');
       return fetched;
@@ -179,7 +180,7 @@ class _OrderListPageState extends State<OrderListPage> {
           child: BlocBuilder<OrderBloc, OrderState>(builder: (context, state) {
             if (state is OrderLoading) return const Center(child: CircularProgressIndicator());
             if (state is OrderError) {
-              final msg = (state as OrderError).message ?? 'Failed to load orders';
+              final msg = state.message ?? 'Failed to load orders';
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 children: [

@@ -4,14 +4,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../../../core/models/order_model.dart';
 import '../../../../../core/services/session_service.dart';
+import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
 import 'order_event.dart';
 import 'order_state.dart';
-import '../data/repositories/order_repository.dart';
+
 
 class OrderBloc extends Bloc<OrderEvent, OrderState> {
-  final OrderRepository _orderRepository;
+  final user_orders_repo.OrderRepository _orderRepository;
 
-  OrderBloc({required OrderRepository orderRepository})
+  OrderBloc({required user_orders_repo.OrderRepository orderRepository})
       : _orderRepository = orderRepository,
         super(OrderLoading()) {
     on<LoadOrders>(_onLoadOrders);

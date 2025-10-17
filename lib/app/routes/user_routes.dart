@@ -19,12 +19,13 @@ import 'package:agapecares/features/user_app/features/services/data/repositories
 import 'package:agapecares/features/user_app/features/presentation/pages/checkout_page.dart';
 
 // Additional imports required so the Checkout route can create a local CheckoutBloc
-import 'package:agapecares/features/user_app/features/orders/data/repositories/order_repository.dart' as order_repo;
+
 import 'package:agapecares/features/user_app/features/data/repositories/booking_repository.dart';
 import 'package:agapecares/features/user_app/features/payment_gateway/repository/razorpay_payment_repository.dart';
 import 'package:agapecares/features/user_app/features/payment_gateway/repository/cod_payment_repository.dart';
 import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
 import 'package:agapecares/features/user_app/features/payment_gateway/bloc/checkout_bloc.dart';
+import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
 import 'package:firebase_auth/firebase_auth.dart';
 
 final GlobalKey<NavigatorState> _userShellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'userShell');
@@ -86,7 +87,7 @@ final List<RouteBase> userRoutes = [
           key: state.pageKey,
           child: BlocProvider<CheckoutBloc>(
             create: (ctx) => CheckoutBloc(
-              orderRepo: ctx.read<order_repo.OrderRepository>(),
+              orderRepo: ctx.read<user_orders_repo.OrderRepository>(),
               razorpayRepo: ctx.read<RazorpayPaymentRepository>(),
               codRepo: ctx.read<CodPaymentRepository>(),
               cartRepo: ctx.read<CartRepository>(),

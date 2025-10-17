@@ -8,7 +8,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../../../core/models/cart_item_model.dart';
 import '../../../../../core/models/order_model.dart';
-import '../../orders/data/repositories/order_repository.dart';
+import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
+
 import '../model/payment_models.dart';
 import '../repository/razorpay_payment_repository.dart';
 import '../repository/cod_payment_repository.dart';
@@ -22,7 +23,7 @@ import 'checkout_state.dart';
 /// CheckoutBloc orchestrates UI -> local DB -> Firestore -> payment flows.
 /// Why: keep flows testable, decoupled and offline-friendly.
 class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
-  final OrderRepository _orderRepo;
+  final user_orders_repo.OrderRepository _orderRepo;
   final RazorpayPaymentRepository _razorpayRepo;
   final CodPaymentRepository _codRepo;
   final BookingRepository _bookingRepo;
@@ -31,7 +32,7 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
   final dynamic _firestore;
 
   CheckoutBloc({
-    required OrderRepository orderRepo,
+    required user_orders_repo.OrderRepository orderRepo,
     required RazorpayPaymentRepository razorpayRepo,
     required CodPaymentRepository codRepo,
     required CartRepository cartRepo,

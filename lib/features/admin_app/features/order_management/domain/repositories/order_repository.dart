@@ -5,5 +5,6 @@ abstract class OrderRepository {
   Future<void> updateOrderStatus({required String orderId, required String status});
   Future<void> assignWorker({required String orderId, required String workerId, String? workerName});
   Future<void> deleteOrder(String orderId);
+
 }
 

@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:agapecares/features/user_app/features/payment_gateway/bloc/checkout_bloc.dart';
 import 'package:agapecares/features/user_app/features/payment_gateway/model/payment_models.dart';
 import 'package:agapecares/features/user_app/features/payment_gateway/bloc/checkout_event.dart';
-import 'package:agapecares/features/user_app/features/orders/data/repositories/order_repository.dart' as user_orders_repo;
+
 import 'package:agapecares/features/user_app/features/payment_gateway/repository/razorpay_payment_repository.dart';
 import 'package:agapecares/features/user_app/features/payment_gateway/repository/cod_payment_repository.dart';
 import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
@@ -10,6 +10,7 @@ import 'package:agapecares/features/user_app/features/data/repositories/booking_
 import 'package:agapecares/core/models/order_model.dart';
 import 'package:agapecares/core/models/cart_item_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
 
 // Fake implementations
 class FakeOrderRepo implements user_orders_repo.OrderRepository {
@@ -39,6 +40,23 @@ class FakeOrderRepo implements user_orders_repo.OrderRepository {
 
   @override
   Future<List<OrderModel>> fetchOrdersForAdmin({Map<String, dynamic>? filters}) async => [];
+
+  @override
+  Future<void> dedupeRemoteOrdersForUser({required String userId, required String orderNumber}) async {
+    // no-op in tests
+    return;
+  }
+
+  @override
+  Future<bool> submitRatingForOrder({required OrderModel order, required double rating, String? review}) async {
+    return true;
+  }
+
+  @override
+  Future<void> updateOrder(OrderModel order) async {
+    // no-op for tests
+    return;
+  }
 }
 
 class FakeRazorpay extends RazorpayPaymentRepository {

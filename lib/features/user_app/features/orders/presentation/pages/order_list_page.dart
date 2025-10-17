@@ -86,7 +86,9 @@ class _OrderListPageState extends State<OrderListPage> {
       return fetched;
     } catch (e, s) {
       debugPrint('[OrderListPage] _loadOrdersFromRepo failed: $e\n$s');
-      return <OrderModel>[];
+      // Propagate the error so FutureBuilder can show an error state instead of
+      // silently returning an empty list which caused confusion when permissions failed.
+      rethrow;
     }
   }
 

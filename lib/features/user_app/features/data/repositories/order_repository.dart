@@ -65,14 +65,13 @@ class OrderRepositoryImpl implements OrderRepository {
       return;
     }
 
-    // The preferred approach is to create a top-level order document with an
-    // explicit owner. This aligns with Firestore rules that allow clients
-    // to create top-level orders when they correctly set `orderOwner`.
+    // Prefer writing into the user's private subcollection so clients can
+    // always read their own orders even when top-level `orders` reads are
+    // restricted by security rules. After creating the per-user doc we'll
+    // attempt to mirror it to the top-level `orders` collection if allowed.
     if (userId != null && userId.isNotEmpty) {
-      final ordersCol = _firestore.collection('orders');
-      // Build a client-safe map: DO NOT include server-managed fields like
-      // 'orderNumber', 'createdAt', or 'updatedAt'. Use 'totalAmount' key per rules.
-      final data = <String, dynamic>{
+      final userOrdersCol = _firestore.collection('users').doc(userId).collection('orders');
+      final payload = <String, dynamic>{
         'orderOwner': userId,
         'userId': order.userId,
         'items': order.items.map((i) => i.toMap()).toList(),
@@ -80,58 +79,50 @@ class OrderRepositoryImpl implements OrderRepository {
         'subtotal': order.subtotal,
         'discount': order.discount,
         'tax': order.tax,
-        // Store both keys to satisfy legacy code and security rules which expect
-        // `totalAmount` while our model uses `total`.
         'total': order.total,
         'totalAmount': order.total,
         'orderStatus': order.orderStatus.name,
-        'status': order.orderStatus.name, // Keep both for compatibility
+        'status': order.orderStatus.name,
         'paymentStatus': order.paymentStatus.name,
         'scheduledAt': order.scheduledAt,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
-      final docRef = await ordersCol.add(data);
-      // Setting remoteId in a subsequent update is a separate write and is allowed by rules.
+
+      final docRef = await userOrdersCol.add(payload);
       try {
         await docRef.update({'remoteId': docRef.id});
       } catch (_) {}
 
-      // IMPORTANT: Mirror the order into the user's subcollection so that
-      // client-side reads (which may be restricted on top-level collection)
-      // can still list the user's orders. This keeps a lightweight copy and
-      // sets the same doc id for easy correlation.
+      // Try to mirror to top-level `orders` using the same document id so
+      // admin tooling or server-side functions can find the document there.
       try {
-        final userOrdersDoc = _firestore.collection('users').doc(userId).collection('orders').doc(docRef.id);
-        final mirror = Map<String, dynamic>.from(data);
+        final topRef = _firestore.collection('orders').doc(docRef.id);
+        final mirror = Map<String, dynamic>.from(payload);
         mirror['remoteId'] = docRef.id;
-        // Use server timestamps for created/updated on the mirror too.
+        mirror['mirroredFromUserSubcollection'] = true;
         mirror['createdAt'] = FieldValue.serverTimestamp();
         mirror['updatedAt'] = FieldValue.serverTimestamp();
-        await userOrdersDoc.set(mirror, SetOptions(merge: true));
+        await topRef.set(mirror, SetOptions(merge: true));
       } catch (e) {
-        // Non-fatal: mirroring failed (maybe rules differ). We'll continue.
-        debugPrint('[OrderRepository] Failed to mirror top-level order into users/{uid}/orders: $e');
+        // Non-fatal: top-level mirror may be denied by rules. This is OK.
+        debugPrint('[OrderRepository] Top-level mirror failed (allowed when restricted): $e');
       }
-
       return;
     }
 
-    // Fallback: create a per-user order document if no explicit owner `userId` is provided.
-    // This is useful for scenarios where rules are stricter on the top-level collection.
+    // If no explicit userId passed, still write to the user's subcollection
+    // discovered from order.userId. This covers cases where callers didn't
+    // pass the `userId` parameter but the order already contains it.
     final userOrdersCol = _firestore.collection('users').doc(order.userId).collection('orders');
     final data = order.toFirestore();
-    // Ensure server-managed fields are handled by the server
     data.remove('orderNumber');
-    // Ensure both total keys are present for rules and backward compatibility
     data['totalAmount'] = data['total'] ?? order.total;
     data['createdAt'] = FieldValue.serverTimestamp();
     data['updatedAt'] = FieldValue.serverTimestamp();
 
     final docRef = await userOrdersCol.add(data);
-    try {
-      await docRef.update({'remoteId': docRef.id});
-    } catch (_) {}
+    try { await docRef.update({'remoteId': docRef.id}); } catch (_) {}
   }
 
   @override
@@ -187,48 +178,38 @@ class OrderRepositoryImpl implements OrderRepository {
     cleanedData['orderOwner'] = userId;
     cleanedData['status'] = localOrder.orderStatus.name;
 
+    // First, write to the user's subcollection so the user can always read it.
     try {
-      final ordersCol = _firestore.collection('orders');
-      DocumentReference docRef;
+      final userOrderCol = _firestore.collection('users').doc(userId).collection('orders');
+      DocumentReference userDocRef;
       if (localOrder.id.isNotEmpty) {
-        docRef = ordersCol.doc(localOrder.id);
-        await docRef.set(cleanedData, SetOptions(merge: true));
+        userDocRef = userOrderCol.doc(localOrder.id);
+        await userDocRef.set(cleanedData, SetOptions(merge: true));
       } else {
-        docRef = await ordersCol.add(cleanedData);
-        try { await docRef.update({'remoteId': docRef.id}); } catch (_) {}
+        userDocRef = await userOrderCol.add(cleanedData);
+        try { await userDocRef.update({'remoteId': userDocRef.id}); } catch (_) {}
       }
 
-      // Mirror the top-level order into the user's subcollection so reads will
-      // succeed even if the client cannot read the top-level collection.
+      final newId = userDocRef.id;
+
+      // Attempt to mirror to top-level `orders` using the same id so admins/tools
+      // can discover it. This may be denied by rules for non-admins — that's OK.
       try {
-        final userOrdersDoc = _firestore.collection('users').doc(userId).collection('orders').doc(docRef.id);
+        final topRef = _firestore.collection('orders').doc(newId);
         final mirror = Map<String, dynamic>.from(cleanedData);
-        mirror['remoteId'] = docRef.id;
-        mirror['mirroredFromTopLevel'] = true;
-        // Ensure the mirror also has both total fields
-        mirror['total'] = mirror['total'] ?? localOrder.total;
-        mirror['totalAmount'] = mirror['totalAmount'] ?? localOrder.total;
-        // Ensure timestamps are server-generated for the mirror as well.
+        mirror['remoteId'] = newId;
+        mirror['mirroredFromUserSubcollection'] = true;
         mirror['createdAt'] = FieldValue.serverTimestamp();
         mirror['updatedAt'] = FieldValue.serverTimestamp();
-        await userOrdersDoc.set(mirror, SetOptions(merge: true));
+        await topRef.set(mirror, SetOptions(merge: true));
       } catch (e) {
-        debugPrint('[OrderRepository] Failed to write mirror in users/{uid}/orders: $e');
+        debugPrint('[OrderRepository] Top-level mirror failed while uploading order (non-fatal): $e');
       }
 
-      return docRef.id;
+      return newId;
     } catch (e) {
-      debugPrint('[OrderRepository] Top-level uploadOrder failed for user=$userId: $e. Falling back to users/{uid}/orders.');
-      // Fallback to writing to the user's subcollection if the top-level write fails.
-      try {
-        final userOrderCol = _firestore.collection('users').doc(userId).collection('orders');
-        final fallbackRef = await userOrderCol.add(cleanedData);
-        try { await fallbackRef.update({'remoteId': fallbackRef.id}); } catch (_) {}
-        return fallbackRef.id;
-      } catch (e2) {
-        debugPrint('[OrderRepository] Fallback uploadOrder also failed for user=$userId: $e2');
-        rethrow;
-      }
+      debugPrint('[OrderRepository] Failed to write user subcollection order for user=$userId: $e');
+      rethrow;
     }
   }
 
@@ -275,30 +256,39 @@ class OrderRepositoryImpl implements OrderRepository {
     try {
       final userOrdersSnap = await _firestore.collection('users').doc(userId).collection('orders').orderBy('createdAt', descending: true).get();
       if (userOrdersSnap.docs.isNotEmpty) {
+        debugPrint('[OrderRepository] fetched ${userOrdersSnap.docs.length} orders from users/{uid}/orders for user=$userId');
         return userOrdersSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+      } else {
+        debugPrint('[OrderRepository] users/{uid}/orders returned 0 docs for user=$userId');
       }
     } catch (e) {
-      debugPrint('[OrderRepository] Failed to fetch from users/{uid}/orders, falling back to top-level query: $e');
+      debugPrint('[OrderRepository] Failed to fetch from users/{uid}/orders: $e');
+      // If the user's private subcollection read fails it is usually a fatal
+      // condition for client-side reads (bad rules or auth). Surface the
+      // exception so the UI can show it instead of silently falling back.
+      rethrow;
     }
 
     // 2. If the subcollection is empty or fails, query the top-level collection.
     try {
       final snapshot = await _firestore.collection('orders').where('orderOwner', isEqualTo: userId).orderBy('createdAt', descending: true).get();
+      debugPrint('[OrderRepository] fetched ${snapshot.docs.length} orders from top-level orders for user=$userId');
       return snapshot.docs.map((doc) => OrderModel.fromFirestore(doc)).toList();
     } catch (e) {
       final errString = e.toString();
       if (errString.contains('permission-denied') || errString.contains('PERMISSION_DENIED')) {
-        debugPrint('[OrderRepository] PERMISSION_DENIED on top-level fetch for user=$userId — returning empty list.');
-        // Don't throw here; top-level collection may be restricted to server.
-        // Since we mirrored writes into users/{uid}/orders, return empty list and let
-        // the caller treat it as "no client-readable top-level orders".
-        return [];
+        debugPrint('[OrderRepository] PERMISSION_DENIED on top-level fetch for user=$userId');
+        // If the user's subcollection returned 0 docs and top-level is denied
+        // it likely means rules prevent clients from reading the top-level
+        // orders collection. Instead of silently returning an empty list we
+        // throw so callers can display a helpful error and next steps.
+        throw Exception('Permission denied reading top-level orders. Ensure Firestore rules allow reads on orders when filtering by orderOwner or use users/{uid}/orders for user reads.');
       } else {
         debugPrint('[OrderRepository] Top-level fetchOrdersForUser failed for user=$userId: $e');
       }
     }
 
-    return []; // Return empty list if both attempts fail
+    return []; // Return empty list if both attempts yield no documents (no orders)
   }
 
   @override

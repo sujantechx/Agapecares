@@ -9,9 +9,13 @@ import 'package:agapecares/core/models/user_model.dart';
 import '../bloc/admin_user_bloc.dart';
 import '../bloc/admin_user_event.dart';
 import '../bloc/admin_user_state.dart';
+import 'package:go_router/go_router.dart';
+import 'package:agapecares/app/routes/route_helpers.dart';
+import 'admin_user_details_page.dart';
 
 class AdminUserListPage extends StatefulWidget {
-  const AdminUserListPage({super.key});
+  final UserRole? initialRole;
+  const AdminUserListPage({super.key, this.initialRole});
 
   @override
   State<AdminUserListPage> createState() => _AdminUserListPageState();
@@ -23,8 +27,9 @@ class _AdminUserListPageState extends State<AdminUserListPage> {
   @override
   void initState() {
     super.initState();
-    // load initial unfiltered list
-    context.read<AdminUserBloc>().add(LoadUsers());
+    // load initial unfiltered list or with initial role if provided
+    _filterRole = widget.initialRole;
+    context.read<AdminUserBloc>().add(LoadUsers(role: _filterRole));
   }
 
   void _onRoleChanged(UserRole? role) {
@@ -110,9 +115,6 @@ class _AdminUserListPageState extends State<AdminUserListPage> {
                             case 'enable':
                               context.read<AdminUserBloc>().add(SetUserDisabledEvent(uid: u.uid, disabled: false));
                               break;
-                            case 'delete':
-                              context.read<AdminUserBloc>().add(DeleteUserEvent(u.uid));
-                              break;
                           }
                         },
                         itemBuilder: (_) => [
@@ -125,10 +127,13 @@ class _AdminUserListPageState extends State<AdminUserListPage> {
                           const PopupMenuDivider(),
                           PopupMenuItem(value: 'disable', child: Text(disabled ? 'Already Disabled' : 'Disable')),
                           PopupMenuItem(value: 'enable', child: Text(disabled ? 'Enable' : 'Already Enabled')),
-                          const PopupMenuDivider(),
-                          const PopupMenuItem(value: 'delete', child: Text('Delete')),
                         ],
                       ),
+                      onTap: () {
+                        // Navigate via helper to the admin user detail route
+                        final path = RouteHelper.adminUserDetail(u.uid);
+                        context.push(path);
+                      },
                     );
                   },
                 );

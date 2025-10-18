@@ -44,12 +44,9 @@ class AdminUserBloc extends Bloc<AdminUserEvent, AdminUserState> {
       }
     });
     on<DeleteUserEvent>((event, emit) async {
-      try {
-        await repo.deleteUser(event.uid);
-        add(LoadUsers());
-      } catch (e) {
-        emit(AdminUserError(e.toString()));
-      }
+      // Deletion of users via admin UI is disabled. No-op to prevent accidental deletions.
+      // If other code emits DeleteUserEvent, we simply reload the list to reflect current state.
+      add(LoadUsers());
     });
   }
 }

@@ -14,5 +14,11 @@ class AdminWorkerRepositoryImpl implements AdminWorkerRepository {
   @override
   Future<void> setAvailability({required String workerId, required bool isAvailable}) => remote.setAvailability(workerId: workerId, isAvailable: isAvailable);
   @override
-  Future<void> deleteWorker(String workerId) => remote.deleteWorker(workerId);
+  Future<void> deleteWorker(String workerId) async {
+    // Deletion via repository is disabled to prevent accidental removal of worker profiles.
+    // Admin UI and BLoC are intentionally prevented from deleting workers.
+    // ignore: avoid_print
+    print('[AdminWorkerRepository] deleteWorker called for $workerId - operation disabled');
+    return;
+  }
 }

@@ -38,6 +38,8 @@ import 'package:agapecares/features/admin_app/features/worker_management/present
 // User-specific imports
 import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
 import 'package:agapecares/features/user_app/features/services/data/repositories/service_repository.dart';
+import 'package:agapecares/features/user_app/features/workers/domain/repositories/worker_repository.dart';
+import 'package:agapecares/features/user_app/features/workers/data/repositories/worker_repository_impl.dart';
 
 import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository_impl.dart';
 import 'package:agapecares/features/user_app/features/services/data/repositories/service_repository_impl.dart';
@@ -107,9 +109,11 @@ Future<List<RepositoryProvider>> init() async {
 
   sl.registerLazySingleton<admin_repo.ServiceRepository>(
       () => admin_repo_impl.ServiceRepositoryImpl(remoteDataSource: sl()));
-  sl.registerLazySingleton<admin_order_repo.OrderRepository>(() => admin_order_repo_impl.OrderRepositoryImpl(remote: sl()));
+  sl.registerLazySingleton<admin_order_repo.OrderRepository>(() => admin_order_repo_impl.OrderRepositoryImpl(firestore: sl()));
   sl.registerLazySingleton<admin_user_repo.AdminUserRepository>(() => admin_user_repo_impl.AdminUserRepositoryImpl(remote: sl()));
   sl.registerLazySingleton<admin_worker_repo.AdminWorkerRepository>(() => admin_worker_repo_impl.AdminWorkerRepositoryImpl(remote: sl()));
+  // Register a user-facing WorkerRepository that delegates to the admin worker remote data source
+  sl.registerLazySingleton<WorkerRepository>(() => WorkerRepositoryImpl(remote: sl()));
 
   // BLoC factories
   // Ensure AuthBloc receives SessionService so it can persist/clear cached user state.
@@ -135,6 +139,8 @@ Future<List<RepositoryProvider>> init() async {
     RepositoryProvider<admin_order_repo.OrderRepository>.value(value: sl()),
     RepositoryProvider<admin_user_repo.AdminUserRepository>.value(value: sl()),
     RepositoryProvider<admin_worker_repo.AdminWorkerRepository>.value(value: sl()),
+    // Expose the user-facing worker repository to the widget tree
+    RepositoryProvider<WorkerRepository>.value(value: sl()),
     RepositoryProvider<OfferRepository>.value(value: sl()),
     // Expose SessionService to the widget tree so widgets can read cached user safely
     RepositoryProvider<SessionService>.value(value: sl()),

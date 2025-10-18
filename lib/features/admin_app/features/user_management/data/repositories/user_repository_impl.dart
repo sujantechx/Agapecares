@@ -23,5 +23,11 @@ class AdminUserRepositoryImpl implements AdminUserRepository {
   Future<void> setUserDisabled({required String uid, required bool disabled}) => remote.setUserDisabled(uid: uid, disabled: disabled);
 
   @override
-  Future<void> deleteUser(String uid) => remote.deleteUser(uid);
+  Future<void> deleteUser(String uid) async {
+    // Deletion via repository is disabled to prevent accidental user removal.
+    // Keep a server-side or administrative-only path for destructive actions.
+    // ignore: avoid_print
+    print('[AdminUserRepository] deleteUser called for $uid - operation disabled');
+    return;
+  }
 }

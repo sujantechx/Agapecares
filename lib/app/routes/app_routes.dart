@@ -37,6 +37,13 @@ class AppRoutes {
   static const String adminUsers = '/admin/users';
   static const String adminAssignWorker = '/admin/assign';
   static const String adminProfile = '/admin/profile';
+  // Admin detail routes
+  static const String adminUserDetail = '/admin/users/:id';
+  static const String adminWorkerDetail = '/admin/workers/:id';
+  // Admin orders for a specific user/worker
+  static const String adminUserOrders = '/admin/users/:id/orders';
+  static const String adminWorkerOrders = '/admin/workers/:id/orders';
+  static const String adminOrderDetail = '/admin/orders/:id';
 
   // Main informational routes
   static const String aboutUs = '/about';

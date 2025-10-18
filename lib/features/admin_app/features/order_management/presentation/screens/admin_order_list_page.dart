@@ -6,10 +6,13 @@ import 'package:agapecares/features/admin_app/features/order_management/presenta
 import 'package:agapecares/features/admin_app/features/order_management/presentation/bloc/admin_order_state.dart';
 import 'package:intl/intl.dart';
 import 'package:agapecares/features/admin_app/features/order_management/presentation/pages/admin_order_detail_page.dart';
+import 'package:agapecares/app/routes/route_helpers.dart';
+import 'package:go_router/go_router.dart';
 import 'package:agapecares/features/admin_app/features/worker_management/presentation/widgets/assign_worker_dialog.dart';
 
 class AdminOrderListPage extends StatefulWidget {
-  const AdminOrderListPage({Key? key}) : super(key: key);
+  final Map<String, dynamic>? initialFilters;
+  const AdminOrderListPage({Key? key, this.initialFilters}) : super(key: key);
 
   @override
   State<AdminOrderListPage> createState() => _AdminOrderListPageState();
@@ -21,8 +24,9 @@ class _AdminOrderListPageState extends State<AdminOrderListPage> {
   @override
   void initState() {
     super.initState();
-    // load initial unfiltered list
-    context.read<AdminOrderBloc>().add(admin_events.LoadOrders());
+    // load initial unfiltered list or with provided initial filters
+    _filters = widget.initialFilters;
+    context.read<AdminOrderBloc>().add(admin_events.LoadOrders(filters: _filters));
   }
 
   void _openFilterDialog() async {
@@ -60,12 +64,18 @@ class _AdminOrderListPageState extends State<AdminOrderListPage> {
               itemBuilder: (context, i) {
                 final o = state.orders[i];
                 return ListTile(
-                  title: Text('${o.orderStatus.name.toUpperCase()}'),
-                  subtitle: Text('User: ${o.userId}\nCreated: ${o.createdAt.toDate().toLocal()}'),
+                  title: Text(o.orderNumber.isNotEmpty ? o.orderNumber : o.id),
+                  subtitle: Text('Status: ${o.orderStatus.name.toUpperCase()} • User: ${o.userId}\nCreated: ${o.createdAt.toDate().toLocal()} • Total: ₹${o.total.toStringAsFixed(2)}'),
                   isThreeLine: true,
                   onTap: () {
-                    // Navigate to full detail page where totals and order number are visible
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => AdminOrderDetailPage(order: o)));
+                    // Navigate to admin order detail route via GoRouter and pass the OrderModel as extra
+                    final path = RouteHelper.adminOrderDetail(o.id);
+                    try {
+                      context.push(path, extra: o);
+                    } catch (_) {
+                      // Fallback to direct push if go_router isn't available in this context
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => AdminOrderDetailPage(order: o)));
+                    }
                   },
                   trailing: PopupMenuButton<String>(
                     onSelected: (val) async {
@@ -154,7 +164,7 @@ class _OrderFilterDialogState extends State<_OrderFilterDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             DropdownButtonFormField<String>(
-              value: _status,
+              initialValue: _status,
               decoration: const InputDecoration(labelText: 'Status'),
               items: [null, 'pending', 'accepted', 'assigned', 'in_progress', 'completed', 'cancelled']
                   .map((s) => DropdownMenuItem(value: s, child: Text(s ?? 'Any')))

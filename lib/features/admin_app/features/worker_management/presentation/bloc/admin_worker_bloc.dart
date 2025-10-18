@@ -28,12 +28,9 @@ class AdminWorkerBloc extends Bloc<AdminWorkerEvent, AdminWorkerState> {
       }
     });
     on<DeleteWorkerEvent>((event, emit) async {
-      try {
-        await repo.deleteWorker(event.workerId);
-        add(LoadWorkers());
-      } catch (e) {
-        emit(AdminWorkerError(e.toString()));
-      }
+      // Deletion of workers via admin UI is disabled. No-op to prevent accidental deletions.
+      // If other code emits DeleteWorkerEvent, reload the workers to reflect current state.
+      add(LoadWorkers());
     });
   }
 }

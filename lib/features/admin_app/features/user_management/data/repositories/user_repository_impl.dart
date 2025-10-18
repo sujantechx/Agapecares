@@ -11,7 +11,7 @@ class AdminUserRepositoryImpl implements AdminUserRepository {
   AdminUserRepositoryImpl({required this.remote});
 
   @override
-  Future<List<UserModel>> getAllUsers() => remote.getAllUsers();
+  Future<List<UserModel>> getAllUsers({UserRole? role}) => remote.getAllUsers(role: role);
 
   @override
   Future<void> updateUserRole({required String uid, required UserRole role}) => remote.updateUserRole(uid: uid, role: role);

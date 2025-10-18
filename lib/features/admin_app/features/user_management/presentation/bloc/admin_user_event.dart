@@ -10,7 +10,13 @@ abstract class AdminUserEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-class LoadUsers extends AdminUserEvent {}
+class LoadUsers extends AdminUserEvent {
+  final UserRole? role;
+  LoadUsers({this.role});
+
+  @override
+  List<Object?> get props => [role];
+}
 class UpdateUserRoleEvent extends AdminUserEvent {
   final String uid;
   final UserRole role; // use enum instead of raw string

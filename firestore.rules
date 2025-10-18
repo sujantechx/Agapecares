@@ -22,26 +22,33 @@ service cloud.firestore {
       );
     }
 
-    // Robust admin detection: prefer custom claims, admins marker, or the role stored
-    // on the user's document. Try both UID and phone-number document ids for the users doc.
+    // Robust admin detection. IMPORTANT: avoid a circular dependency where
+    // `isAdmin()` itself calls `get()` on `/users/{uid}` and then `/users/{uid}`
+    // read rules call `isAdmin()` - that creates a circular evaluation which
+    // can cause admins to be treated as non-admins and produce PERMISSION_DENIED
+    // on collectionGroup queries. To avoid this, split admin detection into
+    // two functions:
+    // - `isAdmin()` checks token claims or an explicit `admins/{uid}` marker (no get()).
+    // - `isAdminByUserDoc()` performs a `get()` on the user's document and checks
+    //    the `role` field. This function is used where appropriate (and not
+    //    inside user document read rules that would re-call `isAdmin()`).
     function isAdmin() {
       return isSignedIn() && (
         // Custom claim on the token (recommended server-side approach)
         (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
-        // Admins collection marker
+        // Admins collection marker (recommended for client-side admin recognition)
         || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-        // Check users document for role == 'admin' using UID or phone-number keyed doc
-        || (
-            (exists(/databases/$(database)/documents/users/$(request.auth.uid))
-              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role is string
-              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.matches('(?i).*\\badmin\\b.*'))
-           )
-        || (
-            (request.auth.token.phone_number != null)
-            && exists(/databases/$(database)/documents/users/$(request.auth.token.phone_number))
-            && get(/databases/$(database)/documents/users/$(request.auth.token.phone_number)).data.role is string
-            && get(/databases/$(database)/documents/users/$(request.auth.token.phone_number)).data.role.matches('(?i).*\\badmin\\b.*')
-          )
+      );
+    }
+
+    // Alternative admin detection via the user's `users/{uid}` document `role` field.
+    // This uses `get()` and should NOT be referenced from places that themselves
+    // call `isAdmin()` to avoid circular evaluation.
+    function isAdminByUserDoc() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role is string
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.matches('(?i).*\\badmin\\b.*')
       );
     }
 
@@ -92,13 +99,13 @@ service cloud.firestore {
                        )
                     && noServerFields();
 
-      // Read: owner or admin
-      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      // Read: owner or admin. Use both admin checks: token/admins-collection OR user-doc role.
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin() || isAdminByUserDoc());
 
       // Update: admin can update anything. Owner can update but cannot change `role` value
       // (must keep the same value) and cannot set server-only fields.
       allow update: if isSignedIn() && (
-                      isAdmin()
+                      isAdmin() || isAdminByUserDoc()
                       || (
                           isOwner(userId)
                           && ( !('role' in request.resource.data) || request.resource.data.role == resource.data.role )
@@ -107,12 +114,12 @@ service cloud.firestore {
                     );
 
       // Delete: owner or admin
-      allow delete: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow delete: if isSignedIn() && (isOwner(userId) || isAdmin() || isAdminByUserDoc());
 
       // cart subcollection
       match /cart/{cartId} {
         // cart documents belong to the parent user document, so use parent userId ownership check
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isAdminByUserDoc());
       }
 
       // orders subcollection (per-user orders)
@@ -131,7 +138,7 @@ service cloud.firestore {
         // Get: owner, admin, or worker only if order is relevant
         allow get: if isSignedIn() && (
                      isOwner(userId)
-                     || isAdmin()
+                     || isAdmin() || isAdminByUserDoc()
                      || (isWorker() && (
                           // worker can read if order is pending (in pool) or assigned to them
                           (resource.data.status == 'pending')
@@ -141,7 +148,7 @@ service cloud.firestore {
 
         // List (query): admin or owner; worker allowed only with constrained query
         allow list: if isSignedIn() && (
-                      isAdmin()
+                      isAdmin() || isAdminByUserDoc()
                       || isOwner(userId)
                       || (
                           isWorker()
@@ -157,7 +164,7 @@ service cloud.firestore {
         // Owner may update only non-assignment, non-status fields.
         // Worker may update a few status transitions but only when they're the assigned worker.
         allow update: if isSignedIn() && (
-                        isAdmin()
+                        isAdmin() || isAdminByUserDoc()
                         || (
                             isOwner(userId)
                             && // owner cannot change `workerId` or `status`
@@ -178,16 +185,16 @@ service cloud.firestore {
                       );
 
         // Delete: only admin
-        allow delete: if isSignedIn() && isAdmin();
+        allow delete: if isSignedIn() && (isAdmin() || isAdminByUserDoc());
       }
 
       // bookings subcollection: per-user booking documents (created on checkout)
       match /bookings/{bookingId} {
         // Allow owner to create/read/update their bookings; admin can read/update/delete
         allow create: if isSignedIn() && isOwner(userId) && noServerFields();
-        allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read: if isSignedIn() && (isOwner(userId) || isAdmin() || isAdminByUserDoc());
         allow update: if isSignedIn() && (isAdmin() || isOwner(userId)) && noServerFields();
-        allow delete: if isSignedIn() && isAdmin();
+        allow delete: if isSignedIn() && (isAdmin() || isAdminByUserDoc());
       }
 
       // payments subcollection (per-user payments). Clients may write limited payment metadata
@@ -195,10 +202,10 @@ service cloud.firestore {
       match /payments/{paymentId} {
         // Owner can create and read their payments; admin can read all payments.
         allow create: if isSignedIn() && isOwner(userId) && noServerFields();
-        allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read: if isSignedIn() && (isOwner(userId) || isAdmin() || isAdminByUserDoc());
         // Owner may update no-server fields only; admin may update everything.
-        allow update: if isSignedIn() && (isAdmin() || (isOwner(userId) && noServerFields()));
-        allow delete: if isSignedIn() && isAdmin();
+        allow update: if isSignedIn() && (isAdmin() || isAdminByUserDoc() || (isOwner(userId) && noServerFields()));
+        allow delete: if isSignedIn() && (isAdmin() || isAdminByUserDoc());
       }
     }
 
@@ -249,7 +256,7 @@ service cloud.firestore {
     match /orders/{orderId} {
       // Read single order: admin, owner, or relevant worker
       allow get: if isSignedIn() && (
-        isAdmin()
+        isAdmin() || isAdminByUserDoc()
         || (resource.data.orderOwner == request.auth.uid)
         || (resource.data.userId == request.auth.uid)
         || (isWorker() && (resource.data.workerId == request.auth.uid || resource.data.status == 'pending'))
@@ -258,7 +265,7 @@ service cloud.firestore {
       // List (query): admin, or owner queries; workers allowed only on constrained queries
       // IMPORTANT: for non-admin users, client must attach a `where('orderOwner','==', uid)` or `where('userId','==', uid)` filter.
       allow list: if isSignedIn() && (
-        isAdmin()
+        isAdmin() || isAdminByUserDoc()
         || (request.query.where('orderOwner','==', request.auth.uid))
         || (request.query.where('userId','==', request.auth.uid))
         || (
@@ -279,7 +286,7 @@ service cloud.firestore {
 
       // Update: admin can update everything. Owner limited and worker allowed status transitions when assigned.
       allow update: if isSignedIn() && (
-        isAdmin()
+        isAdmin() || isAdminByUserDoc()
         || (
           (resource.data.orderOwner == request.auth.uid || resource.data.orderOwner == request.auth.token.phone_number)
           && !( 'workerId' in request.resource.data )
@@ -298,7 +305,7 @@ service cloud.firestore {
       );
 
       // Delete: only admin
-      allow delete: if isSignedIn() && isAdmin();
+      allow delete: if isSignedIn() && (isAdmin() || isAdminByUserDoc());
     }
 
     // ------------------------------------------------------------------
@@ -310,12 +317,12 @@ service cloud.firestore {
     // collectionGroup queries across users/*/orders.
     match /{anyPath=**}/orders/{orderId} {
       // Admins can read/list any order document regardless of the parent path.
-      allow get: if isSignedIn() && isAdmin();
-      allow list: if isSignedIn() && isAdmin();
+      allow get: if isSignedIn() && (isAdmin() || isAdminByUserDoc());
+      allow list: if isSignedIn() && (isAdmin() || isAdminByUserDoc());
 
       // Admins can update/delete as well through this wildcard path.
-      allow update: if isSignedIn() && isAdmin();
-      allow delete: if isSignedIn() && isAdmin();
+      allow update: if isSignedIn() && (isAdmin() || isAdminByUserDoc());
+      allow delete: if isSignedIn() && (isAdmin() || isAdminByUserDoc());
     }
 
     // -----------------------

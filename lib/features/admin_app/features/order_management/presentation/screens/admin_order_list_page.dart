@@ -6,6 +6,7 @@ import 'package:agapecares/features/admin_app/features/order_management/presenta
 import 'package:agapecares/features/admin_app/features/order_management/presentation/bloc/admin_order_state.dart';
 import 'package:intl/intl.dart';
 import 'package:agapecares/features/admin_app/features/order_management/presentation/pages/admin_order_detail_page.dart';
+import 'package:agapecares/features/admin_app/features/worker_management/presentation/widgets/assign_worker_dialog.dart';
 
 class AdminOrderListPage extends StatefulWidget {
   const AdminOrderListPage({Key? key}) : super(key: key);
@@ -98,29 +99,9 @@ class _AdminOrderListPageState extends State<AdminOrderListPage> {
   }
 
   void _showAssignDialog(BuildContext context, String orderId) {
-    final workerIdCtrl = TextEditingController();
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Assign Worker'),
-        content: TextField(
-          controller: workerIdCtrl,
-          decoration: const InputDecoration(labelText: 'Worker ID'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              final id = workerIdCtrl.text.trim();
-              if (id.isNotEmpty) {
-                context.read<AdminOrderBloc>().add(admin_events.AssignWorkerEvent(orderId: orderId, workerId: id));
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Assign'),
-          ),
-        ],
-      ),
+      builder: (_) => AssignWorkerDialog(orderId: orderId),
     );
   }
 }

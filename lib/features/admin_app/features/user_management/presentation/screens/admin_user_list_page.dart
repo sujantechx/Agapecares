@@ -10,14 +10,58 @@ import '../bloc/admin_user_bloc.dart';
 import '../bloc/admin_user_event.dart';
 import '../bloc/admin_user_state.dart';
 
-class AdminUserListPage extends StatelessWidget {
+class AdminUserListPage extends StatefulWidget {
   const AdminUserListPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  State<AdminUserListPage> createState() => _AdminUserListPageState();
+}
+
+class _AdminUserListPageState extends State<AdminUserListPage> {
+  UserRole? _filterRole;
+
+  @override
+  void initState() {
+    super.initState();
+    // load initial unfiltered list
     context.read<AdminUserBloc>().add(LoadUsers());
+  }
+
+  void _onRoleChanged(UserRole? role) {
+    setState(() => _filterRole = role);
+    context.read<AdminUserBloc>().add(LoadUsers(role: role));
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Users')),
+      appBar: AppBar(
+        title: const Text('Users'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<UserRole?>(
+                value: _filterRole,
+                hint: const Text('Filter'),
+                items: [
+                  const DropdownMenuItem<UserRole?>(value: null, child: Text('All')),
+                  DropdownMenuItem<UserRole?>(value: UserRole.user, child: const Text('Customers')),
+                  DropdownMenuItem<UserRole?>(value: UserRole.worker, child: const Text('Workers')),
+                  DropdownMenuItem<UserRole?>(value: UserRole.admin, child: const Text('Admins')),
+                ],
+                onChanged: _onRoleChanged,
+                dropdownColor: Theme.of(context).appBarTheme.backgroundColor,
+                style: Theme.of(context).appBarTheme.toolbarTextStyle?.copyWith(color: Colors.white) ?? const TextStyle(color: Colors.white),
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () => context.read<AdminUserBloc>().add(LoadUsers(role: _filterRole)),
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
       body: BlocBuilder<AdminUserBloc, AdminUserState>(
         builder: (context, state) {
           if (state is AdminUserLoading) return const Center(child: CircularProgressIndicator());

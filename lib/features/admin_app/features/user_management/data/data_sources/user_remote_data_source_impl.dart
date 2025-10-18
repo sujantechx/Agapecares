@@ -13,8 +13,12 @@ class AdminUserRemoteDataSourceImpl implements AdminUserRemoteDataSource {
   CollectionReference<Map<String, dynamic>> get _users => _firestore.collection('users');
 
   @override
-  Future<List<UserModel>> getAllUsers() async {
-    final snap = await _users.orderBy('createdAt', descending: true).get();
+  Future<List<UserModel>> getAllUsers({UserRole? role}) async {
+    Query<Map<String, dynamic>> q = _users;
+    if (role != null) {
+      q = q.where('role', isEqualTo: role.name);
+    }
+    final snap = await q.orderBy('createdAt', descending: true).get();
     return snap.docs.map((d) => UserModel.fromFirestore(d)).toList();
   }
 

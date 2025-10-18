@@ -13,7 +13,7 @@ class AdminUserBloc extends Bloc<AdminUserEvent, AdminUserState> {
     on<LoadUsers>((event, emit) async {
       emit(AdminUserLoading());
       try {
-        final users = await repo.getAllUsers();
+        final users = await repo.getAllUsers(role: event.role);
         emit(AdminUserLoaded(users));
       } catch (e) {
         emit(AdminUserError(e.toString()));

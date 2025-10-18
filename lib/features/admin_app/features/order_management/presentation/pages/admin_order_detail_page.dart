@@ -6,6 +6,7 @@ import 'package:agapecares/core/models/order_model.dart';
 import 'package:agapecares/core/models/cart_item_model.dart';
 import '../bloc/admin_order_bloc.dart';
 import '../bloc/admin_order_event.dart' as admin_events;
+import 'package:agapecares/features/admin_app/features/worker_management/presentation/widgets/assign_worker_dialog.dart';
 
 class AdminOrderDetailPage extends StatelessWidget {
   final OrderModel order;
@@ -62,7 +63,7 @@ class AdminOrderDetailPage extends StatelessWidget {
             Text('Items', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             ...order.items.map((item) {
-              final it = item as CartItemModel;
+              final it = item;
               return ListTile(
                 title: Text(it.serviceName.isNotEmpty ? it.serviceName : 'Item'),
                 subtitle: Text('Qty: ${it.quantity} • Rs ${it.unitPrice.toStringAsFixed(2)}'),
@@ -151,27 +152,9 @@ class AdminOrderDetailPage extends StatelessWidget {
   }
 
   void _showAssignDialog(BuildContext context) {
-    final workerIdCtrl = TextEditingController();
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Assign Worker'),
-        content: TextField(controller: workerIdCtrl, decoration: const InputDecoration(labelText: 'Worker ID')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              final id = workerIdCtrl.text.trim();
-              if (id.isNotEmpty) {
-                context.read<AdminOrderBloc>().add(admin_events.AssignWorkerEvent(orderId: order.id, workerId: id));
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Assigning worker...')));
-              }
-            },
-            child: const Text('Assign'),
-          ),
-        ],
-      ),
+      builder: (_) => AssignWorkerDialog(orderId: order.id),
     );
   }
 }

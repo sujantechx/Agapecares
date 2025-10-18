@@ -1,9 +1,15 @@
 import 'package:agapecares/core/models/order_model.dart';
 
 abstract class OrderRemoteDataSource {
-  Future<List<OrderModel>> getAllOrders();
+  /// Fetch all orders with optional server-side filters. Supported filter keys:
+  /// - 'status' (String)
+  /// - 'orderOwner' or 'userId' (String)
+  /// - 'workerId' (String)
+  /// - 'dateFrom' (DateTime or Timestamp)
+  /// - 'dateTo' (DateTime or Timestamp)
+  /// - 'orderNumber' (String)
+  Future<List<OrderModel>> getAllOrders({Map<String, dynamic>? filters});
   Future<void> updateOrderStatus({required String orderId, required String status});
   Future<void> assignWorker({required String orderId, required String workerId, String? workerName});
   Future<void> deleteOrder(String orderId);
 }
-

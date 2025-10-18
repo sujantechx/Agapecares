@@ -7,7 +7,7 @@ class OrderRepositoryImpl implements OrderRepository {
   OrderRepositoryImpl({required this.remote});
 
   @override
-  Future<List<OrderModel>> getAllOrders() => remote.getAllOrders();
+  Future<List<OrderModel>> getAllOrders({Map<String, dynamic>? filters}) => remote.getAllOrders(filters: filters);
 
   @override
   Future<void> updateOrderStatus({required String orderId, required String status}) =>
@@ -20,4 +20,3 @@ class OrderRepositoryImpl implements OrderRepository {
   @override
   Future<void> deleteOrder(String orderId) => remote.deleteOrder(orderId);
 }
-

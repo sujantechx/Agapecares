@@ -5,7 +5,14 @@ class AdminOrderEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-class LoadOrders extends AdminOrderEvent {}
+/// Load orders. Optional `filters` map supports keys: 'status','orderOwner'/'userId','workerId','dateFrom'(DateTime),'dateTo'(DateTime),'orderNumber','limit'
+class LoadOrders extends AdminOrderEvent {
+  final Map<String, dynamic>? filters;
+  LoadOrders({this.filters});
+
+  @override
+  List<Object?> get props => [filters];
+}
 
 class UpdateOrderStatusEvent extends AdminOrderEvent {
   final String orderId;
@@ -30,4 +37,3 @@ class DeleteOrderEvent extends AdminOrderEvent {
   @override
   List<Object?> get props => [orderId];
 }
-

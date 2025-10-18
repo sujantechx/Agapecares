@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:agapecares/core/models/order_model.dart';
 import 'order_remote_data_source.dart';
+import 'package:flutter/foundation.dart';
 
 class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
   final FirebaseFirestore _firestore;
@@ -9,14 +10,101 @@ class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
   // Keep a getter for convenience; we primarily read orders via collectionGroup
   CollectionReference<Map<String, dynamic>> get _topLevelOrders => _firestore.collection('orders');
 
+  Query _applyFiltersToQuery(Query base, Map<String, dynamic>? filters) {
+    if (filters == null) return base;
+    var q = base;
+    // status handled separately due to possible field-name differences ('status' vs 'orderStatus')
+    if (filters['orderOwner'] != null) {
+      q = q.where('orderOwner', isEqualTo: filters['orderOwner']);
+    } else if (filters['userId'] != null) {
+      q = q.where('userId', isEqualTo: filters['userId']);
+    }
+    if (filters['workerId'] != null) {
+      q = q.where('workerId', isEqualTo: filters['workerId']);
+    }
+    if (filters['orderNumber'] != null) {
+      q = q.where('orderNumber', isEqualTo: filters['orderNumber']);
+    }
+    if (filters['dateFrom'] != null) {
+      final df = filters['dateFrom'];
+      final ts = df is DateTime ? Timestamp.fromDate(df) : (df is Timestamp ? df : null);
+      if (ts != null) q = q.where('createdAt', isGreaterThanOrEqualTo: ts);
+    }
+    if (filters['dateTo'] != null) {
+      final dt = filters['dateTo'];
+      final ts = dt is DateTime ? Timestamp.fromDate(dt) : (dt is Timestamp ? dt : null);
+      if (ts != null) q = q.where('createdAt', isLessThanOrEqualTo: ts);
+    }
+    return q;
+  }
+
   @override
-  Future<List<OrderModel>> getAllOrders() async {
+  Future<List<OrderModel>> getAllOrders({Map<String, dynamic>? filters}) async {
+    final limit = filters?['limit'] as int? ?? 100;
     try {
-      // Use collectionGroup to read orders stored under users/{userId}/orders as well as any top-level orders
-      final snap = await _firestore.collectionGroup('orders').orderBy('createdAt', descending: true).get();
+      // Prefer top-level collection (faster & indexable). If this fails due to
+      // permissions, fall back to collectionGroup which searches subcollections.
+      Query baseTop = _topLevelOrders;
+      // If status filter present, we will attempt using 'status' first then 'orderStatus'.
+      final statusFilter = filters?['status'] as String?;
+
+      if (statusFilter != null) {
+        // Try 'status' field first
+        Query topQuery = _applyFiltersToQuery(baseTop, filters);
+        topQuery = topQuery.where('status', isEqualTo: statusFilter).orderBy('createdAt', descending: true).limit(limit);
+        final topSnap = await topQuery.get();
+        if (topSnap.docs.isNotEmpty) return topSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+
+        // Fallback try using 'orderStatus' field
+        topQuery = _applyFiltersToQuery(baseTop, filters);
+        topQuery = topQuery.where('orderStatus', isEqualTo: statusFilter).orderBy('createdAt', descending: true).limit(limit);
+        final topSnap2 = await topQuery.get();
+        if (topSnap2.docs.isNotEmpty) return topSnap2.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+
+      } else {
+        Query topQuery = _applyFiltersToQuery(baseTop, filters);
+        topQuery = topQuery.orderBy('createdAt', descending: true).limit(limit);
+        final topSnap = await topQuery.get();
+        if (topSnap.docs.isNotEmpty) {
+          return topSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+        }
+      }
+    } on FirebaseException catch (e) {
+      // If we hit a permission error on the top-level collection, we'll
+      // fall through to try collectionGroup. For other errors, rethrow.
+      if (e.code != 'permission-denied') {
+        throw Exception('Failed to fetch top-level orders: ${e.message}');
+      }
+      // else fall through to collectionGroup fallback
+    } catch (e) {
+      // Non-Firebase exceptions: log and try the fallback as a best-effort.
+      print('[OrderRemoteDataSource] top-level orders fetch failed: $e');
+    }
+
+    try {
+      // Fallback: collectionGroup to read orders under users/{uid}/orders as well as any top-level orders
+      Query baseCg = _firestore.collectionGroup('orders');
+      final statusFilter = filters?['status'] as String?;
+      if (statusFilter != null) {
+        Query cg = _applyFiltersToQuery(baseCg, filters);
+        cg = cg.where('status', isEqualTo: statusFilter).orderBy('createdAt', descending: true).limit(limit);
+        final snap = await cg.get();
+        if (snap.docs.isNotEmpty) return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+
+        cg = _applyFiltersToQuery(baseCg, filters);
+        cg = cg.where('orderStatus', isEqualTo: statusFilter).orderBy('createdAt', descending: true).limit(limit);
+        final snap2 = await cg.get();
+        if (snap2.docs.isNotEmpty) return snap2.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+
+        return <OrderModel>[]; // no matches found
+      }
+
+      Query cg = _applyFiltersToQuery(baseCg, filters);
+      cg = cg.orderBy('createdAt', descending: true).limit(limit);
+      final snap = await cg.get();
       return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
     } on FirebaseException catch (e) {
-      if (e.code == 'permission-denied' || e.message?.toLowerCase().contains('permission') == true) {
+      if (e.code == 'permission-denied' || (e.message?.toLowerCase().contains('permission') == true)) {
         throw Exception('Firestore permission denied when fetching orders. Check Firestore rules and ensure your account has admin access. (${e.message})');
       }
       throw Exception('Failed to fetch orders: ${e.message}');

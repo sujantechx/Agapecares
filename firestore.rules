@@ -301,6 +301,23 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isAdmin();
     }
 
+    // ------------------------------------------------------------------
+    // Wildcard match for any orders subcollection.
+    // This helps collectionGroup('orders') queries succeed when the caller
+    // is an admin. Some SDKs perform collectionGroup queries which match
+    // different /{parent}/orders/{orderId} paths; explicitly allowing admin
+    // list/get here avoids PERMISSION_DENIED for admins when performing
+    // collectionGroup queries across users/*/orders.
+    match /{anyPath=**}/orders/{orderId} {
+      // Admins can read/list any order document regardless of the parent path.
+      allow get: if isSignedIn() && isAdmin();
+      allow list: if isSignedIn() && isAdmin();
+
+      // Admins can update/delete as well through this wildcard path.
+      allow update: if isSignedIn() && isAdmin();
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
     // -----------------------
     // bookings collection (top-level)
     // Clients may create bookings owned by themselves; admins can manage all bookings.

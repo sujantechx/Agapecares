@@ -35,6 +35,10 @@ class OrderModel extends Equatable {
   /// The current status of the payment.
   final PaymentStatus paymentStatus;
 
+  /// Optional assignment history (list of maps with timestamps/status changes) and payment reference data.
+  final List<Map<String, dynamic>>? assignmentHistory;
+  final Map<String, dynamic>? paymentRef;
+
   /// The date and time the service is scheduled for.
   final Timestamp scheduledAt;
   /// The timestamp when the order was created.
@@ -55,6 +59,8 @@ class OrderModel extends Equatable {
     required this.total,
     required this.orderStatus,
     required this.paymentStatus,
+    this.assignmentHistory,
+    this.paymentRef,
     required this.scheduledAt,
     required this.createdAt,
     required this.updatedAt,
@@ -63,27 +69,77 @@ class OrderModel extends Equatable {
   /// Creates an `OrderModel` instance from a Firestore document snapshot.
   factory OrderModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
+
+    // Support multiple possible field names for totals
+    final totalVal = (data['total'] ?? data['totalAmount']) as num?;
+    final subtotalVal = (data['subtotal'] ?? 0) as num?;
+    final discountVal = (data['discount'] ?? 0) as num?;
+    final taxVal = (data['tax'] ?? 0) as num?;
+
+    // Support different order number field names
+    final orderNum = (data['orderNumber'] ?? data['orderNo'] ?? '') as String;
+
+    // Support multiple status field names
+    final rawOrderStatus = (data['orderStatus'] ?? data['status']) as String? ?? '';
+    final rawPaymentStatus = (data['paymentStatus'] ?? data['payment_state'] ?? '') as String? ?? '';
+
+    OrderStatus parsedOrderStatus = OrderStatus.pending;
+    if (rawOrderStatus.isNotEmpty) {
+      try {
+        parsedOrderStatus = OrderStatus.values.firstWhere((e) => e.name == rawOrderStatus);
+      } catch (_) {
+        // fallback to mapping common strings
+        final s = rawOrderStatus.toLowerCase();
+        if (s.contains('in_progress') || s.contains('in progress')) parsedOrderStatus = OrderStatus.in_progress;
+        else if (s.contains('assigned')) parsedOrderStatus = OrderStatus.assigned;
+        else if (s.contains('accepted')) parsedOrderStatus = OrderStatus.accepted;
+        else if (s.contains('completed')) parsedOrderStatus = OrderStatus.completed;
+        else if (s.contains('cancel')) parsedOrderStatus = OrderStatus.cancelled;
+        else parsedOrderStatus = OrderStatus.pending;
+      }
+    }
+
+    PaymentStatus parsedPaymentStatus = PaymentStatus.pending;
+    if (rawPaymentStatus.isNotEmpty) {
+      try {
+        parsedPaymentStatus = PaymentStatus.values.firstWhere((e) => e.name == rawPaymentStatus);
+      } catch (_) {
+        final s = rawPaymentStatus.toLowerCase();
+        if (s.contains('paid')) parsedPaymentStatus = PaymentStatus.paid;
+        else if (s.contains('fail')) parsedPaymentStatus = PaymentStatus.failed;
+        else if (s.contains('refund')) parsedPaymentStatus = PaymentStatus.refunded;
+        else parsedPaymentStatus = PaymentStatus.pending;
+      }
+    }
+
+    // Parse items safely
+    final items = (data['items'] as List<dynamic>?)
+        ?.map((item) => CartItemModel.fromMap(item as Map<String, dynamic>))
+        .toList() ?? [];
+
+    // assignmentHistory may be a list of maps
+    List<Map<String, dynamic>>? assignmentHistory;
+    if (data['assignmentHistory'] is List) {
+      assignmentHistory = (data['assignmentHistory'] as List).map((e) => Map<String, dynamic>.from(e as Map<String, dynamic>)).toList();
+    }
+
+    final paymentRef = data['paymentRef'] is Map ? Map<String, dynamic>.from(data['paymentRef'] as Map) : null;
+
     return OrderModel(
       id: doc.id,
-      orderNumber: data['orderNumber'] as String? ?? '',
-      userId: data['userId'] as String? ?? '',
+      orderNumber: orderNum,
+      userId: data['userId'] as String? ?? data['orderOwner'] as String? ?? '',
       workerId: data['workerId'] as String?,
-      items: (data['items'] as List<dynamic>?)
-          ?.map((item) => CartItemModel.fromMap(item as Map<String, dynamic>))
-          .toList() ?? [],
+      items: items,
       addressSnapshot: Map<String, dynamic>.from(data['addressSnapshot'] ?? {}),
-      subtotal: (data['subtotal'] as num?)?.toDouble() ?? 0.0,
-      discount: (data['discount'] as num?)?.toDouble() ?? 0.0,
-      tax: (data['tax'] as num?)?.toDouble() ?? 0.0,
-      total: (data['total'] as num?)?.toDouble() ?? 0.0,
-      orderStatus: OrderStatus.values.firstWhere(
-            (e) => e.name == data['orderStatus'],
-        orElse: () => OrderStatus.pending,
-      ),
-      paymentStatus: PaymentStatus.values.firstWhere(
-            (e) => e.name == data['paymentStatus'],
-        orElse: () => PaymentStatus.pending,
-      ),
+      subtotal: subtotalVal?.toDouble() ?? 0.0,
+      discount: discountVal?.toDouble() ?? 0.0,
+      tax: taxVal?.toDouble() ?? 0.0,
+      total: totalVal?.toDouble() ?? 0.0,
+      orderStatus: parsedOrderStatus,
+      paymentStatus: parsedPaymentStatus,
+      assignmentHistory: assignmentHistory,
+      paymentRef: paymentRef,
       scheduledAt: data['scheduledAt'] as Timestamp? ?? Timestamp.now(),
       createdAt: data['createdAt'] as Timestamp? ?? Timestamp.now(),
       updatedAt: data['updatedAt'] as Timestamp? ?? Timestamp.now(),
@@ -107,9 +163,11 @@ class OrderModel extends Equatable {
       'scheduledAt': scheduledAt,
       'createdAt': createdAt,
       'updatedAt': FieldValue.serverTimestamp(), // Automatically set on write
+      if (assignmentHistory != null) 'assignmentHistory': assignmentHistory,
+      if (paymentRef != null) 'paymentRef': paymentRef,
     };
   }
 
   @override
-  List<Object?> get props => [id, orderNumber, userId, workerId, orderStatus, paymentStatus];
+  List<Object?> get props => [id, orderNumber, userId, workerId, orderStatus, paymentStatus, total];
 }

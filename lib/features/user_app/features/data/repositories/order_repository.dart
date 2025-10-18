@@ -305,20 +305,130 @@ class OrderRepositoryImpl implements OrderRepository {
   @override
   Future<List<OrderModel>> fetchOrdersForAdmin({Map<String, dynamic>? filters}) async {
     try {
-      Query query = _firestore.collection('orders');
-      if (filters != null) {
-        if (filters['status'] != null) query = query.where('status', isEqualTo: filters['status']);
-        if (filters['orderOwner'] != null) query = query.where('orderOwner', isEqualTo: filters['orderOwner']);
-        if (filters['workerId'] != null) query = query.where('workerId', isEqualTo: filters['workerId']);
-        if (filters['dateFrom'] != null) query = query.where('createdAt', isGreaterThanOrEqualTo: filters['dateFrom']);
-        if (filters['dateTo'] != null) query = query.where('createdAt', isLessThanOrEqualTo: filters['dateTo']);
+      // Admins should be able to read all orders. Prefer a collectionGroup
+      // query over users/{uid}/orders so we can fetch orders that live under
+      // each user's subcollection. If collectionGroup access is denied by
+      // rules, fall back to top-level `orders` collection.
+      final int limit = filters?['limit'] as int? ?? 500;
+
+      // Helper to build query on a collection reference
+      Query buildQueryOnCollection(CollectionReference col) {
+        Query q = col as Query;
+        if (filters != null) {
+          if (filters['status'] != null) q = q.where('status', isEqualTo: filters['status']);
+          if (filters['orderOwner'] != null) q = q.where('orderOwner', isEqualTo: filters['orderOwner']);
+          if (filters['workerId'] != null) q = q.where('workerId', isEqualTo: filters['workerId']);
+          if (filters['dateFrom'] != null) q = q.where('createdAt', isGreaterThanOrEqualTo: filters['dateFrom']);
+          if (filters['dateTo'] != null) q = q.where('createdAt', isLessThanOrEqualTo: filters['dateTo']);
+        }
+        q = q.orderBy('createdAt', descending: true).limit(limit);
+        return q;
       }
-      query = query.orderBy('createdAt', descending: true).limit(filters?['limit'] as int? ?? 100);
-      final snap = await query.get();
-      return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+
+      // Try collectionGroup first (users/{uid}/orders)
+      try {
+        Query cgQuery = _firestore.collectionGroup('orders');
+        if (filters != null) {
+          if (filters['status'] != null) cgQuery = cgQuery.where('status', isEqualTo: filters['status']);
+          if (filters['orderOwner'] != null) cgQuery = cgQuery.where('orderOwner', isEqualTo: filters['orderOwner']);
+          if (filters['workerId'] != null) cgQuery = cgQuery.where('workerId', isEqualTo: filters['workerId']);
+          if (filters['dateFrom'] != null) cgQuery = cgQuery.where('createdAt', isGreaterThanOrEqualTo: filters['dateFrom']);
+          if (filters['dateTo'] != null) cgQuery = cgQuery.where('createdAt', isLessThanOrEqualTo: filters['dateTo']);
+        }
+        cgQuery = cgQuery.orderBy('createdAt', descending: true).limit(limit);
+        final snap = await cgQuery.get();
+        if (snap.docs.isNotEmpty) {
+          return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+        }
+      } catch (e) {
+        debugPrint('[OrderRepository] collectionGroup("orders") failed or returned empty: $e');
+      }
+
+      // Fallback: try top-level `orders` collection
+      try {
+        Query colQuery = buildQueryOnCollection(_firestore.collection('orders'));
+        final snap = await colQuery.get();
+        return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+      } catch (e) {
+        debugPrint('[OrderRepository] fetchOrdersForAdmin top-level orders failed: $e');
+        return [];
+      }
     } catch (e) {
       debugPrint('[OrderRepository] fetchOrdersForAdmin failed: $e');
       return [];
+    }
+  }
+
+  /// Fetch a single order either from top-level `orders` or from users/{uid}/orders
+  /// This will try the simplest lookup first and then fall back to searching
+  /// across users using a collectionGroup query.
+  Future<OrderModel?> fetchOrderById(String orderId) async {
+    if (orderId.trim().isEmpty) return null;
+    try {
+      // Try top-level
+      final topDoc = await _firestore.collection('orders').doc(orderId).get();
+      if (topDoc.exists) return OrderModel.fromFirestore(topDoc);
+    } catch (e) {
+      debugPrint('[OrderRepository] fetchOrderById top-level lookup failed: $e');
+    }
+
+    // Try collectionGroup: find the order in any users/{uid}/orders with remoteId or id match
+    try {
+      final cgSnap = await _firestore.collectionGroup('orders').where(FieldPath.documentId, isEqualTo: orderId).limit(1).get();
+      if (cgSnap.docs.isNotEmpty) return OrderModel.fromFirestore(cgSnap.docs.first);
+
+      // Sometimes remoteId is stored as a field; search by that too
+      final cgByRemote = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: orderId).limit(1).get();
+      if (cgByRemote.docs.isNotEmpty) return OrderModel.fromFirestore(cgByRemote.docs.first);
+    } catch (e) {
+      debugPrint('[OrderRepository] fetchOrderById collectionGroup lookup failed: $e');
+    }
+
+    return null;
+  }
+
+  /// Assign a worker to an order. Writes both top-level and user-subcollection
+  /// documents where possible. This operation should be executed by admins or
+  /// trusted backend services; client rules may prevent some writes.
+  Future<void> assignWorkerToOrder({required String orderId, required String workerId, required String adminId}) async {
+    if (orderId.trim().isEmpty) throw Exception('orderId required');
+    try {
+      final updateData = {
+        'workerId': workerId,
+        'assignedBy': adminId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // Update top-level if exists
+      try {
+        final topRef = _firestore.collection('orders').doc(orderId);
+        final topDoc = await topRef.get();
+        if (topDoc.exists) {
+          await topRef.set(updateData, SetOptions(merge: true));
+        }
+      } catch (e) {
+        debugPrint('[OrderRepository] assignWorkerToOrder top-level update failed: $e');
+      }
+
+      // Update any user subcollection document with matching remoteId or id
+      try {
+        final cgById = await _firestore.collectionGroup('orders').where(FieldPath.documentId, isEqualTo: orderId).limit(1).get();
+        if (cgById.docs.isNotEmpty) {
+          final docRef = cgById.docs.first.reference;
+          await docRef.set(updateData, SetOptions(merge: true));
+        } else {
+          final cgByRemote = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: orderId).limit(1).get();
+          if (cgByRemote.docs.isNotEmpty) {
+            final docRef = cgByRemote.docs.first.reference;
+            await docRef.set(updateData, SetOptions(merge: true));
+          }
+        }
+      } catch (e) {
+        debugPrint('[OrderRepository] assignWorkerToOrder user-subcollection update failed: $e');
+      }
+    } catch (e) {
+      debugPrint('[OrderRepository] assignWorkerToOrder failed: $e');
+      rethrow;
     }
   }
 

@@ -9,7 +9,7 @@ class AdminOrderBloc extends Bloc<AdminOrderEvent, AdminOrderState> {
     on<LoadOrders>((event, emit) async {
       emit(AdminOrderLoading());
       try {
-        final orders = await repo.getAllOrders();
+        final orders = await repo.getAllOrders(filters: event.filters);
         emit(AdminOrderLoaded(orders));
       } catch (e) {
         emit(AdminOrderError(e.toString()));
@@ -44,4 +44,3 @@ class AdminOrderBloc extends Bloc<AdminOrderEvent, AdminOrderState> {
     });
   }
 }
-

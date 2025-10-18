@@ -34,16 +34,9 @@ class OrderRepositoryImpl implements OrderRepository {
     // Update any matching doc in users/{uid}/orders (collectionGroup). Try match by documentId and by remoteId field
     var foundAny = false;
     try {
-      try {
-        final byId = await _firestore.collectionGroup('orders').where(FieldPath.documentId, isEqualTo: orderId).get();
-        for (final doc in byId.docs) {
-          try {
-            await doc.reference.set(update, SetOptions(merge: true));
-            foundAny = true;
-          } catch (_) {}
-        }
-      } catch (_) {}
-
+      // Avoid querying collectionGroup by FieldPath.documentId with a short id
+      // (Firestore expects a full document path when using documentId on a collectionGroup).
+      // Use the stored 'remoteId' field to locate matching per-user order docs.
       try {
         final byRemote = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: orderId).get();
         for (final doc in byRemote.docs) {
@@ -52,53 +45,55 @@ class OrderRepositoryImpl implements OrderRepository {
             foundAny = true;
           } catch (_) {}
         }
-      } catch (_) {}
-    } catch (e) {
-      // collectionGroup may be denied; fall through to per-user enumeration below
-    }
-
-    // If collectionGroup didn't find any documents (or was denied), enumerate users and attempt to update per-user docs directly
-    if (!foundAny) {
-      try {
-        Query usersQuery = _firestore.collection('users').orderBy('__name__').limit(50);
-        DocumentSnapshot? lastUser;
-        while (true) {
-          if (lastUser != null) usersQuery = usersQuery.startAfterDocument(lastUser);
-          final usersSnap = await usersQuery.get();
-          if (usersSnap.docs.isEmpty) break;
-          for (final udoc in usersSnap.docs) {
-            lastUser = udoc;
-            try {
-              final userOrdersCol = udoc.reference.collection('orders');
-              // Try by document id
-              try {
-                final candidate = await userOrdersCol.doc(orderId).get();
-                if (candidate.exists) {
-                  await candidate.reference.set(update, SetOptions(merge: true));
-                  foundAny = true;
-                  return; // done
-                }
-              } catch (_) {}
-
-              // Try by remoteId field
-              try {
-                final byRemote = await userOrdersCol.where('remoteId', isEqualTo: orderId).limit(1).get();
-                if (byRemote.docs.isNotEmpty) {
-                  await byRemote.docs.first.reference.set(update, SetOptions(merge: true));
-                  foundAny = true;
-                  return;
-                }
-              } catch (_) {}
-            } catch (_) {
-              // skip this user if we lack permission
-              continue;
-            }
-          }
-          if (usersSnap.docs.length < 50) break;
-        }
       } catch (e) {
-        // final fallback: nothing we can do client-side
+        // collectionGroup may be denied; fall through to per-user enumeration below
       }
+
+      // If collectionGroup didn't find any documents (or was denied), enumerate users and attempt to update per-user docs directly
+      if (!foundAny) {
+        try {
+          Query usersQuery = _firestore.collection('users').orderBy('__name__').limit(50);
+          DocumentSnapshot? lastUser;
+          while (true) {
+            if (lastUser != null) usersQuery = usersQuery.startAfterDocument(lastUser);
+            final usersSnap = await usersQuery.get();
+            if (usersSnap.docs.isEmpty) break;
+            for (final udoc in usersSnap.docs) {
+              lastUser = udoc;
+              try {
+                final userOrdersCol = udoc.reference.collection('orders');
+                // Try by document id
+                try {
+                  final candidate = await userOrdersCol.doc(orderId).get();
+                  if (candidate.exists) {
+                    await candidate.reference.set(update, SetOptions(merge: true));
+                    foundAny = true;
+                    return; // done
+                  }
+                } catch (_) {}
+
+                // Try by remoteId field
+                try {
+                  final byRemote = await userOrdersCol.where('remoteId', isEqualTo: orderId).limit(1).get();
+                  if (byRemote.docs.isNotEmpty) {
+                    await byRemote.docs.first.reference.set(update, SetOptions(merge: true));
+                    foundAny = true;
+                    return;
+                  }
+                } catch (_) {}
+              } catch (_) {
+                // skip this user if we lack permission
+                continue;
+              }
+            }
+            if (usersSnap.docs.length < 50) break;
+          }
+        } catch (e) {
+          // final fallback: nothing we can do client-side
+        }
+      }
+    } catch (e) {
+      // Ignore errors in assignWorker
     }
   }
 
@@ -113,18 +108,43 @@ class OrderRepositoryImpl implements OrderRepository {
 
     // Delete from any users/{uid}/orders location
     try {
-      final byId = await _firestore.collectionGroup('orders').where(FieldPath.documentId, isEqualTo: orderId).get();
-      for (final doc in byId.docs) {
-        try {
-          await doc.reference.delete();
-        } catch (_) {}
-      }
+      // collectionGroup queries cannot filter by documentId using a short id
+      // (they require a full document path). Use the 'remoteId' field instead.
       final byRemote = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: orderId).get();
       for (final doc in byRemote.docs) {
         try {
           await doc.reference.delete();
         } catch (_) {}
       }
+      // As a final fallback, enumerate users and attempt per-user deletes
+      try {
+        Query usersQuery = _firestore.collection('users').orderBy('__name__').limit(50);
+        DocumentSnapshot? lastUser;
+        while (true) {
+          if (lastUser != null) usersQuery = usersQuery.startAfterDocument(lastUser);
+          final usersSnap = await usersQuery.get();
+          if (usersSnap.docs.isEmpty) break;
+          for (final udoc in usersSnap.docs) {
+            lastUser = udoc;
+            try {
+              final userOrdersCol = udoc.reference.collection('orders');
+              final candidate = await userOrdersCol.doc(orderId).get();
+              if (candidate.exists) {
+                await candidate.reference.delete();
+                return;
+              }
+              final byRemoteLocal = await userOrdersCol.where('remoteId', isEqualTo: orderId).limit(1).get();
+              if (byRemoteLocal.docs.isNotEmpty) {
+                await byRemoteLocal.docs.first.reference.delete();
+                return;
+              }
+            } catch (_) {
+              continue; // skip users we can't access
+            }
+          }
+          if (usersSnap.docs.length < 50) break;
+        }
+      } catch (_) {}
     } catch (_) {}
   }
 
@@ -149,7 +169,7 @@ class OrderRepositoryImpl implements OrderRepository {
     // First try collectionGroup across users/{uid}/orders
     try {
       Query cg = _firestore.collectionGroup('orders');
-      cg = _applyFilters(cg) as Query;
+      cg = _applyFilters(cg);
       cg = cg.orderBy('createdAt', descending: true).limit(limit);
       final snap = await cg.get();
       if (snap.docs.isNotEmpty) {
@@ -162,7 +182,7 @@ class OrderRepositoryImpl implements OrderRepository {
     // If collectionGroup failed or returned empty, try top-level orders collection
     try {
       Query q = _firestore.collection('orders');
-      q = _applyFilters(q) as Query;
+      q = _applyFilters(q);
       q = q.orderBy('createdAt', descending: true).limit(limit);
       final snap = await q.get();
       if (snap.docs.isNotEmpty) return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
@@ -190,14 +210,14 @@ class OrderRepositoryImpl implements OrderRepository {
 
           try {
             CollectionReference userOrders = udoc.reference.collection('orders');
-            Query uq = userOrders as Query;
+            Query uq = userOrders;
             // If filters include a specific orderOwner/userId, skip other users
             if (filters != null && (filters['orderOwner'] != null || filters['userId'] != null)) {
               final filterUserId = (filters['orderOwner'] ?? filters['userId']) as String?;
               if (filterUserId != null && filterUserId != udoc.id) continue;
             }
 
-            uq = _applyFilters(uq) as Query;
+            uq = _applyFilters(uq);
             uq = uq.orderBy('createdAt', descending: true).limit(remaining);
             final ordersSnap = await uq.get();
             for (final od in ordersSnap.docs) {
@@ -244,16 +264,42 @@ class OrderRepositoryImpl implements OrderRepository {
 
     // Update any matching user-subcollection docs
     try {
-      final byId = await _firestore.collectionGroup('orders').where(FieldPath.documentId, isEqualTo: orderId).get();
-      for (final doc in byId.docs) {
-        try {
-          await doc.reference.set(update, SetOptions(merge: true));
-        } catch (_) {}
-      }
+      // Prefer searching by 'remoteId' field for collectionGroup queries
       final byRemote = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: orderId).get();
       for (final doc in byRemote.docs) {
         try {
           await doc.reference.set(update, SetOptions(merge: true));
+        } catch (_) {}
+      }
+      // If nothing found, fall back to enumerating users and updating per-user docs
+      if (byRemote.docs.isEmpty) {
+        try {
+          Query usersQuery = _firestore.collection('users').orderBy('__name__').limit(50);
+          DocumentSnapshot? lastUser;
+          while (true) {
+            if (lastUser != null) usersQuery = usersQuery.startAfterDocument(lastUser);
+            final usersSnap = await usersQuery.get();
+            if (usersSnap.docs.isEmpty) break;
+            for (final udoc in usersSnap.docs) {
+              lastUser = udoc;
+              try {
+                final userOrdersCol = udoc.reference.collection('orders');
+                final candidate = await userOrdersCol.doc(orderId).get();
+                if (candidate.exists) {
+                  await candidate.reference.set(update, SetOptions(merge: true));
+                  return;
+                }
+                final byRemoteLocal = await userOrdersCol.where('remoteId', isEqualTo: orderId).limit(1).get();
+                if (byRemoteLocal.docs.isNotEmpty) {
+                  await byRemoteLocal.docs.first.reference.set(update, SetOptions(merge: true));
+                  return;
+                }
+              } catch (_) {
+                continue;
+              }
+            }
+            if (usersSnap.docs.length < 50) break;
+          }
         } catch (_) {}
       }
     } catch (_) {}

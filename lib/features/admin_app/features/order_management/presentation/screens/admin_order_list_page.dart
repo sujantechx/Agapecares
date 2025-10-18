@@ -56,7 +56,27 @@ class _AdminOrderListPageState extends State<AdminOrderListPage> {
       body: BlocBuilder<AdminOrderBloc, AdminOrderState>(
         builder: (context, state) {
           if (state is AdminOrderLoading) return const Center(child: CircularProgressIndicator());
-          if (state is AdminOrderError) return Center(child: Text('Error: ${state.message}'));
+          // Show detailed error banner for admins to aid debugging Firestore rules / permission issues
+          if (state is AdminOrderError) {
+            return Column(
+              children: [
+                Container(
+                  color: Colors.red.shade700,
+                  padding: const EdgeInsets.all(12),
+                  width: double.infinity,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error, color: Colors.white),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('Admin fetch error: ${state.message}', style: const TextStyle(color: Colors.white))),
+                    ],
+                  ),
+                ),
+                Expanded(child: Center(child: Text('Error: ${state.message}'))),
+              ],
+            );
+          }
+
           if (state is AdminOrderLoaded) {
             if (state.orders.isEmpty) return const Center(child: Text('No orders found'));
             return ListView.builder(

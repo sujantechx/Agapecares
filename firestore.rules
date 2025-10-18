@@ -50,10 +50,18 @@ service cloud.firestore {
     match /users/{userId} {
       allow create: if isSignedIn() && isOwner(userId) && noServerFields();
 
-      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      // Allow reads for the owner, or when the requester has an admin claim,
+      // or when the requester's users/{uid} doc contains role == 'admin'.
+      allow read: if isSignedIn() && (
+        isOwner(userId)
+        || (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+        || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
 
       allow update: if isSignedIn() && (
-        isAdmin()
+        // Allow updates by admin (via token or user doc role) or the owner with restrictions
+        (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+        || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
         || (
           isOwner(userId)
           && ( !('role' in request.resource.data) || request.resource.data.role == resource.data.role )
@@ -61,7 +69,11 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow delete: if isSignedIn() && (
+        isOwner(userId)
+        || (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+        || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
 
       // users/{uid}/orders subcollection
       match /orders/{orderId} {
@@ -73,21 +85,25 @@ service cloud.firestore {
 
         allow get: if isSignedIn() && (
           isOwner(userId)
-          || isAdmin()
+          || (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+          || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
           || (isWorker() && (resource.data.workerId == request.auth.uid || resource.data.status == 'pending'))
         );
 
         allow list: if isSignedIn() && (
-          isAdmin()
+          // Allow listing only for admins or the owner of this user's orders.
+          // Clients should query the per-user subcollection `users/{uid}/orders` when
+          // listing a user's orders. Avoid inspecting request.query here because
+          // the rules engine in this environment does not support request.query.where().
+          (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+          || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
           || isOwner(userId)
-          || (isWorker() && (
-              (request.query.where('workerId','==', request.auth.uid))
-              || (request.query.where('status','==', 'pending'))
-            ))
         );
 
         allow update: if isSignedIn() && (
-          isAdmin()
+          // Admins can update any order
+          (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+          || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
           || (
             isOwner(userId)
             && !( 'workerId' in request.resource.data )
@@ -110,7 +126,10 @@ service cloud.firestore {
           )
         );
 
-        allow delete: if isSignedIn() && isAdmin();
+        allow delete: if isSignedIn() && (
+          (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+          || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        );
       }
 
       // users/{uid}/payments subcollection
@@ -150,26 +169,26 @@ service cloud.firestore {
     // -----------------------
     match /orders/{orderId} {
       allow get: if isSignedIn() && (
-        isAdmin()
+        (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+        || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
         || (resource.data.orderOwner == request.auth.uid)
         || (resource.data.userId == request.auth.uid)
         || (isWorker() && (resource.data.workerId == request.auth.uid || resource.data.status == 'pending'))
       );
 
       allow list: if isSignedIn() && (
-        isAdmin()
-        || (request.query.where('orderOwner','==', request.auth.uid))
-        || (request.query.where('userId','==', request.auth.uid))
-        || (isWorker() && (
-             (request.query.where('workerId','==', request.auth.uid))
-             || (request.query.where('status','==', 'pending'))
-           ))
+        // Top-level orders listing is restricted to admins only. Regular users
+        // must list their orders from `users/{uid}/orders` to avoid exposing
+        // other users' orders. This also avoids using unsupported request.query.where().
+        (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+        || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
 
       allow create: if isSignedIn() && noServerFields() && ('items' in request.resource.data) && ('totalAmount' in request.resource.data);
 
       allow update: if isSignedIn() && (
-        isAdmin()
+        (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+        || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
         || ((resource.data.orderOwner == request.auth.uid || resource.data.orderOwner == request.auth.token.phone_number)
             && !( 'workerId' in request.resource.data )
             && !( 'status' in request.resource.data )
@@ -185,7 +204,10 @@ service cloud.firestore {
             ))
       );
 
-      allow delete: if isSignedIn() && isAdmin();
+      allow delete: if isSignedIn() && (
+        (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+        || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
     }
 
     // -----------------------
@@ -200,7 +222,9 @@ service cloud.firestore {
       );
 
       allow get: if isSignedIn() && (isAdmin() || request.resource.data.orderOwner == request.auth.uid || request.resource.data.userId == request.auth.uid);
-      allow list: if isSignedIn() && (isAdmin() || request.query.where('orderOwner','==', request.auth.uid));
+      // Restrict listing bookings at top-level to admins; users should list their
+      // bookings via a per-user subcollection if available.
+      allow list: if isSignedIn() && isAdmin();
       allow update: if isSignedIn() && (isAdmin() || ((request.resource.data.orderOwner == request.auth.uid || request.resource.data.userId == request.auth.uid) && noServerFields()));
       allow delete: if isSignedIn() && isAdmin();
     }

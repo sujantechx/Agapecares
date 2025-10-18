@@ -374,10 +374,8 @@ class OrderRepositoryImpl implements OrderRepository {
 
     // Try collectionGroup: find the order in any users/{uid}/orders with remoteId or id match
     try {
-      final cgSnap = await _firestore.collectionGroup('orders').where(FieldPath.documentId, isEqualTo: orderId).limit(1).get();
-      if (cgSnap.docs.isNotEmpty) return OrderModel.fromFirestore(cgSnap.docs.first);
-
-      // Sometimes remoteId is stored as a field; search by that too
+      // collectionGroup cannot be queried by raw documentId using a short id value
+      // (it expects a full path). Use the stored 'remoteId' field instead.
       final cgByRemote = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: orderId).limit(1).get();
       if (cgByRemote.docs.isNotEmpty) return OrderModel.fromFirestore(cgByRemote.docs.first);
     } catch (e) {
@@ -412,16 +410,12 @@ class OrderRepositoryImpl implements OrderRepository {
 
       // Update any user subcollection document with matching remoteId or id
       try {
-        final cgById = await _firestore.collectionGroup('orders').where(FieldPath.documentId, isEqualTo: orderId).limit(1).get();
-        if (cgById.docs.isNotEmpty) {
-          final docRef = cgById.docs.first.reference;
+        // Prefer searching by remoteId field since collectionGroup documentId
+        // filters expect a full path when used with collectionGroup queries.
+        final cgByRemote = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: orderId).limit(1).get();
+        if (cgByRemote.docs.isNotEmpty) {
+          final docRef = cgByRemote.docs.first.reference;
           await docRef.set(updateData, SetOptions(merge: true));
-        } else {
-          final cgByRemote = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: orderId).limit(1).get();
-          if (cgByRemote.docs.isNotEmpty) {
-            final docRef = cgByRemote.docs.first.reference;
-            await docRef.set(updateData, SetOptions(merge: true));
-          }
         }
       } catch (e) {
         debugPrint('[OrderRepository] assignWorkerToOrder user-subcollection update failed: $e');

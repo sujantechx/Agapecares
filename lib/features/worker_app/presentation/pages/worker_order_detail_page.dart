@@ -52,7 +52,7 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
       final updated = await _repo.updateJobStatus(_job!.id, status);
       if (updated != null) {
         setState(() => _job = updated);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Status updated to ${updated.status}')));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Status updated to ${updated.status}')));
       }
     } catch (e) {
       debugPrint('[WorkerOrderDetailPage] changeStatus error: $e');
@@ -69,9 +69,9 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
 
     void add(String label, String to, {Color? color}) {
       buttons.add(ElevatedButton(
-        onPressed: () => _changeStatus(to),
+        onPressed: _changingStatus ? null : () => _changeStatus(to),
         style: ElevatedButton.styleFrom(backgroundColor: color),
-        child: Text(label),
+        child: _changingStatus ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Text(label),
       ));
     }
 
@@ -176,10 +176,13 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
                         const SizedBox(height: 8),
                       ],
                       const Spacer(),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: _buildActionButtons(),
-                      )
+                      if (_changingStatus)
+                        const Center(child: Padding(padding: EdgeInsets.only(bottom: 12), child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator())))
+                      else
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: _buildActionButtons(),
+                        )
                     ],
                   ),
                 ),

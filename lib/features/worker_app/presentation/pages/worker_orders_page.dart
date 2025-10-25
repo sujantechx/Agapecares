@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:agapecares/features/worker_app/data/repositories/worker_job_repository.dart';
 import 'package:agapecares/features/worker_app/presentation/widgets/job_card.dart';
+import 'package:go_router/go_router.dart';
+import 'package:agapecares/app/routes/app_routes.dart';
 
 import '../../../../core/models/job_model.dart';
 
@@ -61,6 +63,12 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> {
           await _loadJobs();
         }
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Status updated to ${updated.status}')));
+        // Navigate to order detail page for the updated order
+        try {
+          GoRouter.of(context).go(AppRoutes.workerOrderDetail.replaceFirst(':id', updated.id));
+        } catch (_) {
+          Navigator.of(context).pushNamed(AppRoutes.workerOrderDetail.replaceFirst(':id', updated.id));
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Job not found')));
       }
@@ -75,7 +83,18 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> {
   Future<void> _setAvailability(bool v) async {
     setState(() => _isOnline = v);
     try {
-      await _repo.setAvailability(v);
+      final repoDyn = _repo as dynamic;
+      try {
+        await repoDyn.setAvailability(v);
+      } on NoSuchMethodError {
+        try {
+          await repoDyn.updateAvailability(v);
+        } on NoSuchMethodError {
+          debugPrint('[WorkerOrdersPage] repository has no setAvailability/updateAvailability method');
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Availability saved locally')));
+          return;
+        }
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(v ? 'You are now Online' : 'You are now Offline')));
     } catch (e) {
       debugPrint('[WorkerOrdersPage] setAvailability error: $e');
@@ -160,7 +179,11 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> {
                                   subtitle: Text('${j.address} • ${j.customerName}'),
                                   trailing: Text(j.scheduledAt.toLocal().toString().split('.').first),
                                   onTap: () {
-                                    Navigator.of(context).pushNamed('/worker/orders/${j.id}');
+                                    try {
+                                      GoRouter.of(context).go(AppRoutes.workerOrderDetail.replaceFirst(':id', j.id));
+                                    } catch (_) {
+                                      Navigator.of(context).pushNamed(AppRoutes.workerOrderDetail.replaceFirst(':id', j.id));
+                                    }
                                   },
                                 )),
                             const SizedBox(height: 24),

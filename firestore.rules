@@ -144,8 +144,13 @@ service cloud.firestore {
             isSignedIn()
             && resource.data.workerId == request.auth.uid
             // allow updatedAt as well (client may send serverTimestamp)
-            && request.resource.data.keys().hasOnly(['status','orderStatus','workerId','updatedAt'])
-            && request.resource.data.workerId == resource.data.workerId
+            // Accept either payloads that include workerId or that omit it (status-only)
+            && (
+              request.resource.data.keys().hasOnly(['status','orderStatus','workerId','updatedAt'])
+              || request.resource.data.keys().hasOnly(['status','orderStatus','updatedAt'])
+            )
+            // if workerId is provided, ensure it matches the existing value
+            && ( !('workerId' in request.resource.data) || request.resource.data.workerId == resource.data.workerId )
             && request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
             && resource.data.status != 'completed'
             // ensure updatedAt is either not written or is a server timestamp or unchanged
@@ -261,6 +266,24 @@ service cloud.firestore {
               ) && request.resource.data.workerId == resource.data.workerId)
             || ( !('status' in request.resource.data) && !('workerId' in request.resource.data) )
           )
+        )
+        // Narrow fallback: allow assigned worker to perform a minimal, safe status-only update
+        // even if other checks fail — only for the exact fields below and permitted values.
+        || (
+          isSignedIn()
+          && resource.data.workerId == request.auth.uid
+          // allow updatedAt as well (client may send serverTimestamp)
+          // Accept either payloads that include workerId or that omit it (status-only)
+          && (
+            request.resource.data.keys().hasOnly(['status','orderStatus','workerId','updatedAt'])
+            || request.resource.data.keys().hasOnly(['status','orderStatus','updatedAt'])
+          )
+          // if workerId is provided, ensure it matches the existing value
+          && ( !('workerId' in request.resource.data) || request.resource.data.workerId == resource.data.workerId )
+          && request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
+          && resource.data.status != 'completed'
+          // ensure updatedAt is either not written or is a server timestamp or unchanged
+          && allowedServerTimestamp('updatedAt')
         )
       );
 

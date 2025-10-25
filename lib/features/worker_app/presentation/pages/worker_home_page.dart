@@ -30,7 +30,8 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
   int _incomingCount = 0;
   int _completedCount = 0;
 
-  // New: services list
+  // Services list (populated by _subscribeServices). Keep for future UI — suppress unused-field lint for now.
+  // ignore: unused_field
   List<ServiceModel> _services = [];
   // New: assigned orders preview (job-shaped, sanitized for workers)
   List<JobModel> _assignedOrdersPreview = [];
@@ -39,6 +40,9 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
   // Realtime subscriptions
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _servicesSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _assignedSub;
+
+  // Track per-job update in-flight states so we can show per-card loading indicators
+  final Set<String> _updatingJobIds = <String>{};
 
   @override
   void initState() {
@@ -238,28 +242,187 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
 
   Future<void> _loadCounts(String workerId) async {
     try {
-      // assigned & completed for this worker from per-worker mirror
-      final assignedSnap = await FirebaseFirestore.instance
-          .collection('workers')
-          .doc(workerId)
-          .collection('orders')
-          .get();
-      final assigned = assignedSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+      // Try repository first as a fast path (keeps previous behavior)
+      List<JobModel> repoJobs = [];
+      try {
+        repoJobs = await _jobRepo.getAssignedJobs(workerId: workerId);
+      } catch (_) {
+        repoJobs = [];
+      }
 
-      // incoming: not available to workers (restricted by rules) — show 0 or fetch via admin route
-      final incoming = <OrderModel>[];
+      // We'll collect snapshots that succeeded. Each query is executed independently so a permission error
+      // for collectionGroup/top-level won't abort the whole method.
+      final List<QuerySnapshot<Map<String, dynamic>>> results = [];
 
-      // orderStatus is an enum on OrderModel; compare against OrderStatus.completed
-      final completed = assigned.where((o) => o.orderStatus == OrderStatus.completed).toList();
-      final inProgress = assigned.where((o) => o.orderStatus != OrderStatus.completed).toList();
-      setState(() {
-        _incomingCount = incoming.length;
-        _assignedCount = inProgress.length;
-        _completedCount = completed.length;
-      });
-      debugPrint('[WorkerHomePage] counts incoming=${_incomingCount} assigned=${_assignedCount} completed=${_completedCount} (workerId=$workerId)');
+      // worker mirror (most likely readable by worker)
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collection('workers')
+            .doc(workerId)
+            .collection('orders')
+            .get();
+        results.add(snap);
+      } catch (e) {
+        debugPrint('[WorkerHomePage] _loadCounts: worker mirror read failed: $e');
+      }
+
+      // collectionGroup('orders') where workerId == workerId
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collectionGroup('orders')
+            .where('workerId', isEqualTo: workerId)
+            .get();
+        results.add(snap);
+      } catch (e) {
+        debugPrint('[WorkerHomePage] _loadCounts: collectionGroup by worker read failed: $e');
+      }
+
+      // top-level orders where workerId == workerId
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collection('orders')
+            .where('workerId', isEqualTo: workerId)
+            .get();
+        results.add(snap);
+      } catch (e) {
+        debugPrint('[WorkerHomePage] _loadCounts: top-level orders read failed: $e');
+      }
+
+      // collectionGroup where orderOwner == workerId (fallback)
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collectionGroup('orders')
+            .where('orderOwner', isEqualTo: workerId)
+            .get();
+        results.add(snap);
+      } catch (e) {
+        debugPrint('[WorkerHomePage] _loadCounts: collectionGroup by owner read failed: $e');
+      }
+
+      // If we couldn't read any source, fall back to repository or zero counts
+      if (results.isEmpty && repoJobs.isEmpty) {
+        if (mounted) setState(() {
+          _assignedCount = 0;
+          _incomingCount = 0;
+          _completedCount = 0;
+        });
+        debugPrint('[WorkerHomePage] _loadCounts: no readable sources found, counts set to 0');
+        return;
+      }
+
+      // Combine and de-duplicate by a stable id. Prefer 'remoteId' if present, otherwise use document id.
+      final Map<String, Map<String, dynamic>> combined = {};
+      for (final snap in results) {
+        for (final doc in snap.docs) {
+          try {
+            final data = Map<String, dynamic>.from(doc.data());
+            final key = (data['remoteId'] ?? data['remote_id'] ?? doc.id).toString();
+            // Keep the doc with latest updatedAt if present
+            if (!combined.containsKey(key)) {
+              final copy = <String, dynamic>{...data};
+              copy['__source_doc_id'] = doc.id;
+              combined[key] = copy;
+            } else {
+              // If both have updatedAt, keep the newest
+              final existing = combined[key]!;
+              final existingUpdated = existing['updatedAt'];
+              final newUpdated = data['updatedAt'];
+              if (newUpdated != null && existingUpdated != null) {
+                try {
+                  if (newUpdated.toString().compareTo(existingUpdated.toString()) > 0) {
+                    final copy = <String, dynamic>{...data};
+                    copy['__source_doc_id'] = doc.id;
+                    combined[key] = copy;
+                  }
+                } catch (_) {}
+              }
+            }
+          } catch (e) {
+            debugPrint('[WorkerHomePage] _loadCounts: skipping doc ${doc.id} parse error: $e');
+          }
+        }
+      }
+
+      // Ensure repoJobs (JobModel) are included if repository returned items not present in combined set
+      for (final j in repoJobs) {
+        if (j.id != null && j.id!.isNotEmpty && !combined.containsKey(j.id)) {
+          combined[j.id!] = {
+            'status': j.status,
+            'remoteId': j.id,
+            '__source_doc_id': j.id,
+          };
+        }
+      }
+
+      // Normalize statuses and compute counts
+      int completed = 0;
+      int incoming = 0;
+      int assigned = 0;
+
+      for (final entry in combined.values) {
+        String raw = '';
+        try {
+          if (entry.containsKey('status')) raw = (entry['status'] ?? '').toString();
+          if ((raw.isEmpty) && entry.containsKey('orderStatus')) raw = (entry['orderStatus'] ?? '').toString();
+          if ((raw.isEmpty) && entry.containsKey('order_status')) raw = (entry['order_status'] ?? '').toString();
+        } catch (_) {
+          raw = '';
+        }
+        final status = raw.trim().toLowerCase();
+
+        if (status.contains('complete')) {
+          completed++;
+        } else if (status.contains('pending') || status.contains('incoming') || status == 'awaiting') {
+          incoming++;
+        } else {
+          // anything else treat as assigned/active
+          assigned++;
+        }
+      }
+
+      // Update UI state
+      if (mounted) {
+        setState(() {
+          _assignedCount = assigned;
+          _incomingCount = incoming;
+          _completedCount = completed;
+        });
+      }
+
+      debugPrint('[WorkerHomePage] _loadCounts combined=${combined.length} assigned=${_assignedCount} incoming=${_incomingCount} completed=${_completedCount}');
     } catch (e) {
       debugPrint('[WorkerHomePage] _loadCounts error: $e');
+    }
+  }
+
+  Future<void> _changeJobStatus(String orderId, String status) async {
+    try {
+      // mark this job as updating (per-card loading) so UI shows spinner only for this job
+      setState(() => _updatingJobIds.add(orderId));
+      final updated = await _jobRepo.updateJobStatus(orderId, status);
+      if (updated != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Order ${updated.id} marked $status')));
+          // Refresh preview; repository/real-time subscription should reflect change, but reload preview to be safe
+          final wid = await _jobRepo.getCurrentWorkerId();
+          if (wid != null) await _loadAssignedPreview(wid);
+
+          // Navigate to order detail page for the updated order
+          try {
+            GoRouter.of(context).go(AppRoutes.workerOrderDetail.replaceFirst(':id', updated.id));
+          } catch (_) {
+            Navigator.of(context).pushNamed(AppRoutes.workerOrderDetail.replaceFirst(':id', updated.id));
+          }
+        }
+      } else {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to update order')));
+      }
+    } catch (e) {
+      debugPrint('[WorkerHomePage] _changeJobStatus error: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      // clear the per-job loading flag
+      if (mounted) setState(() => _updatingJobIds.remove(orderId));
     }
   }
 
@@ -341,9 +504,14 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
                       CircleAvatar(
                         radius: 34,
                         child: Text(
-                          _profile?.name != null && _profile!.name!.isNotEmpty
-                              ? (_profile!.name!.split(' ').map((e) => e.isNotEmpty ? e[0] : '').join())
-                              : 'W',
+                          // compute initials safely without force-unwrapping
+                          (() {
+                            final name = _profile?.name ?? '';
+                            if (name.isNotEmpty) {
+                              return name.split(' ').where((e) => e.isNotEmpty).map((e) => e[0]).join();
+                            }
+                            return 'W';
+                          })(),
                           style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -356,7 +524,12 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
                             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 4),
-                          Text(_profile?.email ?? 'No email available'),
+                          // compute email display safely to avoid analyzer null-coalescing warnings
+                          Text((() {
+                            final e = _profile?.email;
+                            if (e != null && e.isNotEmpty) return e;
+                            return 'No email available';
+                          })()),
                           const SizedBox(height: 2),
                           Text(_profile?.phoneNumber ?? ''),
                         ],
@@ -422,88 +595,120 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
                     label: const Text('View Orders'),
                   ),
                   const SizedBox(height: 12),
-                  // New sections: Services and Assigned Work preview
-                  const Text('Services', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  _services.isEmpty
-                      ? const Text('No services available')
-                      : SizedBox(
-                          height: 120,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: _services.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 8),
-                            itemBuilder: (context, i) {
-                              final s = _services[i];
-                              return Card(
-                                child: Container(
-                                  width: 200,
-                                  padding: const EdgeInsets.all(8),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(s.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                      const SizedBox(height: 6),
-                                      Text('₹${s.basePrice.toStringAsFixed(2)}'),
-                                      const SizedBox(height: 6),
-                                      Expanded(child: Text(s.description, maxLines: 3, overflow: TextOverflow.ellipsis)),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                  const SizedBox(height: 12),
+                  /// New sections: Services and Assigned Work preview
+
                   const Text('Your Work', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   _assignedOrdersPreview.isEmpty
                       ? const Text('No assigned work')
                       : Expanded(
-                          child: ListView.builder(
+                          child: ListView.separated(
                             itemCount: _assignedOrdersPreview.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
                             itemBuilder: (context, i) {
                               final j = _assignedOrdersPreview[i];
-                              final scheduled = j.scheduledAt.toLocal();
+                              // JobModel guarantees non-null scheduledAt, status and id
+                              final scheduled = j.scheduledAt;
+                              final isCompleted = j.status.toLowerCase() == 'completed';
+                              final isUpdating = _updatingJobIds.contains(j.id);
                               return Card(
-                                margin: const EdgeInsets.symmetric(vertical: 6),
+                                margin: const EdgeInsets.symmetric(vertical: 2),
                                 child: ListTile(
                                   title: Text(j.serviceName, style: const TextStyle(fontWeight: FontWeight.bold)),
                                   subtitle: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text('${j.address}'),
+                                      Text('${j.address ?? ''}'),
                                       const SizedBox(height: 4),
                                       Text('${scheduled.year}-${scheduled.month.toString().padLeft(2,'0')}-${scheduled.day.toString().padLeft(2,'0')} ${scheduled.hour.toString().padLeft(2,'0')}:${scheduled.minute.toString().padLeft(2,'0')}', style: const TextStyle(fontSize: 12)),
                                       const SizedBox(height: 4),
                                       Text('${j.customerName} • ${j.customerPhone}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
                                     ],
                                   ),
-                                  trailing: Text(j.status.toUpperCase().replaceAll('_', ' '), style: const TextStyle(fontSize: 12)),
+                                  trailing: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(j.status.toUpperCase().replaceAll('_', ' '), style: const TextStyle(fontSize: 12)),
+                                      const SizedBox(height: 6),
+                                      if (!isCompleted)
+                                        (isUpdating
+                                            ? const SizedBox(width: 64, height: 32, child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))))
+                                            : ElevatedButton(
+                                                onPressed: () async {
+                                                  // Confirm before marking complete
+                                                  final ok = await showDialog<bool>(
+                                                    context: context,
+                                                    builder: (ctx) => AlertDialog(
+                                                       title: const Text('Mark as completed?'),
+                                                       content: const Text('Do you want to mark this job as completed?'),
+                                                       actions: [
+                                                         TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+                                                         TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Yes')),
+                                                       ],
+                                                     ),
+                                                  ) ?? false; // coalesce to non-null bool to avoid nullable checks
+                                                  if (ok) {
+                                                    await _changeJobStatus(j.id, 'completed');
+                                                  }
+                                                },
+                                                child: const Text('Complete'),
+                                              ))
+                                      else
+                                        const SizedBox.shrink()
+                                    ],
+                                  ),
                                   onTap: () {
                                     try {
-                                      // Use the route template but replace the :id placeholder with the actual id
                                       GoRouter.of(context).go(AppRoutes.workerOrderDetail.replaceFirst(':id', j.id));
                                     } catch (_) {
-                                      // Fallback for environments without GoRouter: push the concrete path as the route name
                                       Navigator.of(context).pushNamed(AppRoutes.workerOrderDetail.replaceFirst(':id', j.id));
                                     }
                                   },
-                                ),
-                              );
-                            },
+                                ));
+                              },
+                            ),
                           ),
-                        ),
-                ],
-              ),
-            ),
-    );
-  }
 
-  @override
-  void dispose() {
-    _servicesSub?.cancel();
-    _assignedSub?.cancel();
-    super.dispose();
-  }
-}
+                  const SizedBox(height: 12),
+                  const Text('Completed Work', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Builder(builder: (context) {
+                    final completed = _assignedOrdersPreview.where((o) => o.status.toLowerCase() == 'completed').toList();
+                    if (completed.isEmpty) return const Text('No completed work yet');
+                    return SizedBox(
+                      height: 160,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: completed.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, i) {
+                          final j = completed[i];
+                          return Card(
+                            child: Container(
+                              width: 220,
+                              padding: const EdgeInsets.all(8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(j.serviceName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 6),
+                                  Text(j.customerName, style: const TextStyle(fontSize: 12)),
+                                  const SizedBox(height: 6),
+                                  Text(j.address ?? '', maxLines: 3, overflow: TextOverflow.ellipsis),
+                                  const Spacer(),
+                                  Align(
+                                    alignment: Alignment.bottomRight,
+                                    child: Text('Completed', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
+                                  )
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  }),
+                ],
+               ),),
+      );
+  }}

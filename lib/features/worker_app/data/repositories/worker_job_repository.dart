@@ -252,7 +252,9 @@ class WorkerJobRepository {
       // Debug: print current authenticated user info
       try {
         final cu = _auth.currentUser;
-        debugPrint('[WorkerJobRepository] updateJobStatus called by auth.uid=${cu?.uid} email=${cu?.email}');
+        debugPrint(
+            '[WorkerJobRepository] updateJobStatus called by auth.uid=${cu
+                ?.uid} email=${cu?.email}');
       } catch (_) {}
 
       // Helper to read a specific doc reference and convert to JobModel
@@ -266,7 +268,8 @@ class WorkerJobRepository {
           map['id'] = snap.id;
           return JobModel.fromMap(map, id: snap.id);
         } catch (e) {
-          debugPrint('[WorkerJobRepository] _jobFromRef error for ${ref.path}: $e');
+          debugPrint(
+              '[WorkerJobRepository] _jobFromRef error for ${ref.path}: $e');
           return null;
         }
       }
@@ -276,7 +279,11 @@ class WorkerJobRepository {
       final wid = await _resolveWorkerId();
       if (wid != null && wid.isNotEmpty) {
         try {
-          final workerRef = _firestore.collection('workers').doc(wid).collection('orders').doc(id);
+          final workerRef = _firestore
+              .collection('workers')
+              .doc(wid)
+              .collection('orders')
+              .doc(id);
           final workerSnap = await workerRef.get();
           if (workerSnap.exists) {
             // Include workerId in the update so security rules allow status transitions
@@ -285,17 +292,40 @@ class WorkerJobRepository {
                 'status': status,
                 'orderStatus': status,
                 'workerId': wid,
+                'updatedAt': FieldValue.serverTimestamp(),
               });
-            } catch (e, st) {
-              debugPrint('[WorkerJobRepository] workerRef.update failed: $e');
-              debugPrint(st.toString());
-              rethrow;
+            // Also attempt to update the top-level orders/{id} to keep mirrors in sync.
+            // This is non-blocking: if the client doesn't have permission to update the top-level doc
+            // the write will fail and we log it, but the per-worker mirror update remains successful.
+            try {
+              final topRefAfterWorker = _firestore.collection('orders').doc(id);
+              final topSnapAfterWorker = await topRefAfterWorker.get();
+              if (topSnapAfterWorker.exists) {
+                try {
+                  await topRefAfterWorker.update({
+                    'status': status,
+                    'orderStatus': status,
+                    'workerId': wid,
+                    'updatedAt': FieldValue.serverTimestamp(),
+                  });
+                } catch (e) {
+                  debugPrint('[WorkerJobRepository] top-level update after worker mirror failed (non-blocking): $e');
+                }
+              }
+            } catch (e) {
+              debugPrint('[WorkerJobRepository] failed to check/top-update after worker mirror: $e');
             }
-            // Return the updated document from the exact ref to avoid stale mirrors
-            return await _jobFromRef(workerRef);
-          }
+             } catch (e, st) {
+               debugPrint('[WorkerJobRepository] workerRef.update failed: $e');
+               debugPrint(st.toString());
+               rethrow;
+             }
+             // Return the updated document from the exact ref to avoid stale mirrors
+             return await _jobFromRef(workerRef);
+           }
         } catch (e) {
-          debugPrint('[WorkerJobRepository] per-worker update failed for $id: $e');
+          debugPrint(
+              '[WorkerJobRepository] per-worker update failed for $id: $e');
           // Fall through to try collectionGroup / other doc updates
         }
 
@@ -312,67 +342,117 @@ class WorkerJobRepository {
             // users/{uid}/orders or workers/{wid}/orders document and update that.
             if (topData != null && topData['workerId'] == wid) {
               if (topData['mirroredFromUserSubcollection'] == true) {
-                debugPrint('[WorkerJobRepository] top-level orders doc for $id is a mirror; skipping client-side top-level update and falling back to collectionGroup');
+                debugPrint(
+                    '[WorkerJobRepository] top-level orders doc for $id is a mirror; skipping client-side top-level update and falling back to collectionGroup');
                 // Try to resolve the original per-user document path using the userId/orderOwner
                 final ownerId = (topData['userId'] ?? topData['orderOwner']);
-                if (ownerId != null && ownerId is String && ownerId.isNotEmpty) {
+                if (ownerId != null && ownerId is String &&
+                    ownerId.isNotEmpty) {
                   try {
-                    final userOrderRef = _firestore.collection('users').doc(ownerId).collection('orders').doc(id);
-                    debugPrint('[WorkerJobRepository] attempting update on original user subcollection path=${userOrderRef.path} for worker=$wid');
+                    final userOrderRef = _firestore.collection('users').doc(
+                        ownerId).collection('orders').doc(id);
+                    debugPrint(
+                        '[WorkerJobRepository] attempting update on original user subcollection path=${userOrderRef
+                            .path} for worker=$wid');
                     // Read the existing doc to ensure it's writable by this worker per rules
                     try {
                       final existing = await userOrderRef.get();
                       if (!existing.exists) {
-                        debugPrint('[WorkerJobRepository] users/{uid}/orders/{id} does not exist: path=${userOrderRef.path}');
+                        debugPrint(
+                            '[WorkerJobRepository] users/{uid}/orders/{id} does not exist: path=${userOrderRef
+                                .path}');
                       } else {
                         final ed = existing.data();
-                        debugPrint('[WorkerJobRepository] users/{uid}/orders/{id} doc data for ${userOrderRef.path}: $ed');
+                        debugPrint(
+                            '[WorkerJobRepository] users/{uid}/orders/{id} doc data for ${userOrderRef
+                                .path}: $ed');
                         // Safely extract workerId from the possibly-null data map
-                        final Map<String, dynamic>? edMap = (ed is Map) ? Map<String, dynamic>.from(ed as Map) : null;
-                        final dynamic docWorkerId = (edMap != null && edMap.containsKey('workerId')) ? edMap['workerId'] : null;
+                        final Map<String, dynamic>? edMap = (ed is Map) ? Map<
+                            String,
+                            dynamic>.from(ed as Map) : null;
+                        final dynamic docWorkerId = (edMap != null &&
+                            edMap.containsKey('workerId'))
+                            ? edMap['workerId']
+                            : null;
 
                         if (ed is Map && docWorkerId == wid) {
                           try {
-                            await userOrderRef.update({
-                              'status': status,
-                              'orderStatus': status,
-                              'workerId': wid,
-                            });
-                            return await _jobFromRef(userOrderRef);
-                          } catch (e, st) {
-                            debugPrint('[WorkerJobRepository] update on users/{uid}/orders/{id} failed during update: $e');
-                            debugPrint(st.toString());
-                            // fall through to collectionGroup / cloud function fallback
-                          }
+                            // Attempt a batch update: update user's subcollection doc and top-level orders doc
+                            final topRefCandidate = _firestore.collection('orders').doc(id);
+                            try {
+                              final batch = _firestore.batch();
+                              batch.update(userOrderRef, {
+                                'status': status,
+                                'orderStatus': status,
+                                'workerId': wid,
+                                'updatedAt': FieldValue.serverTimestamp(),
+                              });
+                              // If top-level doc exists and belongs to the same order id, include it in the batch
+                              final topSnapCandidate = await topRefCandidate.get();
+                              if (topSnapCandidate.exists) {
+                                // Only include top-level doc in batch if workerId matches or it's not a strict mirror
+                                batch.update(topRefCandidate, {
+                                  'status': status,
+                                  'orderStatus': status,
+                                  'workerId': wid,
+                                  'updatedAt': FieldValue.serverTimestamp(),
+                                });
+                              }
+                              await batch.commit();
+                              return await _jobFromRef(userOrderRef);
+                            } catch (batchErr) {
+                              // If batch failed (permissions), try a single update on users/{uid}/orders and continue
+                              debugPrint('[WorkerJobRepository] batch update failed, retrying single update: $batchErr');
+                              await userOrderRef.update({
+                                'status': status,
+                                'orderStatus': status,
+                                'workerId': wid,
+                                'updatedAt': FieldValue.serverTimestamp(),
+                              });
+                              return await _jobFromRef(userOrderRef);
+                            }
+                           } catch (e, st) {
+                             debugPrint('[WorkerJobRepository] update on users/{uid}/orders/{id} failed during update: $e');
+                             debugPrint(st.toString());
+                             // fall through to collectionGroup / cloud function fallback
+                           }
                         } else {
-                          debugPrint('[WorkerJobRepository] users/{uid}/orders/{id} workerId mismatch or missing. doc.workerId=$docWorkerId expected=$wid');
+                          debugPrint(
+                              '[WorkerJobRepository] users/{uid}/orders/{id} workerId mismatch or missing. doc.workerId=$docWorkerId expected=$wid');
                         }
                       }
                     } catch (e) {
-                      debugPrint('[WorkerJobRepository] failed to read users/{uid}/orders/{id}: $e');
+                      debugPrint(
+                          '[WorkerJobRepository] failed to read users/{uid}/orders/{id}: $e');
                     }
                     // Note: do NOT attempt a blind update here if the read/update above failed;
                     // fall through to the collectionGroup and cloud-function fallbacks instead.
-                   } catch (e) {
-                     debugPrint('[WorkerJobRepository] update on users/{uid}/orders/{id} outer failed: $e');
-                   }
+                  } catch (e) {
+                    debugPrint(
+                        '[WorkerJobRepository] update on users/{uid}/orders/{id} outer failed: $e');
+                  }
                 } else {
-                  debugPrint('[WorkerJobRepository] top-level mirror missing ownerId; cannot target users/{uid}/orders/{id}');
+                  debugPrint(
+                      '[WorkerJobRepository] top-level mirror missing ownerId; cannot target users/{uid}/orders/{id}');
                 }
                 // Do not attempt update on the top-level mirror; collectionGroup fallback will handle it.
               } else {
-                debugPrint('[WorkerJobRepository] attempting top-level update on path=${topRef.path} for worker=$wid; docData=$topData');
+                debugPrint(
+                    '[WorkerJobRepository] attempting top-level update on path=${topRef
+                        .path} for worker=$wid; docData=$topData');
                 await topRef.update({
                   'status': status,
                   'orderStatus': status,
                   'workerId': wid,
+                  'updatedAt': FieldValue.serverTimestamp(),
                 });
                 return await _jobFromRef(topRef);
               }
             }
           }
         } catch (e) {
-          debugPrint('[WorkerJobRepository] top-level update attempt failed for $id: $e');
+          debugPrint(
+              '[WorkerJobRepository] top-level update attempt failed for $id: $e');
           // Continue to collectionGroup fallback
         }
       }
@@ -410,10 +490,12 @@ class WorkerJobRepository {
         // This avoids using FieldPath.documentId with a single id which causes an SDK error.
         if ((cgSnap == null || cgSnap.docs.isEmpty)) {
           try {
-            final q3 = _firestore.collectionGroup('orders').where('workerId', isEqualTo: wid).limit(50);
+            final q3 = _firestore.collectionGroup('orders').where(
+                'workerId', isEqualTo: wid).limit(50);
             cgSnap = await q3.get();
           } catch (e) {
-            debugPrint('[WorkerJobRepository] collectionGroup lookup/update failed for $id (fallback workerId query): $e');
+            debugPrint(
+                '[WorkerJobRepository] collectionGroup lookup/update failed for $id (fallback workerId query): $e');
             cgSnap = null;
           }
         }
@@ -425,29 +507,49 @@ class WorkerJobRepository {
             if (assigned == wid) {
               final path = d.reference.path;
               // Detailed debug logging to diagnose permission issues
-              debugPrint('[WorkerJobRepository] collectionGroup candidate path=$path; workerId_in_doc=$assigned; docData=$raw');
+              debugPrint(
+                  '[WorkerJobRepository] collectionGroup candidate path=$path; workerId_in_doc=$assigned; docData=$raw');
               final Map<String, dynamic> updateMap = {
                 'status': status,
                 'orderStatus': status,
                 'workerId': wid,
+                'updatedAt': FieldValue.serverTimestamp(),
               };
-              debugPrint('[WorkerJobRepository] attempting update with payload=$updateMap on path=$path');
+              debugPrint(
+                  '[WorkerJobRepository] attempting update with payload=$updateMap on path=$path');
               if (path.startsWith('workers/')) {
-                debugPrint('[WorkerJobRepository] attempting update on path=${d.reference.path} for worker=$wid; docData=${d.data()}');
+                debugPrint('[WorkerJobRepository] attempting update on path=${d
+                    .reference.path} for worker=$wid; docData=${d.data()}');
                 await d.reference.update({
                   'status': status,
                   'orderStatus': status,
                   'workerId': wid,
+                  'updatedAt': FieldValue.serverTimestamp(),
                 });
                 return await _jobFromRef(d.reference);
               }
               if (path.contains('/users/')) {
-                debugPrint('[WorkerJobRepository] attempting update on path=${d.reference.path} for worker=$wid; docData=${d.data()}');
+                debugPrint('[WorkerJobRepository] attempting update on path=${d
+                    .reference.path} for worker=$wid; docData=${d.data()}');
                 try {
-                  await d.reference.update(updateMap);
-                  return await _jobFromRef(d.reference);
+                  // Try to update this users/{uid}/orders doc and also update top-level orders/{id} (if present) in a batch
+                  final topRef = _firestore.collection('orders').doc(id);
+                  try {
+                    final batch = _firestore.batch();
+                    batch.update(d.reference, updateMap);
+                    final topSnap = await topRef.get();
+                    if (topSnap.exists) {
+                      batch.update(topRef, updateMap);
+                    }
+                    await batch.commit();
+                    return await _jobFromRef(d.reference);
+                  } catch (batchErr) {
+                    debugPrint('[WorkerJobRepository] collectionGroup batch failed, falling back to single update: $batchErr');
+                    await d.reference.update(updateMap);
+                    return await _jobFromRef(d.reference);
+                  }
                 } catch (e, st) {
-                  // Log full FirebaseException details to help diagnose security rule failures
+                   // Log full FirebaseException details to help diagnose security rule failures
                   debugPrint('[WorkerJobRepository] update on path=${d.reference.path} failed: $e');
                   debugPrint(st.toString());
                   if (e is FirebaseException) {
@@ -456,29 +558,39 @@ class WorkerJobRepository {
                   rethrow;
                 }
               }
-              debugPrint('[WorkerJobRepository] found top-level orders doc for $id assigned to worker $wid but refusing client-side top-level update');
-              throw FirebaseException(plugin: 'cloud_firestore', message: 'permission-denied');
+              debugPrint(
+                  '[WorkerJobRepository] found top-level orders doc for $id assigned to worker $wid but refusing client-side top-level update');
+              throw FirebaseException(
+                  plugin: 'cloud_firestore', message: 'permission-denied');
             }
           }
         }
       } catch (e) {
-        debugPrint('[WorkerJobRepository] collectionGroup lookup/update failed for $id: $e');
+        debugPrint(
+            '[WorkerJobRepository] collectionGroup lookup/update failed for $id: $e');
       }
 
       // If we got here, no writable doc was found for this worker — deny.
-      debugPrint('[WorkerJobRepository] no writable order document found for worker=$wid and order=$id');
+      debugPrint(
+          '[WorkerJobRepository] no writable order document found for worker=$wid and order=$id');
 
       // Fallback: call a trusted Cloud Function to perform the update server-side.
       try {
-        debugPrint('[WorkerJobRepository] attempting workerUpdateOrderStatus cloud function for order=$id status=$status');
-        final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('workerUpdateOrderStatus');
-        final result = await callable.call(<String, dynamic>{'orderId': id, 'status': status});
-        debugPrint('[WorkerJobRepository] workerUpdateOrderStatus result=${result.data}');
+        debugPrint(
+            '[WorkerJobRepository] attempting workerUpdateOrderStatus cloud function for order=$id status=$status');
+        final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable(
+            'workerUpdateOrderStatus');
+        final result = await callable.call(
+            <String, dynamic>{'orderId': id, 'status': status});
+        debugPrint(
+            '[WorkerJobRepository] workerUpdateOrderStatus result=${result
+                .data}');
         if (result.data != null && result.data['success'] == true) {
           return await getJobById(id);
         }
       } catch (e, st) {
-        debugPrint('[WorkerJobRepository] workerUpdateOrderStatus cloud function failed: $e');
+        debugPrint(
+            '[WorkerJobRepository] workerUpdateOrderStatus cloud function failed: $e');
         debugPrint(st.toString());
       }
 
@@ -491,41 +603,56 @@ class WorkerJobRepository {
         if (topSnap2.exists) {
           final topData2 = topSnap2.data();
           if (topData2 != null && topData2['workerId'] == wid) {
-            debugPrint('[WorkerJobRepository] last-resort attempting top-level direct update on ${topRef2.path} for worker=$wid');
+            debugPrint(
+                '[WorkerJobRepository] last-resort attempting top-level direct update on ${topRef2
+                    .path} for worker=$wid');
             try {
-              await topRef2.update({'status': status, 'orderStatus': status, 'workerId': wid});
+              await topRef2.update({
+                'status': status,
+                'orderStatus': status,
+                'workerId': wid,
+                'updatedAt': FieldValue.serverTimestamp()
+              });
               return await _jobFromRef(topRef2);
             } catch (e, st) {
-              debugPrint('[WorkerJobRepository] last-resort top-level update failed: $e');
+              debugPrint(
+                  '[WorkerJobRepository] last-resort top-level update failed: $e');
               debugPrint(st.toString());
-              if (e is FirebaseException) debugPrint('[WorkerJobRepository] FirebaseException code=${e.code} message=${e.message}');
+              if (e is FirebaseException) debugPrint(
+                  '[WorkerJobRepository] FirebaseException code=${e
+                      .code} message=${e.message}');
             }
           }
         }
       } catch (e) {
-        debugPrint('[WorkerJobRepository] last-resort top-level update attempt error: $e');
+        debugPrint(
+            '[WorkerJobRepository] last-resort top-level update attempt error: $e');
       }
 
-      throw FirebaseException(plugin: 'cloud_firestore', message: 'permission-denied');
+      throw FirebaseException(
+          plugin: 'cloud_firestore', message: 'permission-denied');
     } catch (e) {
       debugPrint('[WorkerJobRepository] updateJobStatus error: $e');
       rethrow;
     }
-  }
 
-  /// Set worker availability on the worker's user document
-  Future<void> setAvailability(bool online, {String? workerId}) async {
-    final wid = workerId ?? await _resolveWorkerId();
-    if (wid == null) return;
-    try {
-      await _firestore.collection('users').doc(wid).update({'isOnline': online});
-    } catch (e) {
-      // If field doesn't exist, try set with merge
+    /// Set worker availability on the worker's user document
+    Future<void> setAvailability(bool online, {String? workerId}) async {
+      final wid = workerId ?? await _resolveWorkerId();
+      if (wid == null) return;
       try {
-        await _firestore.collection('users').doc(wid).set({'isOnline': online}, SetOptions(merge: true));
-      } catch (_) {
-        debugPrint('[WorkerJobRepository] setAvailability failed: $e');
+        await _firestore.collection('users').doc(wid).update(
+            {'isOnline': online});
+      } catch (e) {
+        // If field doesn't exist, try set with merge
+        try {
+          await _firestore.collection('users').doc(wid).set(
+              {'isOnline': online}, SetOptions(merge: true));
+        } catch (_) {
+          debugPrint('[WorkerJobRepository] setAvailability failed: $e');
+        }
       }
     }
   }
 }
+

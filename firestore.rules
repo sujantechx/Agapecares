@@ -34,15 +34,24 @@ service cloud.firestore {
 
     // Do not allow clients to set server-managed fields except when equal to request.time
     function allowedServerTimestamp(fieldName) {
-      return !(fieldName in request.resource.data) || request.resource.data[fieldName] == request.time;
+      // Allow if the field is not being written, or the client is explicitly setting it to
+      // the server timestamp (request.time), or the client is leaving the existing value
+      // unchanged during an update. This permits updates that don't modify createdAt/updatedAt.
+      return !(fieldName in request.resource.data)
+             || request.resource.data[fieldName] == request.time
+             || (resource.data[fieldName] == request.resource.data[fieldName]);
     }
 
     function noServerFields() {
-      return !( 'orderNumber' in request.resource.data )
-             && !( 'assignmentHistory' in request.resource.data )
-             && !( 'paymentRef' in request.resource.data )
-             && allowedServerTimestamp('createdAt')
-             && allowedServerTimestamp('updatedAt');
+      // For server-managed fields, allow the request when the client is not including
+      // them, or when they are left unchanged (equal to the existing resource value).
+      return (
+        ( !('orderNumber' in request.resource.data) || request.resource.data.orderNumber == resource.data.orderNumber )
+        && ( !('assignmentHistory' in request.resource.data) || request.resource.data.assignmentHistory == resource.data.assignmentHistory )
+        && ( !('paymentRef' in request.resource.data) || request.resource.data.paymentRef == resource.data.paymentRef )
+        && allowedServerTimestamp('createdAt')
+        && allowedServerTimestamp('updatedAt')
+      );
     }
 
     // -----------------------
@@ -115,8 +124,9 @@ service cloud.firestore {
             && noServerFields()
           )
           || (
-            isWorker()
-            && resource.data.workerId == request.auth.uid
+            // Allow assigned worker to update order even if `isWorker()` is false
+            // (covers cases where auth token lacks role claim or a /workers doc isn't present).
+            resource.data.workerId == request.auth.uid
             && noServerFields()
             // allow only limited status updates by the worker to a controlled set
             && (
@@ -127,6 +137,19 @@ service cloud.firestore {
                 ) && request.resource.data.workerId == resource.data.workerId)
               || ( !('status' in request.resource.data) && !('workerId' in request.resource.data) )
             )
+          )
+          // Narrow fallback: allow assigned worker to perform a minimal, safe status-only update
+          // even if other checks fail — only for the exact fields below and permitted values.
+          || (
+            isSignedIn()
+            && resource.data.workerId == request.auth.uid
+            // allow updatedAt as well (client may send serverTimestamp)
+            && request.resource.data.keys().hasOnly(['status','orderStatus','workerId','updatedAt'])
+            && request.resource.data.workerId == resource.data.workerId
+            && request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
+            && resource.data.status != 'completed'
+            // ensure updatedAt is either not written or is a server timestamp or unchanged
+            && allowedServerTimestamp('updatedAt')
           )
         );
 
@@ -227,14 +250,18 @@ service cloud.firestore {
             && !( 'workerId' in request.resource.data )
             && !( 'status' in request.resource.data )
             && noServerFields())
-        || (isWorker() && resource.data.workerId == request.auth.uid && noServerFields()
-            && (
-              ( 'status' in request.resource.data && (
-                  request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
-                  && resource.data.status != 'completed'
-                ) && request.resource.data.workerId == resource.data.workerId)
-              || ( !('status' in request.resource.data) && !('workerId' in request.resource.data) )
-            ))
+        || (
+          // Allow assigned worker to update top-level order even if `isWorker()` is false
+          resource.data.workerId == request.auth.uid
+          && noServerFields()
+          && (
+            ( 'status' in request.resource.data && (
+                request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
+                && resource.data.status != 'completed'
+              ) && request.resource.data.workerId == resource.data.workerId)
+            || ( !('status' in request.resource.data) && !('workerId' in request.resource.data) )
+          )
+        )
       );
 
       allow delete: if isSignedIn() && (

@@ -1,1 +1,18 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"agapecarecb-e1be4","appId":"1:1040620901:android:7e3ffcbd8f82052c4ed58c","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"agapecarecb-e1be4","configurations":{"android":"1:1040620901:android:7e3ffcbd8f82052c4ed58c","ios":"1:1040620901:ios:bf0e49c9baa4d2104ed58c","macos":"1:1040620901:ios:bf0e49c9baa4d2104ed58c","web":"1:1040620901:web:84db3e22bd6490884ed58c","windows":"1:1040620901:web:5ff59b5b087735574ed58c"}}}}}}
+{"flutter":{"platforms":{"android":{"default":{"projectId":"agapecarecb-e1be4","appId":"1:1040620901:android:7e3ffcbd8f82052c4ed58c","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"agapecarecb-e1be4","configurations":{"android":"1:1040620901:android:7e3ffcbd8f82052c4ed58c","ios":"1:1040620901:ios:bf0e49c9baa4d2104ed58c","macos":"1:1040620901:ios:bf0e49c9baa4d2104ed58c","web":"1:1040620901:web:84db3e22bd6490884ed58c","windows":"1:1040620901:web:5ff59b5b087735574ed58c"}}}},
+ "functions": {
+   "source": "functions"
+ },
+ "firestore": {
+   "rules": "firestore.rules",
+   "indexes": "firestore.indexes.json"
+ },
+ "emulators": {
+   "firestore": {
+     "port": 8080
+   },
+   "ui": {
+     "enabled": true,
+     "port": 4000
+   }
+ }
+}}

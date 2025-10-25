@@ -17,6 +17,7 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> {
   List<JobModel> _jobs = [];
   bool _loading = true;
   bool _isOnline = true;
+  final Set<String> _updatingJobIds = <String>{};
 
   @override
   void initState() {
@@ -49,6 +50,7 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> {
 
   Future<void> _updateStatus(JobModel job, String newStatus) async {
     try {
+      setState(() => _updatingJobIds.add(job.id));
       final updated = await _repo.updateJobStatus(job.id, newStatus);
       if (updated != null) {
         final idx = _jobs.indexWhere((j) => j.id == job.id);
@@ -65,6 +67,8 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> {
     } catch (e) {
       debugPrint('[WorkerOrdersPage] updateStatus error: $e');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update status: $e')));
+    } finally {
+      setState(() => _updatingJobIds.remove(job.id));
     }
   }
 
@@ -134,7 +138,7 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> {
                                 padding: EdgeInsets.symmetric(vertical: 8.0),
                                 child: Text('Today', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                               ),
-                              ...today.map((j) => JobCard(job: j, onChangeStatus: (s) => _updateStatus(j, s))).toList(),
+                              ...today.map((j) => JobCard(job: j, onChangeStatus: _updatingJobIds.contains(j.id) ? null : (s) => _updateStatus(j, s))).toList(),
                             ],
 
                             if (upcoming.isNotEmpty) ...[
@@ -142,7 +146,7 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> {
                                 padding: EdgeInsets.symmetric(vertical: 8.0),
                                 child: Text('Upcoming', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                               ),
-                              ...upcoming.map((j) => JobCard(job: j, onChangeStatus: (s) => _updateStatus(j, s))).toList(),
+                              ...upcoming.map((j) => JobCard(job: j, onChangeStatus: _updatingJobIds.contains(j.id) ? null : (s) => _updateStatus(j, s))).toList(),
                             ],
 
                             const SizedBox(height: 12),

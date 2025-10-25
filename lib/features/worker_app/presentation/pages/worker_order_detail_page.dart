@@ -16,6 +16,7 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
   final WorkerJobRepository _repo = WorkerJobRepository();
   JobModel? _job;
   bool _loading = true;
+  bool _changingStatus = false;
 
   @override
   void initState() {
@@ -47,6 +48,7 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
   Future<void> _changeStatus(String status) async {
     if (_job == null) return;
     try {
+      setState(() => _changingStatus = true);
       final updated = await _repo.updateJobStatus(_job!.id, status);
       if (updated != null) {
         setState(() => _job = updated);
@@ -55,6 +57,8 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
     } catch (e) {
       debugPrint('[WorkerOrderDetailPage] changeStatus error: $e');
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update status: $e')));
+    } finally {
+      if (mounted) setState(() => _changingStatus = false);
     }
   }
 
@@ -73,13 +77,15 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
 
     switch (status) {
       case 'pending':
-        add('Accept', 'assigned', color: Colors.orange);
+        add('Accept', 'accepted', color: Colors.orange);
         break;
       case 'assigned':
-        add('On My Way', 'on_way', color: Colors.blue);
+      case 'accepted':
+        add('On My Way', 'on_my_way', color: Colors.blue);
         add('Arrived', 'arrived', color: Colors.green);
         break;
       case 'on_way':
+      case 'on_my_way':
         add('Arrived', 'arrived', color: Colors.green);
         break;
       case 'arrived':

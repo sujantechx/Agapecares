@@ -11,6 +11,9 @@ class JobModel extends Equatable {
   final String customerName;
   final String customerPhone;
   final DateTime scheduledAt;
+  final DateTime? scheduledEnd;
+  final String? specialInstructions;
+  final double? rating;
   final String status; // e.g. 'pending','assigned','on_way','arrived','in_progress','paused','completed'
   final bool isCod;
   final List<String> inclusions;
@@ -22,6 +25,9 @@ class JobModel extends Equatable {
     required this.customerName,
     required this.customerPhone,
     required this.scheduledAt,
+    this.scheduledEnd,
+    this.specialInstructions,
+    this.rating,
     required this.status,
     this.isCod = false,
     this.inclusions = const [],
@@ -35,9 +41,12 @@ class JobModel extends Equatable {
       address: m['address'] as String? ?? '',
       customerName: m['customerName'] as String? ?? (m['userName'] as String? ?? ''),
       customerPhone: m['customerPhone'] as String? ?? (m['userPhone'] as String? ?? ''),
-      scheduledAt: _parseTimestamp(m['scheduledAt']) ?? DateTime.now(),
+      scheduledAt: _parseTimestamp(m['scheduledAt'] ?? m['scheduled_at']) ?? DateTime.now(),
       status: m['status'] as String? ?? 'pending',
       isCod: m['isCod'] as bool? ?? (m['is_cod'] as bool? ?? false),
+      scheduledEnd: _parseTimestamp(m['scheduledEnd'] ?? m['scheduled_end']),
+      specialInstructions: m['specialInstructions'] as String? ?? m['special_instructions'] as String?,
+      rating: (m['rating'] is num) ? (m['rating'] as num).toDouble() : (m['rating'] != null ? double.tryParse(m['rating'].toString()) : null),
       inclusions: (m['inclusions'] is List) ? List<String>.from(m['inclusions'].map((e) => e?.toString() ?? '')) : const [],
     );
   }
@@ -51,9 +60,12 @@ class JobModel extends Equatable {
         'customerName': customerName,
         'customerPhone': customerPhone,
         'scheduledAt': Timestamp.fromDate(scheduledAt),
+        'scheduledEnd': scheduledEnd != null ? Timestamp.fromDate(scheduledEnd!) : null,
         'status': status,
         'isCod': isCod,
         'inclusions': inclusions,
+        'specialInstructions': specialInstructions,
+        'rating': rating,
       };
 
   static DateTime? _parseTimestamp(dynamic v) {
@@ -78,6 +90,9 @@ class JobModel extends Equatable {
     String? customerName,
     String? customerPhone,
     DateTime? scheduledAt,
+    DateTime? scheduledEnd,
+    String? specialInstructions,
+    double? rating,
     String? status,
     bool? isCod,
     List<String>? inclusions,
@@ -89,6 +104,9 @@ class JobModel extends Equatable {
       customerName: customerName ?? this.customerName,
       customerPhone: customerPhone ?? this.customerPhone,
       scheduledAt: scheduledAt ?? this.scheduledAt,
+      scheduledEnd: scheduledEnd ?? this.scheduledEnd,
+      specialInstructions: specialInstructions ?? this.specialInstructions,
+      rating: rating ?? this.rating,
       status: status ?? this.status,
       isCod: isCod ?? this.isCod,
       inclusions: inclusions ?? this.inclusions,
@@ -98,4 +116,3 @@ class JobModel extends Equatable {
   @override
   List<Object?> get props => [id, serviceName, address, customerName, customerPhone, scheduledAt, status, isCod, inclusions];
 }
-

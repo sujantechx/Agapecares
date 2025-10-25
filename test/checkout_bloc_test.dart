@@ -39,6 +39,11 @@ class FakeOrderRepo implements user_orders_repo.OrderRepository {
   Future<List<OrderModel>> fetchOrdersForWorker(String workerId) async => [];
 
   @override
+  Stream<List<OrderModel>> streamOrdersForWorker(String workerId) async* {
+    yield <OrderModel>[];
+  }
+
+  @override
   Future<List<OrderModel>> fetchOrdersForAdmin({Map<String, dynamic>? filters}) async => [];
 
   @override

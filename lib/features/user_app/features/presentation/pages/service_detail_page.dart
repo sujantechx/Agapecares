@@ -201,7 +201,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
             if (user == null) {
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please login to add items to cart'), backgroundColor: Colors.orange));
-                context.push(AppRoutes.login);
+                GoRouter.of(context).push(AppRoutes.login);
               }
               return;
             }
@@ -232,7 +232,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
                     // Use GoRouterState to read current URI string safely.
                     final current = GoRouterState.of(context).uri.toString();
                     if (!current.startsWith(AppRoutes.cart)) {
-                      context.go(AppRoutes.cart);
+                      GoRouter.of(context).go(AppRoutes.cart);
                     } else {
                       // Already on cart, just close snack bar.
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();

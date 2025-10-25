@@ -29,12 +29,15 @@ abstract class OrderRepository {
   Future<void> updateOrder(OrderModel order);
 
   /// Fetch all orders for a specific user.
-  /// The implementation should handle different data layouts (e.g., per-user
-  /// subcollections or top-level collections with security rules).
   Future<List<OrderModel>> fetchOrdersForUser(String userId);
 
   /// Fetch all orders assigned to a specific worker.
   Future<List<OrderModel>> fetchOrdersForWorker(String workerId);
+
+  /// Stream of orders assigned to a specific worker. Implementations should
+  /// prefer per-worker mirrors (`workers/{workerId}/orders`) and fall back to
+  /// collectionGroup/top-level queries when necessary.
+  Stream<List<OrderModel>> streamOrdersForWorker(String workerId);
 
   /// Fetch orders for an admin dashboard with optional filters.
   Future<List<OrderModel>> fetchOrdersForAdmin({Map<String, dynamic>? filters});
@@ -294,12 +297,85 @@ class OrderRepositoryImpl implements OrderRepository {
   @override
   Future<List<OrderModel>> fetchOrdersForWorker(String workerId) async {
     try {
-      final snap = await _firestore.collection('orders').where('workerId', isEqualTo: workerId).orderBy('createdAt', descending: true).get();
-      return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+      // 1) Preferred: Read from the per-worker mirror which is allowed by security rules for workers.
+      final workerCol = _firestore.collection('workers').doc(workerId).collection('orders');
+      try {
+        final snap = await workerCol.orderBy('scheduledAt', descending: false).get();
+        if (snap.docs.isNotEmpty) {
+          debugPrint('[OrderRepository] fetched ${snap.docs.length} orders from workers/{workerId}/orders for worker=$workerId');
+          return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+        } else {
+          debugPrint('[OrderRepository] workers/{workerId}/orders returned 0 docs for worker=$workerId');
+        }
+      } catch (e) {
+        debugPrint('[OrderRepository] workers/{workerId}/orders read failed (may be fine if mirror not configured): $e');
+      }
+
+      // 2) Fallback: Query all `orders` documents (including those under users/{uid}/orders)
+      // using a collectionGroup query to find orders where `workerId` matches.
+      try {
+        final cgQuery = _firestore.collectionGroup('orders').where('workerId', isEqualTo: workerId).orderBy('scheduledAt', descending: false);
+        final snap = await cgQuery.get();
+        if (snap.docs.isNotEmpty) {
+          debugPrint('[OrderRepository] fetched ${snap.docs.length} orders from collectionGroup(users/*/orders) for worker=$workerId');
+          // Map and return distinct orders by remoteId/doc id
+          final mapped = snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+          return mapped;
+        }
+      } catch (e) {
+        debugPrint('[OrderRepository] collectionGroup("orders") query for worker failed or is disallowed by rules: $e');
+      }
+
+      // 3) Final fallback: top-level `orders` collection where workerId == workerId
+      try {
+        final topSnap = await _firestore.collection('orders').where('workerId', isEqualTo: workerId).orderBy('scheduledAt', descending: false).get();
+        if (topSnap.docs.isNotEmpty) {
+          debugPrint('[OrderRepository] fetched ${topSnap.docs.length} orders from top-level orders for worker=$workerId');
+          return topSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+        }
+      } catch (e) {
+        debugPrint('[OrderRepository] top-level orders query for worker failed: $e');
+      }
+
+      // Nothing found
+      return [];
     } catch (e) {
       debugPrint('[OrderRepository] fetchOrdersForWorker failed: $e');
       return [];
     }
+  }
+
+  @override
+  Stream<List<OrderModel>> streamOrdersForWorker(String workerId) async* {
+    // 1) Prefer per-worker mirror stream
+    try {
+      final workerCol = _firestore.collection('workers').doc(workerId).collection('orders').orderBy('scheduledAt', descending: false);
+      yield* workerCol.snapshots().map((snap) => snap.docs.map((d) => OrderModel.fromFirestore(d)).toList());
+      return;
+    } catch (e) {
+      debugPrint('[OrderRepository] workers/{workerId}/orders stream failed: $e');
+    }
+
+    // 2) Fallback: collectionGroup stream
+    try {
+      final cgQuery = _firestore.collectionGroup('orders').where('workerId', isEqualTo: workerId).orderBy('scheduledAt', descending: false);
+      yield* cgQuery.snapshots().map((snap) => snap.docs.map((d) => OrderModel.fromFirestore(d)).toList());
+      return;
+    } catch (e) {
+      debugPrint('[OrderRepository] collectionGroup("orders") stream for worker failed: $e');
+    }
+
+    // 3) Final fallback: top-level orders collection stream
+    try {
+      final topRef = _firestore.collection('orders').where('workerId', isEqualTo: workerId).orderBy('scheduledAt', descending: false);
+      yield* topRef.snapshots().map((snap) => snap.docs.map((d) => OrderModel.fromFirestore(d)).toList());
+      return;
+    } catch (e) {
+      debugPrint('[OrderRepository] top-level orders stream for worker failed: $e');
+    }
+
+    // If all fail, yield empty stream
+    yield [];
   }
 
   @override

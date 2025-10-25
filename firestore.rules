@@ -28,6 +28,7 @@ service cloud.firestore {
       return isSignedIn() && (
         (request.auth.token != null && request.auth.token.role == 'worker')
         || exists(/databases/$(database)/documents/workers/$(request.auth.uid))
+        || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'worker')
       );
     }
 
@@ -98,6 +99,9 @@ service cloud.firestore {
           (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
           || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
           || isOwner(userId)
+          // Allow workers to list orders that are assigned to them by letting the
+          // rules engine verify that each returned document has workerId == auth.uid.
+          || (isWorker() && resource.data.workerId == request.auth.uid)
         );
 
         allow update: if isSignedIn() && (
@@ -114,13 +118,13 @@ service cloud.firestore {
             isWorker()
             && resource.data.workerId == request.auth.uid
             && noServerFields()
-            // allow only limited status transitions by the worker
+            // allow only limited status updates by the worker to a controlled set
             && (
               ( 'status' in request.resource.data && (
-                 (resource.data.status == 'assigned' && request.resource.data.status == 'accepted')
-                 || (resource.data.status == 'accepted' && request.resource.data.status == 'in_progress')
-                 || (resource.data.status == 'in_progress' && request.resource.data.status == 'completed')
-               ) && request.resource.data.workerId == resource.data.workerId)
+                  // worker may update status to one of these states provided the order is not already completed
+                  request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
+                  && resource.data.status != 'completed'
+                ) && request.resource.data.workerId == resource.data.workerId)
               || ( !('status' in request.resource.data) && !('workerId' in request.resource.data) )
             )
           )
@@ -156,6 +160,34 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isAdmin();
     }
 
+    // Per-worker assigned orders mirror. Use a trusted server/Cloud Function to
+    // copy/keep in sync assignments from /orders or /users/{uid}/orders into
+    // /workers/{workerId}/orders so workers can safely list their assignments.
+    match /workers/{workerId}/orders/{orderId} {
+      // Workers (and admins) can list/get their assigned orders here.
+      allow get, list: if isSignedIn() && (isAdmin() || request.auth.uid == workerId);
+
+      // Allow updates by admin, or by the assigned worker with the same
+      // limited status transitions and no server-managed field modifications.
+      allow update: if isSignedIn() && (
+        (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+        || (
+          request.auth.uid == workerId
+          && noServerFields()
+          && (
+            ( 'status' in request.resource.data && (
+                request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
+                && resource.data.status != 'completed'
+              ) && request.resource.data.workerId == resource.data.workerId)
+            || ( !('status' in request.resource.data) )
+          )
+        )
+      );
+
+      // Creation/deletion should be performed only by admin/trusted backend.
+      allow create, delete: if isSignedIn() && isAdmin();
+    }
+
     // -----------------------
     // services collection
     // -----------------------
@@ -182,6 +214,8 @@ service cloud.firestore {
         // other users' orders. This also avoids using unsupported request.query.where().
         (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
         || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        // Allow workers to query top-level orders filtered by workerId==auth.uid
+        || (isWorker() && resource.data.workerId == request.auth.uid)
       );
 
       allow create: if isSignedIn() && noServerFields() && ('items' in request.resource.data) && ('totalAmount' in request.resource.data);
@@ -196,10 +230,9 @@ service cloud.firestore {
         || (isWorker() && resource.data.workerId == request.auth.uid && noServerFields()
             && (
               ( 'status' in request.resource.data && (
-                (resource.data.status == 'assigned' && request.resource.data.status == 'accepted')
-                || (resource.data.status == 'accepted' && request.resource.data.status == 'in_progress')
-                || (resource.data.status == 'in_progress' && request.resource.data.status == 'completed')
-              ) && request.resource.data.workerId == resource.data.workerId)
+                  request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
+                  && resource.data.status != 'completed'
+                ) && request.resource.data.workerId == resource.data.workerId)
               || ( !('status' in request.resource.data) && !('workerId' in request.resource.data) )
             ))
       );
@@ -221,11 +254,28 @@ service cloud.firestore {
         || (request.auth.token.phone_number != null && (request.resource.data.orderOwner == request.auth.token.phone_number || request.resource.data.userId == request.auth.token.phone_number))
       );
 
-      allow get: if isSignedIn() && (isAdmin() || request.resource.data.orderOwner == request.auth.uid || request.resource.data.userId == request.auth.uid);
+      // Use resource.data (existing document) for reads.
+      allow get: if isSignedIn() && (
+        isAdmin()
+        || resource.data.orderOwner == request.auth.uid
+        || resource.data.userId == request.auth.uid
+        || (request.auth.token.phone_number != null && (resource.data.orderOwner == request.auth.token.phone_number || resource.data.userId == request.auth.token.phone_number))
+      );
       // Restrict listing bookings at top-level to admins; users should list their
       // bookings via a per-user subcollection if available.
       allow list: if isSignedIn() && isAdmin();
-      allow update: if isSignedIn() && (isAdmin() || ((request.resource.data.orderOwner == request.auth.uid || request.resource.data.userId == request.auth.uid) && noServerFields()));
+      // For updates, check ownership on the existing document (resource.data)
+      // and still require noServerFields() on the incoming data.
+      allow update: if isSignedIn() && (
+        isAdmin()
+        || (
+          (resource.data.orderOwner == request.auth.uid
+           || resource.data.userId == request.auth.uid
+           || (request.auth.token.phone_number != null && (resource.data.orderOwner == request.auth.token.phone_number || resource.data.userId == request.auth.token.phone_number))
+          )
+          && noServerFields()
+        )
+      );
       allow delete: if isSignedIn() && isAdmin();
     }
 
@@ -254,6 +304,25 @@ service cloud.firestore {
     // Deny by default
     match /{document=**} {
       allow read, write: if false;
+    }
+
+    // Generic match to allow collectionGroup queries on any `orders` subcollection
+    match /{path=**}/orders/{orderId} {
+      allow get: if isSignedIn() && (
+        isAdmin()
+        || resource.data.orderOwner == request.auth.uid
+        || resource.data.userId == request.auth.uid
+        || (isWorker() && (resource.data.workerId == request.auth.uid || resource.data.status == 'pending'))
+      );
+
+      // Allow listing via collectionGroup only for admins or workers when the
+      // returned documents are assigned to the worker (the query must include
+      // where('workerId', '==', request.auth.uid) for this to be secure and
+      // supported by the rules engine).
+      allow list: if isSignedIn() && (
+        isAdmin()
+        || (isWorker() && resource.data.workerId == request.auth.uid)
+      );
     }
   }
 }

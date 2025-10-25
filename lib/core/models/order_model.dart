@@ -4,7 +4,8 @@ import 'package:equatable/equatable.dart';
 import 'cart_item_model.dart'; // A simple embedded model, see below
 
 /// Enums for order and payment statuses.
-enum OrderStatus { pending, accepted, assigned, in_progress, completed, cancelled }
+// Added worker-specific statuses so UI, rules and stored strings align.
+enum OrderStatus { pending, accepted, assigned, on_my_way, arrived, in_progress, paused, completed, cancelled }
 enum PaymentStatus { pending, paid, failed, refunded }
 
 /// Represents an order document in the `orders` collection.
@@ -91,6 +92,9 @@ class OrderModel extends Equatable {
         // fallback to mapping common strings
         final s = rawOrderStatus.toLowerCase();
         if (s.contains('in_progress') || s.contains('in progress')) parsedOrderStatus = OrderStatus.in_progress;
+        else if (s.contains('on_my_way') || s.contains('on my way') || s.contains('onmyway') || s.contains('onway')) parsedOrderStatus = OrderStatus.on_my_way;
+        else if (s.contains('arrived')) parsedOrderStatus = OrderStatus.arrived;
+        else if (s.contains('paused') || s.contains('pause')) parsedOrderStatus = OrderStatus.paused;
         else if (s.contains('assigned')) parsedOrderStatus = OrderStatus.assigned;
         else if (s.contains('accepted')) parsedOrderStatus = OrderStatus.accepted;
         else if (s.contains('completed')) parsedOrderStatus = OrderStatus.completed;
@@ -166,6 +170,47 @@ class OrderModel extends Equatable {
       if (assignmentHistory != null) 'assignmentHistory': assignmentHistory,
       if (paymentRef != null) 'paymentRef': paymentRef,
     };
+  }
+
+  /// Create a copy of this order with optional changes (used for status updates).
+  OrderModel copyWith({
+    String? id,
+    String? orderNumber,
+    String? userId,
+    String? workerId,
+    List<CartItemModel>? items,
+    Map<String, dynamic>? addressSnapshot,
+    double? subtotal,
+    double? discount,
+    double? tax,
+    double? total,
+    OrderStatus? orderStatus,
+    PaymentStatus? paymentStatus,
+    List<Map<String, dynamic>>? assignmentHistory,
+    Map<String, dynamic>? paymentRef,
+    Timestamp? scheduledAt,
+    Timestamp? createdAt,
+    Timestamp? updatedAt,
+  }) {
+    return OrderModel(
+      id: id ?? this.id,
+      orderNumber: orderNumber ?? this.orderNumber,
+      userId: userId ?? this.userId,
+      workerId: workerId ?? this.workerId,
+      items: items ?? this.items,
+      addressSnapshot: addressSnapshot ?? this.addressSnapshot,
+      subtotal: subtotal ?? this.subtotal,
+      discount: discount ?? this.discount,
+      tax: tax ?? this.tax,
+      total: total ?? this.total,
+      orderStatus: orderStatus ?? this.orderStatus,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      assignmentHistory: assignmentHistory ?? this.assignmentHistory,
+      paymentRef: paymentRef ?? this.paymentRef,
+      scheduledAt: scheduledAt ?? this.scheduledAt,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
   }
 
   @override

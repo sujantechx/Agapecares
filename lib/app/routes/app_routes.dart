@@ -26,6 +26,7 @@ class AppRoutes {
 
   static const String workerHome = '/worker/home';
   static const String workerOrders = '/worker/orders';
+  static const String workerTasks = '/worker/tasks';
   static const String workerOrderDetail = '/worker/orders/:id';
   static const String workerProfile = '/worker/profile';
 

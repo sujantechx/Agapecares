@@ -32,7 +32,7 @@ class _SplasseScreenState extends State<SplasseScreen> {
         if (!mounted) return;
         // No signed-in user -> go to login
         debugPrint('SPLASH_DEBUG: routing to login');
-        context.go(AppRoutes.login);
+        GoRouter.of(context).go(AppRoutes.login);
         return;
       }
       // Try to read user role from Firestore; fall back to user dashboard
@@ -46,18 +46,18 @@ class _SplasseScreenState extends State<SplasseScreen> {
         final normalized = role.trim().toLowerCase();
         if (normalized == UserRole.worker.name) {
           debugPrint('SPLASH_DEBUG: routing to workerHome');
-          context.go(AppRoutes.workerHome);
+          GoRouter.of(context).go(AppRoutes.workerHome);
         } else if (normalized == UserRole.admin.name) {
           debugPrint('SPLASH_DEBUG: routing to adminDashboard');
-          context.go(AppRoutes.adminDashboard);
+          GoRouter.of(context).go(AppRoutes.adminDashboard);
         } else {
           debugPrint('SPLASH_DEBUG: routing to home');
-          context.go(AppRoutes.home);
+          GoRouter.of(context).go(AppRoutes.home);
         }
       } catch (e, st) {
         debugPrint('SPLASH_DEBUG: error fetching role: $e\n$st');
         if (!mounted) return;
-        context.go(AppRoutes.home);
+        GoRouter.of(context).go(AppRoutes.home);
       }
     });
   }

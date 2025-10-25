@@ -22,6 +22,16 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> {
   void initState() {
     super.initState();
     _loadJobs();
+    _loadAvailability();
+  }
+
+  Future<void> _loadAvailability() async {
+    try {
+      final avail = await _repo.getAvailability();
+      if (avail != null) setState(() => _isOnline = avail);
+    } catch (e) {
+      debugPrint('[WorkerOrdersPage] loadAvailability error: $e');
+    }
   }
 
   Future<void> _loadJobs() async {
@@ -44,6 +54,9 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> {
         final idx = _jobs.indexWhere((j) => j.id == job.id);
         if (idx != -1) {
           setState(() => _jobs[idx] = updated);
+        } else {
+          // refresh list
+          await _loadJobs();
         }
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Status updated to ${updated.status}')));
       } else {
@@ -55,10 +68,26 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> {
     }
   }
 
+  Future<void> _setAvailability(bool v) async {
+    setState(() => _isOnline = v);
+    try {
+      await _repo.setAvailability(v);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(v ? 'You are now Online' : 'You are now Offline')));
+    } catch (e) {
+      debugPrint('[WorkerOrdersPage] setAvailability error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to set availability: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final upcoming = _jobs.where((j) => j.status != 'completed').toList();
-    final history = _jobs.where((j) => j.status == 'completed').toList();
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayEnd = todayStart.add(const Duration(days: 1));
+
+    final upcoming = _jobs.where((j) => j.scheduledAt.isAfter(todayEnd) && j.status != 'completed').toList();
+    final today = _jobs.where((j) => j.scheduledAt.isAfter(todayStart) && j.scheduledAt.isBefore(todayEnd) && j.status != 'completed').toList();
+    final history = _jobs.where((j) => j.status == 'completed' || j.scheduledAt.isBefore(todayStart)).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -85,51 +114,54 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> {
                         children: [
                           Text(_isOnline ? 'Online' : 'Offline', style: const TextStyle(fontWeight: FontWeight.w600)),
                           const SizedBox(width: 8),
-                          Switch(value: _isOnline, onChanged: (v) => setState(() => _isOnline = v)),
+                          Switch(value: _isOnline, onChanged: (v) => _setAvailability(v)),
                         ],
                       )
                     ],
                   ),
                   const SizedBox(height: 12),
-                  const Text('Upcoming & Assigned', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  if (upcoming.isEmpty)
+
+                  if (upcoming.isEmpty && today.isEmpty)
                     const Text('No upcoming jobs')
                   else
                     Expanded(
                       child: RefreshIndicator(
                         onRefresh: _loadJobs,
-                        child: ListView.builder(
-                          itemCount: upcoming.length,
-                          itemBuilder: (context, index) {
-                            final job = upcoming[index];
-                            return JobCard(
-                              job: job,
-                              onChangeStatus: (newStatus) => _updateStatus(job, newStatus),
-                            );
-                          },
+                        child: ListView(
+                          children: [
+                            if (today.isNotEmpty) ...[
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8.0),
+                                child: Text('Today', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                              ),
+                              ...today.map((j) => JobCard(job: j, onChangeStatus: (s) => _updateStatus(j, s))).toList(),
+                            ],
+
+                            if (upcoming.isNotEmpty) ...[
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8.0),
+                                child: Text('Upcoming', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                              ),
+                              ...upcoming.map((j) => JobCard(job: j, onChangeStatus: (s) => _updateStatus(j, s))).toList(),
+                            ],
+
+                            const SizedBox(height: 12),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 8.0),
+                              child: Text('Work History', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            ),
+                            if (history.isEmpty) const Padding(padding: EdgeInsets.all(8.0), child: Text('No completed jobs yet')),
+                            ...history.map((j) => ListTile(
+                                  title: Text(j.serviceName),
+                                  subtitle: Text('${j.address} • ${j.customerName}'),
+                                  trailing: Text(j.scheduledAt.toLocal().toString().split('.').first),
+                                  onTap: () {
+                                    Navigator.of(context).pushNamed('/worker/orders/${j.id}');
+                                  },
+                                )),
+                            const SizedBox(height: 24),
+                          ],
                         ),
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  const Text('Work History', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  if (history.isEmpty)
-                    const Text('No completed jobs yet')
-                  else
-                    SizedBox(
-                      height: 160,
-                      child: ListView.separated(
-                        itemCount: history.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 6),
-                        itemBuilder: (context, i) {
-                          final j = history[i];
-                          return ListTile(
-                            title: Text(j.serviceName),
-                            subtitle: Text('${j.address} • ${j.customerName}'),
-                            trailing: Text(j.scheduledAt.toLocal().toString().split('.').first),
-                          );
-                        },
                       ),
                     ),
                 ],

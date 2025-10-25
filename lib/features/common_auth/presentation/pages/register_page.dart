@@ -118,7 +118,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     context.pop(true);
                   } else {
                     // As a fallback, route to login explicitly.
-                    context.go(AppRoutes.login);
+                    GoRouter.of(context).go(AppRoutes.login);
                   }
                 });
 
@@ -135,18 +135,18 @@ class _RegisterPageState extends State<RegisterPage> {
             } else {
               // Route admins to admin dashboard explicitly if not a registration flow
               if (state.user.role == UserRole.admin) {
-                context.go(AppRoutes.adminDashboard);
+                GoRouter.of(context).go(AppRoutes.adminDashboard);
               } else if (state.user.role == UserRole.worker) {
-                context.go(AppRoutes.workerHome);
+                GoRouter.of(context).go(AppRoutes.workerHome);
               } else {
-                context.go(AppRoutes.home);
+                GoRouter.of(context).go(AppRoutes.home);
               }
             }
           }
 
           if (state is AuthOtpSent) {
             // When OTP is sent, navigate to OTP screen with arguments including name/email/role
-            context.push(AppRoutes.phoneVerify, extra: {
+            GoRouter.of(context).push(AppRoutes.phoneVerify, extra: {
               'verificationId': state.verificationId,
               // For phone-only login we don't pass name/email/role because registration is email-only
               'phone': _phoneCtrl.text.trim(),

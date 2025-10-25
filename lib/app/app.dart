@@ -47,6 +47,7 @@ import 'package:agapecares/features/user_app/features/services/data/repositories
 import 'package:agapecares/features/user_app/features/cart/bloc/cart_bloc.dart' as ui_cart_bloc;
 import 'package:agapecares/features/user_app/features/services/logic/service_bloc.dart';
 import 'package:agapecares/features/user_app/features/orders/logic/order_bloc.dart';
+
 // Import the user-app OrderRepository (interface + implementation) with a prefix
 import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
 import 'package:agapecares/features/user_app/features/data/repositories/offer_repository.dart';
@@ -59,6 +60,8 @@ import 'package:agapecares/features/user_app/features/payment_gateway/repository
 import '../features/common_auth/logic/blocs/auth_bloc.dart';
 import 'package:agapecares/features/common_auth/data/datasources/auth_remote_ds.dart';
 import 'package:agapecares/core/services/session_service.dart';
+
+import '../features/worker_app/logic/blocs/worker_tasks_bloc.dart';
 
 // Repository implementations
 
@@ -126,7 +129,8 @@ Future<List<RepositoryProvider>> init() async {
   sl.registerFactory(() => AdminOrderBloc(repo: sl()));
   sl.registerFactory(() => AdminUserBloc(repo: sl()));
   sl.registerFactory(() => AdminWorkerBloc(repo: sl()));
-  // CheckoutBloc is provided at the checkout route to ensure correct dependencies and lifecycle.
+  sl.registerFactory(() => WorkerTasksBloc(orderRepository: sl(), sessionService: sl()));
+  // WorkerTasksBloc is provided locally by worker pages; no global import here.
 
   // Build repository providers to mount at app root
   final providers = <RepositoryProvider>[
@@ -173,7 +177,8 @@ List<BlocProvider> buildBlocs(BuildContext context) {
       ),
     ),
     BlocProvider<OrderBloc>(create: (_) => OrderBloc(orderRepository: sl<user_orders_repo.OrderRepository>())),
-    // CheckoutBloc provided locally in route; do not register globally to avoid duplicate instances.
+    BlocProvider<WorkerTasksBloc>(create: (_) => sl<WorkerTasksBloc>()),
+    // WorkerTasksBloc is provided locally by the worker UI; not registered globally here.
     BlocProvider<ServiceManagementBloc>(create: (_) => ServiceManagementBloc(serviceRepository: adminServiceRepo)),
     BlocProvider<AdminOrderBloc>(create: (_) => AdminOrderBloc(repo: adminOrderRepo)),
     BlocProvider<AdminUserBloc>(create: (_) => AdminUserBloc(repo: adminUserRepo)),
@@ -193,7 +198,8 @@ List<BlocProvider> buildBlocsFromGetIt({AuthBloc? authBloc}) {
       create: (_) => ui_cart_bloc.CartBloc(cartRepository: sl(), offerRepository: sl()),
     ),
     BlocProvider<OrderBloc>(create: (_) => OrderBloc(orderRepository: sl<user_orders_repo.OrderRepository>())),
-    // CheckoutBloc is created on the checkout route instead of globally.
+    BlocProvider<WorkerTasksBloc>(create: (_) => sl<WorkerTasksBloc>()),
+    // WorkerTasksBloc is provided locally by the worker UI; not registered globally here.
     BlocProvider<ServiceManagementBloc>(create: (_) => ServiceManagementBloc(serviceRepository: sl())),
     BlocProvider<AdminOrderBloc>(create: (_) => AdminOrderBloc(repo: sl())),
     BlocProvider<AdminUserBloc>(create: (_) => AdminUserBloc(repo: sl())),

@@ -68,11 +68,11 @@ class _LoginViewState extends State<LoginView> {
           if (mounted) {
             // Compare enum values, not strings. Route admins to admin dashboard.
             if (u.role == UserRole.worker) {
-              context.go(AppRoutes.workerHome);
+              GoRouter.of(context).go(AppRoutes.workerHome);
             } else if (u.role == UserRole.admin) {
-              context.go(AppRoutes.adminDashboard);
+              GoRouter.of(context).go(AppRoutes.adminDashboard);
             } else {
-              context.go(AppRoutes.home);
+              GoRouter.of(context).go(AppRoutes.home);
             }
           }
         }
@@ -118,18 +118,18 @@ class _LoginViewState extends State<LoginView> {
           }
           if (state is AuthOtpSent) {
             // navigate to OTP verification page. Extra can be a map or the verificationId itself.
-            context.push(AppRoutes.phoneVerify, extra: state.verificationId);
+            GoRouter.of(context).push(AppRoutes.phoneVerify, extra: state.verificationId);
           }
           if (state is Authenticated) {
             if (mounted) setState(() => _isLoading = false);
             final role = state.user.role;
             // Route based on enum role. Admins go to admin dashboard.
             if (role == UserRole.worker) {
-              context.go(AppRoutes.workerHome);
+              GoRouter.of(context).go(AppRoutes.workerHome);
             } else if (role == UserRole.admin) {
-              context.go(AppRoutes.adminDashboard);
+              GoRouter.of(context).go(AppRoutes.adminDashboard);
             } else {
-              context.go(AppRoutes.home);
+              GoRouter.of(context).go(AppRoutes.home);
             }
           }
         },
@@ -208,14 +208,14 @@ class _LoginViewState extends State<LoginView> {
 
 // Modify your TextButton for navigation to register page
                   TextButton(onPressed: () async {
-                    final result = await context.push(AppRoutes.register);
+                    final result = await GoRouter.of(context).push(AppRoutes.register);
                     if (result == true && mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registration successful!'), backgroundColor: Colors.green));
                     }
                   }, child: const Text('Don\'t have an account? Register')),
                   const SizedBox(height: 8),
                   TextButton(
-                    onPressed: () => context.push(AppRoutes.forgotPassword),
+                    onPressed: () => GoRouter.of(context).push(AppRoutes.forgotPassword),
                     child: const Text('Forgot password?'),
                   ),
                 ],

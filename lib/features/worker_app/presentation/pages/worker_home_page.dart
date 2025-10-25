@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:agapecares/features/worker_app/data/repositories/worker_repository.dart';
 import 'package:agapecares/core/models/user_model.dart';
 
-import 'package:provider/provider.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:agapecares/core/models/order_model.dart';
+import 'package:agapecares/core/models/job_model.dart';
+import 'package:agapecares/features/worker_app/data/repositories/worker_job_repository.dart';
 import 'package:agapecares/features/worker_app/presentation/pages/create_service_page.dart';
 import 'package:agapecares/core/services/session_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,7 +15,6 @@ import 'dart:async';
 import 'package:agapecares/app/routes/app_routes.dart';
 
 import '../../../../core/models/service_model.dart';
-import '../../../admin_app/features/order_management/domain/repositories/order_repository.dart';
 
 class WorkerHomePage extends StatefulWidget {
   const WorkerHomePage({Key? key}) : super(key: key);
@@ -31,8 +32,9 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
 
   // New: services list
   List<ServiceModel> _services = [];
-  // New: assigned orders preview
-  List<OrderModel> _assignedOrdersPreview = [];
+  // New: assigned orders preview (job-shaped, sanitized for workers)
+  List<JobModel> _assignedOrdersPreview = [];
+  final WorkerJobRepository _jobRepo = WorkerJobRepository();
 
   // Realtime subscriptions
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _servicesSub;
@@ -47,9 +49,8 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
   Future<void> _loadProfile() async {
     try {
       setState(() => _loading = true);
-      final repo = context.read<WorkerRepository>();
-      final orderRepo = context.read<OrderRepository>();
-      // final serviceRepo = context.read<ServiceRepository>(); // not used
+      // Avoid reading WorkerRepository/OrderRepository via context to prevent provider type collisions.
+      // We'll read directly from Firestore where needed.
 
       // Resolve worker id from SessionService first, then FirebaseAuth as fallback
       String? resolvedWorkerId;
@@ -89,10 +90,44 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
       debugPrint('[WorkerHomePage] resolvedWorkerId=$resolvedWorkerId');
 
       if (resolvedWorkerId != null && resolvedWorkerId.isNotEmpty) {
-        final candidate = await repo.fetchWorkerProfile(resolvedWorkerId);
-        if (candidate != null) setState(() => _profile = candidate);
-        // Use realtime subscriptions so the UI updates as Firestore data changes
-        await _loadCounts(orderRepo, resolvedWorkerId);
+        // Fetch worker profile directly to avoid provider type collisions
+        try {
+          final doc = await FirebaseFirestore.instance.collection('users').doc(resolvedWorkerId).get();
+          if (doc.exists) {
+            final candidate = UserModel.fromFirestore(doc);
+            setState(() => _profile = candidate);
+          } else {
+            // Fallback: maybe worker profile lives in `workers/{id}` collection
+            try {
+              final wdoc = await FirebaseFirestore.instance.collection('workers').doc(resolvedWorkerId).get();
+              if (wdoc.exists) {
+                final wdata = wdoc.data();
+                if (wdata != null) {
+                  // Map minimal fields into UserModel-like shape
+                  final candidate = UserModel(
+                    uid: resolvedWorkerId,
+                    name: (wdata['name'] as String?) ?? (wdata['workerName'] as String?) ?? 'Worker',
+                    email: (wdata['email'] as String?) ?? '',
+                    phoneNumber: (wdata['phoneNumber'] as String?) ?? (wdata['phone'] as String?) ?? '',
+                    role: UserRole.worker, createdAt: Timestamp.now(),
+                  );
+                  setState(() => _profile = candidate);
+                }
+              }
+            } catch (e) {
+              debugPrint('[WorkerHomePage] failed to fetch worker-profile from workers collection: $e');
+            }
+          }
+        } catch (e) {
+          debugPrint('[WorkerHomePage] failed to fetch profile directly: $e');
+        }
+
+        // Use per-worker mirror for assigned orders so security rules allow reads
+        await _loadCounts(resolvedWorkerId);
+        // Load a small preview using WorkerJobRepository which maps fields into JobModel
+        _loadAssignedPreview(resolvedWorkerId);
+
+        // Subscribe to real-time updates for assigned orders so UI updates live
         _subscribeAssignedOrders(resolvedWorkerId);
       }
 
@@ -105,14 +140,13 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
     }
   }
 
-
   void _subscribeServices() {
     // Cancel previous subscription
     _servicesSub?.cancel();
     _servicesSub = FirebaseFirestore.instance.collection('services').snapshots().listen((snap) {
       try {
         final List<ServiceModel> list = snap.docs
-            .map<ServiceModel>((d) => ServiceModel.fromMap(d.data() as Map<String, dynamic>))
+            .map<ServiceModel>((d) => ServiceModel.fromMap(d.data()))
             .toList();
         debugPrint('[WorkerHomePage] services snapshot count=${list.length}');
         if (mounted) setState(() => _services = list);
@@ -124,51 +158,96 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
     });
   }
 
-
   void _subscribeAssignedOrders(String workerId) {
+    // Cancel previous subscription
     _assignedSub?.cancel();
     _assignedSub = FirebaseFirestore.instance
+        .collection('workers')
+        .doc(workerId)
         .collection('orders')
-        .where('workerId', isEqualTo: workerId)
-        .orderBy('createdAt', descending: true)
+        .orderBy('scheduledAt', descending: false)
         .snapshots()
         .listen((snap) {
       try {
-        final list = snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
-        if (mounted) {
-          setState(() {
-            _assignedOrdersPreview = list.take(10).toList();
-            // orderStatus is an enum on OrderModel; use `.name` for string comparisons
-            _assignedCount = list.where((o) => o.orderStatus != OrderStatus.completed).length;
-            _completedCount = list.where((o) => o.orderStatus == OrderStatus.completed).length;
-          });
-        }
-        debugPrint('[WorkerHomePage] assigned snapshot count=${list.length}');
+        final List<JobModel> list = snap.docs.map((d) {
+          try {
+            final data = d.data();
+            final jobMap = <String, dynamic>{};
+            jobMap['id'] = d.id;
+            if (data['items'] is List && (data['items'] as List).isNotEmpty) {
+              final first = (data['items'] as List).first as Map<String, dynamic>;
+              jobMap['serviceName'] = first['serviceName'] ?? first['optionName'] ?? data['serviceName'];
+              jobMap['inclusions'] = (data['items'] as List).map((it) {
+                try {
+                  final m = Map<String, dynamic>.from(it as Map);
+                  return m['optionName']?.toString() ?? m['serviceName']?.toString() ?? '';
+                } catch (_) {
+                  return '';
+                }
+              }).where((s) => s.isNotEmpty).toList();
+            } else {
+              jobMap['serviceName'] = data['serviceName'] ?? '';
+              jobMap['inclusions'] = data['inclusions'] ?? [];
+            }
+            if (data['addressSnapshot'] is Map && (data['addressSnapshot'] as Map).containsKey('address')) {
+              jobMap['address'] = (data['addressSnapshot'] as Map)['address'] ?? data['address'] ?? '';
+            } else {
+              jobMap['address'] = data['address'] ?? '';
+            }
+            jobMap['customerName'] = data['userName'] ?? data['customerName'] ?? '';
+            jobMap['customerPhone'] = data['userPhone'] ?? data['customerPhone'] ?? '';
+            jobMap['scheduledAt'] = data['scheduledAt'] ?? data['scheduled_at'] ?? data['scheduledAtAt'];
+            jobMap['status'] = data['status'] ?? data['orderStatus'] ?? 'assigned';
+            jobMap['isCod'] = data['paymentStatus'] == 'cod' || (data['isCod'] ?? data['is_cod'] ?? false);
+            jobMap['specialInstructions'] = data['specialInstructions'] ?? data['special_instructions'] ?? '';
+            jobMap['rating'] = data['rating'] ?? null;
+            return JobModel.fromMap(jobMap, id: d.id);
+          } catch (e) {
+            debugPrint('[WorkerHomePage] _subscribeAssignedOrders parse error for ${d.id}: $e');
+            rethrow;
+          }
+        }).toList();
+
+        // Update counts and preview
+        final completed = list.where((o) => o.status == 'completed' || o.status == 'COMPLETED' || o.status == OrderStatus.completed.name).toList();
+        final inProgress = list.where((o) => !(o.status == 'completed' || o.status == 'COMPLETED' || o.status == OrderStatus.completed.name)).toList();
+        if (mounted) setState(() {
+          _assignedOrdersPreview = list.take(10).toList();
+          _assignedCount = inProgress.length;
+          _completedCount = completed.length;
+        });
+        debugPrint('[WorkerHomePage] _subscribeAssignedOrders snapshot count=${list.length} assigned=${_assignedCount} completed=${_completedCount}');
       } catch (e) {
-        debugPrint('[WorkerHomePage] assigned snapshot parse error: $e');
+        debugPrint('[WorkerHomePage] _subscribeAssignedOrders handler error: $e');
       }
     }, onError: (e) {
-      debugPrint('[WorkerHomePage] assigned snapshot error: $e');
+      debugPrint('[WorkerHomePage] _assignedSub error: $e');
     });
   }
 
-  Future<void> _loadCounts(OrderRepository orderRepo, String workerId) async {
+  Future<void> _loadAssignedPreview(String workerId) async {
     try {
-      // incoming: orders placed and not yet assigned
-      final cutoff = Timestamp.fromDate(DateTime.now().subtract(const Duration(hours: 24)));
-      final incomingSnap = await FirebaseFirestore.instance
-          .collection('orders')
-          .where('workerId', isNull: true)
-          .where('createdAt', isGreaterThanOrEqualTo: cutoff)
-          .get();
-      final incoming = incomingSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+      final list = await _jobRepo.getAssignedJobs(workerId: workerId);
+      debugPrint('[WorkerHomePage] _loadAssignedPreview fetched ${list.length} jobs for worker=$workerId');
+      if (list.isNotEmpty) debugPrint('[WorkerHomePage] job ids: ${list.map((j) => j.id).toList()}');
+      if (mounted) setState(() => _assignedOrdersPreview = list.take(10).toList());
+    } catch (e) {
+      debugPrint('[WorkerHomePage] _loadAssignedPreview error: $e');
+    }
+  }
 
-      // assigned & completed for this worker: query Firestore directly
+  Future<void> _loadCounts(String workerId) async {
+    try {
+      // assigned & completed for this worker from per-worker mirror
       final assignedSnap = await FirebaseFirestore.instance
+          .collection('workers')
+          .doc(workerId)
           .collection('orders')
-          .where('workerId', isEqualTo: workerId)
           .get();
       final assigned = assignedSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+
+      // incoming: not available to workers (restricted by rules) — show 0 or fetch via admin route
+      final incoming = <OrderModel>[];
 
       // orderStatus is an enum on OrderModel; compare against OrderStatus.completed
       final completed = assigned.where((o) => o.orderStatus == OrderStatus.completed).toList();
@@ -206,8 +285,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
               }
               // Route back to login
               try {
-                final go = (context as dynamic).go as void Function(String);
-                go('/login');
+                GoRouter.of(context).go('/login');
               } catch (_) {
                 Navigator.of(context).pushReplacementNamed('/login');
               }
@@ -230,9 +308,8 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
             icon: const Icon(Icons.person),
             onPressed: () {
               // Navigate to worker profile using GoRouter if available
-              final go = (context as dynamic).go as void Function(String);
               try {
-                go(AppRoutes.workerProfile);
+                GoRouter.of(context).go(AppRoutes.workerProfile);
               } catch (_) {
                 Navigator.of(context).pushNamed(AppRoutes.workerProfile);
               }
@@ -287,46 +364,54 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Assigned', style: TextStyle(fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 6),
-                              Text('$_assignedCount', style: const TextStyle(fontSize: 18)),
-                            ],
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Incoming', style: TextStyle(fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 6),
-                              Text('$_incomingCount', style: const TextStyle(fontSize: 18)),
-                            ],
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Completed', style: TextStyle(fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 6),
-                              Text('$_completedCount', style: const TextStyle(fontSize: 18)),
-                            ],
-                          ),
-                        ],
+                  InkWell(
+                    onTap: () {
+                      try {
+                        GoRouter.of(context).go(AppRoutes.workerTasks);
+                      } catch (_) {
+                        Navigator.of(context).pushNamed(AppRoutes.workerTasks);
+                      }
+                    },
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Assigned', style: TextStyle(fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 6),
+                                Text('$_assignedCount', style: const TextStyle(fontSize: 18)),
+                              ],
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Incoming', style: TextStyle(fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 6),
+                                Text('$_incomingCount', style: const TextStyle(fontSize: 18)),
+                              ],
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Completed', style: TextStyle(fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 6),
+                                Text('$_completedCount', style: const TextStyle(fontSize: 18)),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 12),
                   ElevatedButton.icon(
                     onPressed: () {
-                      final go = (context as dynamic).go as void Function(String);
                       try {
-                        go(AppRoutes.workerOrders);
+                        GoRouter.of(context).go(AppRoutes.workerOrders);
                       } catch (_) {
                         Navigator.of(context).pushNamed(AppRoutes.workerOrders);
                       }
@@ -376,19 +461,30 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
                           child: ListView.builder(
                             itemCount: _assignedOrdersPreview.length,
                             itemBuilder: (context, i) {
-                              final o = _assignedOrdersPreview[i];
+                              final j = _assignedOrdersPreview[i];
+                              final scheduled = j.scheduledAt.toLocal();
                               return Card(
                                 margin: const EdgeInsets.symmetric(vertical: 6),
                                 child: ListTile(
-                                  title: Text('Order • ${o.orderNumber.isNotEmpty ? o.orderNumber : o.id}'),
-                                  subtitle: Text('${o.userId} • ₹${o.total.toStringAsFixed(2)}'),
-                                  trailing: Text(o.orderStatus.name),
+                                  title: Text(j.serviceName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('${j.address}'),
+                                      const SizedBox(height: 4),
+                                      Text('${scheduled.year}-${scheduled.month.toString().padLeft(2,'0')}-${scheduled.day.toString().padLeft(2,'0')} ${scheduled.hour.toString().padLeft(2,'0')}:${scheduled.minute.toString().padLeft(2,'0')}', style: const TextStyle(fontSize: 12)),
+                                      const SizedBox(height: 4),
+                                      Text('${j.customerName} • ${j.customerPhone}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                                    ],
+                                  ),
+                                  trailing: Text(j.status.toUpperCase().replaceAll('_', ' '), style: const TextStyle(fontSize: 12)),
                                   onTap: () {
-                                    final go = (context as dynamic).go as void Function(String);
                                     try {
-                                      go(AppRoutes.workerOrders);
+                                      // Use the route template but replace the :id placeholder with the actual id
+                                      GoRouter.of(context).go(AppRoutes.workerOrderDetail.replaceFirst(':id', j.id));
                                     } catch (_) {
-                                      Navigator.of(context).pushNamed(AppRoutes.workerOrders);
+                                      // Fallback for environments without GoRouter: push the concrete path as the route name
+                                      Navigator.of(context).pushNamed(AppRoutes.workerOrderDetail.replaceFirst(':id', j.id));
                                     }
                                   },
                                 ),

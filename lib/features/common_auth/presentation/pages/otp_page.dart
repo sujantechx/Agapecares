@@ -83,7 +83,7 @@ class _OtpViewState extends State<OtpView> {
             // On successful login, navigate to the home screen and remove
             // the auth pages from the navigation stack.
             if (!mounted) return;
-            context.go('/home');
+            GoRouter.of(context).go('/home');
           } else if (state is AuthFailure) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(

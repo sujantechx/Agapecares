@@ -111,8 +111,14 @@ class _OrderListPageState extends State<OrderListPage> {
       case OrderStatus.accepted:
       case OrderStatus.assigned:
         return Colors.orange.shade700;
+      case OrderStatus.on_my_way:
+        return Colors.orange.shade500;
+      case OrderStatus.arrived:
+        return Colors.green.shade600;
       case OrderStatus.in_progress:
         return Colors.orange.shade600;
+      case OrderStatus.paused:
+        return Colors.amber.shade600;
       case OrderStatus.completed:
         return Colors.green.shade700;
       case OrderStatus.cancelled:

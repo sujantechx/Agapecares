@@ -6,6 +6,7 @@ import 'package:agapecares/features/worker_app/presentation/pages/worker_orders_
 import 'package:agapecares/features/worker_app/presentation/pages/worker_order_detail_page.dart';
 import 'package:agapecares/features/worker_app/presentation/pages/worker_profile_page.dart';
 import 'package:agapecares/features/worker_app/presentation/widgets/worker_dashboard_page.dart';
+import 'package:agapecares/features/worker_app/presentation/pages/worker_tasks_page.dart';
 
 final List<RouteBase> workerRoutes = [
   ShellRoute(
@@ -14,6 +15,10 @@ final List<RouteBase> workerRoutes = [
       GoRoute(
         path: AppRoutes.workerHome,
         builder: (context, state) => const WorkerHomePage(),
+      ),
+      GoRoute(
+        path: AppRoutes.workerTasks,
+        builder: (context, state) => const WorkerTasksPage(),
       ),
       GoRoute(
         path: AppRoutes.workerOrders,

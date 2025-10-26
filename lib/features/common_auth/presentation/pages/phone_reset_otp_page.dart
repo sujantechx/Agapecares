@@ -81,20 +81,39 @@ class _PhoneResetOtpPageState extends State<PhoneResetOtpPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Verify OTP')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Text('Enter the SMS code sent to ${widget.phone}'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _codeCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Verification Code'),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20.0),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              elevation: 6,
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Enter the SMS code sent to ${widget.phone}', style: Theme.of(context).textTheme.bodyMedium),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _codeCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Verification Code',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        filled: true,
+                        fillColor: Theme.of(context).colorScheme.surface,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    CommonButton(onPressed: _verifyAndProceed, text: 'Verify & Set New Password', isLoading: _isLoading),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 16),
-            CommonButton(onPressed: _verifyAndProceed, text: 'Verify & Set New Password', isLoading: _isLoading),
-          ],
+          ),
         ),
       ),
     );

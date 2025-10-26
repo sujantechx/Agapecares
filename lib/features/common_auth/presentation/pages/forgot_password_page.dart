@@ -78,23 +78,47 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Forgot Password')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('Enter your registered email or phone number.\nIf you enter email you will receive a reset link. If you enter phone you will receive an OTP.'),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _inputCtrl,
-                decoration: const InputDecoration(labelText: 'Email or Phone (include country code)'),
-                validator: _inputValidator,
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20.0),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              elevation: 6,
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text('Enter your registered email or phone number.\nIf you enter email you will receive a reset link. If you enter phone you will receive an OTP.', style: Theme.of(context).textTheme.bodyMedium),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _inputCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'Email or Phone (include country code)',
+                          prefixIcon: const Icon(Icons.alternate_email_outlined),
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        ),
+                        validator: _inputValidator,
+                      ),
+                      const SizedBox(height: 16),
+                      CommonButton(onPressed: _submit, text: 'Continue', isLoading: _isLoading),
+                      const SizedBox(height: 12),
+                      Center(child: Text('Or', style: Theme.of(context).textTheme.bodyMedium)),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.g_mobiledata), label: const Text('Continue with Google')),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.apple), label: const Text('Continue with Apple')),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 16),
-              CommonButton(onPressed: _submit, text: 'Continue', isLoading: _isLoading),
-            ],
+            ),
           ),
         ),
       ),

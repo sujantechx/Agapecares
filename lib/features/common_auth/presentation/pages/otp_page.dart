@@ -58,7 +58,6 @@ class _OtpViewState extends State<OtpView> {
         title: const Text('Verify OTP'),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        // foregroundColor: AppTheme.textColor,
       ),
       body: BlocListener<AuthBloc, AuthState>(
         listener: (context, state) async {
@@ -94,48 +93,47 @@ class _OtpViewState extends State<OtpView> {
           }
         },
         child: Center(
-          child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Enter Code',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'We have sent an OTP to +91 ${widget.phoneNumber}',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 48),
-                Pinput(
-                  length: 6,
-                  defaultPinTheme: defaultPinTheme,
-                  focusedPinTheme: defaultPinTheme.copyWith(
-                    decoration: defaultPinTheme.decoration!.copyWith(
-                    ),
+            padding: const EdgeInsets.all(20.0),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Card(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 6,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 28.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Enter Code', style: Theme.of(context).textTheme.headlineSmall),
+                      const SizedBox(height: 12),
+                      Text('We have sent an OTP to +91 ${widget.phoneNumber}', style: Theme.of(context).textTheme.bodyMedium, textAlign: TextAlign.center),
+                      const SizedBox(height: 24),
+                      Pinput(
+                        length: 6,
+                        defaultPinTheme: defaultPinTheme.copyWith(
+                          width: 50,
+                          height: 56,
+                          textStyle: const TextStyle(fontSize: 20),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onCompleted: (pin) => _verifyOtp(context, pin),
+                      ),
+                      const SizedBox(height: 24),
+                      BlocBuilder<AuthBloc, AuthState>(builder: (context, state) {
+                        return CommonButton(onPressed: null, text: 'Verify', isLoading: state is AuthLoading);
+                      }),
+                    ],
                   ),
-                  onCompleted: (pin) => _verifyOtp(context, pin),
                 ),
-                const SizedBox(height: 24),
-                BlocBuilder<AuthBloc, AuthState>(
-                  builder: (context, state) {
-                    return CommonButton(
-                      // The button is disabled as verification is auto-triggered on completion.
-                      onPressed: null,
-                      text: 'Verify',
-                      isLoading: state is AuthLoading,
-                    );
-                  },
-                ),
-              ],
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
   }
 }

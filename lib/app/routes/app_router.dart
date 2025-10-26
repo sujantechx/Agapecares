@@ -37,7 +37,7 @@ class AppRouter {
         if (kDebugMode) debugPrint('AppRouter.redirect: authState=$authState location=$location');
 
         // Define which routes are public using explicit path list (avoids RouteBase API differences).
-        const publicPaths = [AppRoutes.splash, AppRoutes.login, AppRoutes.register, AppRoutes.phoneVerify];
+        const publicPaths = [AppRoutes.splash, AppRoutes.onboarding, AppRoutes.login, AppRoutes.register, AppRoutes.phoneVerify];
         final isPublicRoute = publicPaths.contains(location);
 
         // --- REDIRECTION LOGIC ---

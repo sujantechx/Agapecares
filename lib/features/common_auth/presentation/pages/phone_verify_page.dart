@@ -33,40 +33,38 @@ class PhoneVerifyPage extends StatelessWidget {
       body: BlocConsumer<AuthBloc, AuthState>(
         listener: (context, state) {
           if (state is AuthFailure) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(state.message), backgroundColor: Colors.red),
-            );
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.message), backgroundColor: Colors.red),);
           }
-          // On success, the central router will handle navigation automatically.
-          // If this page was pushed, we can pop it and show a success message.
           if (state is Authenticated) {
             if (context.canPop()) {
               context.pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Verification successful'), backgroundColor: Colors.green),
-              );
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Verification successful'), backgroundColor: Colors.green),);
             }
           }
         },
         builder: (context, state) {
           return Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Enter Code', style: Theme.of(context).textTheme.headlineMedium),
-                  const SizedBox(height: 48),
-                  Pinput(
-                    length: 6,
-                    onCompleted: (pin) => _verifyOtp(context, pin),
+              padding: const EdgeInsets.all(20.0),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Card(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 6,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 28.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Enter Code', style: Theme.of(context).textTheme.headlineSmall),
+                        const SizedBox(height: 12),
+                        Pinput(length: 6, onCompleted: (pin) => _verifyOtp(context, pin)),
+                        const SizedBox(height: 18),
+                        if (state is AuthLoading) const CircularProgressIndicator() else const SizedBox.shrink(),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 24),
-                  if (state is AuthLoading)
-                    const CircularProgressIndicator()
-                  else
-                    const SizedBox.shrink(), // Button is not needed as submission is automatic
-                ],
+                ),
               ),
             ),
           );

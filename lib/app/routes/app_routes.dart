@@ -2,6 +2,7 @@
 
 class AppRoutes {
   static const String splash = '/splash';
+  static const String onboarding = '/onboarding';
   static const String home = '/home';
   static const String serviceDetail = '/service/:id';
   // alias for older/alternate usage

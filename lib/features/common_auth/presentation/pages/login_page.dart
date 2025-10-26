@@ -15,6 +15,7 @@ import '../../logic/blocs/auth_state.dart';
 import '../../data/repositories/auth_repository.dart';
 import 'package:agapecares/core/services/session_service.dart';
 import 'package:agapecares/core/models/user_model.dart';
+import 'package:agapecares/app/theme/theme_cubit.dart';
 
 
 class LoginPage extends StatelessWidget {
@@ -136,90 +137,108 @@ class _LoginViewState extends State<LoginView> {
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Welcome Back!',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('Phone'),
-                        selected: !_isEmailMode,
-                        onSelected: (s) => setState(() => _isEmailMode = !s),
-                      ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        label: const Text('Email'),
-                        selected: _isEmailMode,
-                        onSelected: (s) => setState(() => _isEmailMode = s),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  if (_isEmailMode) ...[
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: const InputDecoration(labelText: 'Email'),
-                      keyboardType: TextInputType.emailAddress,
-                      validator: Validators.validateEmail,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Top row with logo and theme toggle
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    SizedBox(
+                      height: 64,
+                      child: Image.asset('assets/logos/app_logo.png', fit: BoxFit.contain),
                     ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: const InputDecoration(labelText: 'Password'),
-                      obscureText: true,
-                      validator: (v) => (v == null || v.length < 6) ? 'Enter min 6 chars' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    CommonButton(onPressed: _signInWithEmail, text: 'Login', isLoading: _isLoading),
-                  ] else ...[
-                    Text(
-                      'Enter your phone number to continue',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _phoneController,
-                      keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(
-                        labelText: 'Phone Number',
-                        prefixText: '+91 ',
-                      ),
-                      validator: Validators.validatePhoneNumber,
-                    ),
-                    const SizedBox(height: 24),
-                    BlocBuilder<AuthBloc, AuthState>(builder: (context, state) {
-                      return CommonButton(onPressed: _sendOtp, text: 'Send OTP', isLoading: state is AuthLoading);
-                    }),
+                    IconButton(
+                      icon: const Icon(Icons.brightness_6),
+                      onPressed: () {
+                        try {
+                          context.read<ThemeCubit>().toggle();
+                        } catch (_) {
+                          // ThemeCubit not provided in this context (tests or isolated usage).
+                        }
+                      },
+                       tooltip: 'Toggle theme',
+                     ),
                   ],
-
-                  const SizedBox(height: 12),
-                  // Inside _LoginViewState in login_page.dart
-
-// Modify your TextButton for navigation to register page
-                  TextButton(onPressed: () async {
-                    final result = await GoRouter.of(context).push(AppRoutes.register);
-                    if (result == true && mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registration successful!'), backgroundColor: Colors.green));
-                    }
-                  }, child: const Text('Don\'t have an account? Register')),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: () => GoRouter.of(context).push(AppRoutes.forgotPassword),
-                    child: const Text('Forgot password?'),
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  elevation: 6,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 20.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text('Welcome Back!', style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
+                        const SizedBox(height: 16),
+                        // mode selector
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ChoiceChip(
+                              label: const Text('Email'),
+                              selected: _isEmailMode,
+                              onSelected: (s) => setState(() => _isEmailMode = s),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        if (_isEmailMode) ...[
+                          TextFormField(
+                            controller: _emailController,
+                            decoration: const InputDecoration(labelText: 'Email'),
+                            keyboardType: TextInputType.emailAddress,
+                            validator: Validators.validateEmail,
+                          ),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _passwordController,
+                            decoration: const InputDecoration(labelText: 'Password'),
+                            obscureText: true,
+                            validator: (v) => (v == null || v.length < 6) ? 'Enter min 6 chars' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          CommonButton(onPressed: _signInWithEmail, text: 'Login', isLoading: _isLoading),
+                        ] else ...[
+                          Text(
+                            'Enter your phone number to continue',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _phoneController,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'Phone Number',
+                              prefixText: '+91 ',
+                            ),
+                            validator: Validators.validatePhoneNumber,
+                          ),
+                          const SizedBox(height: 24),
+                          BlocBuilder<AuthBloc, AuthState>(builder: (context, state) {
+                            return CommonButton(onPressed: _sendOtp, text: 'Send OTP', isLoading: state is AuthLoading);
+                          }),
+                        ],
+                        const SizedBox(height: 12),
+                        TextButton(onPressed: () async {
+                          final result = await GoRouter.of(context).push(AppRoutes.register);
+                          if (result == true && mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registration successful!'), backgroundColor: Colors.green));
+                          }
+                        }, child: const Text('Don\'t have an account? Register')),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: () => GoRouter.of(context).push(AppRoutes.forgotPassword),
+                          child: const Text('Forgot password?'),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -227,145 +246,3 @@ class _LoginViewState extends State<LoginView> {
     );
   }
 }
-
-
-/*
-// lib/features/common_auth/presentation/pages/login_page.dart
-
-import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
-import 'package:agapecares/app/routes/app_routes.dart';
-import 'package:agapecares/core/utils/validators.dart';
-import 'package:agapecares/core/widgets/common_button.dart';
-
-import '../../logic/blocs/auth_bloc.dart';
-import '../../logic/blocs/auth_event.dart';
-import '../../logic/blocs/auth_state.dart';
-
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
-
-  @override
-  State<LoginPage> createState() => _LoginPageState();
-}
-
-class _LoginPageState extends State<LoginPage> {
-  final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _phoneController = TextEditingController();
-  bool _isEmailMode = true;
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _phoneController.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    if (!_formKey.currentState!.validate()) return;
-
-    final authBloc = context.read<AuthBloc>();
-
-    if (_isEmailMode) {
-      authBloc.add(AuthLoginWithEmailRequested(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      ));
-    } else {
-      // For phone login, first send OTP.
-      // The BLoC will emit AuthOtpSent state, which we listen for to navigate.
-      authBloc.add(AuthSendOtpRequested(_phoneController.text.trim()));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: BlocConsumer<AuthBloc, AuthState>(
-        listener: (context, state) {
-          if (state is AuthFailure) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(state.message), backgroundColor: Colors.red),
-            );
-          }
-          // When OTP is sent, navigate to the verification page.
-          if (state is AuthOtpSent) {
-            context.push(AppRoutes.phoneVerify, extra: state.verificationId);
-          }
-          // No need to listen for success, the router's redirect will handle it automatically.
-        },
-        builder: (context, state) {
-          final isLoading = state is AuthLoading;
-
-          return Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('Welcome Back!', style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center),
-                    const SizedBox(height: 16),
-                    // ... [UI for switching between email and phone] ...
-                    if (_isEmailMode)
-                      _buildEmailForm(isLoading)
-                    else
-                      _buildPhoneForm(isLoading),
-                    const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: () => context.push(AppRoutes.register),
-                      child: const Text('Don\'t have an account? Register'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildEmailForm(bool isLoading) {
-    return Column(
-      children: [
-        TextFormField(
-          controller: _emailController,
-          decoration: const InputDecoration(labelText: 'Email'),
-          keyboardType: TextInputType.emailAddress,
-          validator: Validators.validateEmail,
-        ),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: _passwordController,
-          decoration: const InputDecoration(labelText: 'Password'),
-          obscureText: true,
-          validator: (v) => (v == null || v.length < 6) ? 'Enter min 6 chars' : null,
-        ),
-        const SizedBox(height: 16),
-        CommonButton(onPressed: _submit, text: 'Login', isLoading: isLoading),
-      ],
-    );
-  }
-
-  Widget _buildPhoneForm(bool isLoading) {
-    return Column(
-      children: [
-        TextFormField(
-          controller: _phoneController,
-          keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'Phone Number', prefixText: '+91 '),
-          validator: Validators.validatePhoneNumber,
-        ),
-        const SizedBox(height: 24),
-        CommonButton(onPressed: _submit, text: 'Send OTP', isLoading: isLoading),
-      ],
-    );
-  }
-}*/

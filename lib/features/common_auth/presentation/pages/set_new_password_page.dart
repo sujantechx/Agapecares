@@ -92,32 +92,57 @@ class _SetNewPasswordPageState extends State<SetNewPasswordPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Set New Password')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              TextFormField(
-                controller: _passwordCtrl,
-                decoration: const InputDecoration(labelText: 'New Password'),
-                obscureText: true,
-                validator: _validatePassword,
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20.0),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              elevation: 6,
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextFormField(
+                        controller: _passwordCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'New Password',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        ),
+                        obscureText: true,
+                        validator: _validatePassword,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _confirmCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'Confirm Password',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        ),
+                        obscureText: true,
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Confirm password';
+                          if (v != _passwordCtrl.text) return 'Passwords do not match';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      CommonButton(onPressed: _setPassword, text: 'Set Password', isLoading: _isLoading),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _confirmCtrl,
-                decoration: const InputDecoration(labelText: 'Confirm Password'),
-                obscureText: true,
-                validator: (v) {
-                  if (v == null || v.isEmpty) return 'Confirm password';
-                  if (v != _passwordCtrl.text) return 'Passwords do not match';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              CommonButton(onPressed: _setPassword, text: 'Set Password', isLoading: _isLoading),
-            ],
+            ),
           ),
         ),
       ),

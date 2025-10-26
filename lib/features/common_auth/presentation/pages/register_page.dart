@@ -83,7 +83,6 @@ class _RegisterPageState extends State<RegisterPage> {
       appBar: AppBar(title: const Text('Register')),
       body: BlocListener<AuthBloc, AuthState>(
         listener: (context, state) {
-          // Reset loading flag on any non-loading state
           if (state is AuthLoading) {
             if (mounted) setState(() => _isLoading = true);
             return;
@@ -153,60 +152,99 @@ class _RegisterPageState extends State<RegisterPage> {
             });
           }
         },
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              children: [
-                // Role selector: user or worker (ChoiceChips - no deprecated APIs)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ChoiceChip(
-                      label: const Text('User'),
-                      selected: _role == UserRole.user,
-                      onSelected: (s) => setState(() => _role = UserRole.user),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20.0),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Card(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 6,
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ChoiceChip(label: const Text('User'), selected: _role == UserRole.user, onSelected: (s) => setState(() => _role = UserRole.user)),
+                            const SizedBox(width: 8),
+                            ChoiceChip(label: const Text('Worker'), selected: _role == UserRole.worker, onSelected: (s) => setState(() => _role = UserRole.worker)),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _nameCtrl,
+                          decoration: InputDecoration(
+                            labelText: 'Full name',
+                            prefixIcon: const Icon(Icons.person_outline),
+                            filled: true,
+                            fillColor: Theme.of(context).colorScheme.surface,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          ),
+                          validator: (v) => (v == null || v.isEmpty) ? 'Enter name' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _emailCtrl,
+                          decoration: InputDecoration(
+                            labelText: 'Email',
+                            prefixIcon: const Icon(Icons.email_outlined),
+                            filled: true,
+                            fillColor: Theme.of(context).colorScheme.surface,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          ),
+                          keyboardType: TextInputType.emailAddress,
+                          validator: Validators.validateEmail,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _passwordCtrl,
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            filled: true,
+                            fillColor: Theme.of(context).colorScheme.surface,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          ),
+                          obscureText: true,
+                          validator: (v) => (v == null || v.length < 6) ? 'Enter min 6 chars' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _phoneCtrl,
+                          decoration: InputDecoration(
+                            labelText: 'Phone (include country code)',
+                            prefixIcon: const Icon(Icons.phone_outlined),
+                            filled: true,
+                            fillColor: Theme.of(context).colorScheme.surface,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          ),
+                          keyboardType: TextInputType.phone,
+                          validator: Validators.validatePhoneNumberOptional,
+                        ),
+                        const SizedBox(height: 20),
+                        CommonButton(onPressed: _registerWithEmail, text: 'Register with Email', isLoading: _isLoading),
+                        const SizedBox(height: 12),
+                        CommonButton(onPressed: _startPhoneRegistration, text: 'Register / Sign in with Phone', isLoading: _isLoading),
+                        const SizedBox(height: 16),
+                        Center(child: Text('Or', style: Theme.of(context).textTheme.bodyMedium)),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: () {},
+                          icon: const Icon(Icons.g_mobiledata),
+                          label: const Text('Continue with Google'),
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.apple), label: const Text('Continue with Apple')),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    ChoiceChip(
-                      label: const Text('Worker'),
-                      selected: _role == UserRole.worker,
-                      onSelected: (s) => setState(() => _role = UserRole.worker),
-                    ),
-                  ],
+                  ),
                 ),
-                TextFormField(
-                  controller: _nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Full name'),
-                  validator: (v) => (v == null || v.isEmpty) ? 'Enter name' : null,
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _emailCtrl,
-                  decoration: const InputDecoration(labelText: 'Email'),
-                  keyboardType: TextInputType.emailAddress,
-                  validator: Validators.validateEmail,
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _passwordCtrl,
-                  decoration: const InputDecoration(labelText: 'Password'),
-                  obscureText: true,
-                  validator: (v) => (v == null || v.length < 6) ? 'Enter min 6 chars' : null,
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _phoneCtrl,
-                  decoration: const InputDecoration(labelText: 'Phone (include country code)'),
-                  keyboardType: TextInputType.phone,
-                  validator: Validators.validatePhoneNumberOptional,
-                ),
-                const SizedBox(height: 16),
-                CommonButton(onPressed: _registerWithEmail, text: 'Register with Email', isLoading: _isLoading),
-                const SizedBox(height: 8),
-                CommonButton(onPressed: _startPhoneRegistration, text: 'Register / Sign in with Phone', isLoading: _isLoading),
-              ],
+              ),
             ),
           ),
         ),

@@ -20,6 +20,15 @@ class UserModel extends Equatable {
   /// The user's phone number.
   final String? phoneNumber;
 
+  /// Whether the phone number was provided at registration time.
+  final bool phoneProvided;
+
+  /// Whether the phone number has been verified (via SMS provider).
+  final bool phoneVerified;
+
+  /// When the phone was verified (server timestamp) or null if not verified.
+  final Timestamp? phoneVerifiedAt;
+
   /// The URL for the user's profile picture.
   final String? photoUrl;
 
@@ -37,6 +46,9 @@ class UserModel extends Equatable {
     this.name,
     this.email,
     this.phoneNumber,
+    this.phoneProvided = false,
+    this.phoneVerified = false,
+    this.phoneVerifiedAt,
     this.photoUrl,
     required this.role,
     this.addresses,
@@ -51,9 +63,12 @@ class UserModel extends Equatable {
       name: data['name'] as String?,
       email: data['email'] as String?,
       phoneNumber: data['phoneNumber'] as String?,
+      phoneProvided: (data['phoneProvided'] as bool?) ?? (data['phoneNumber'] != null),
+      phoneVerified: (data['phoneVerified'] as bool?) ?? false,
+      phoneVerifiedAt: data['phoneVerifiedAt'] as Timestamp?,
       photoUrl: data['photoUrl'] as String?,
       role: UserRole.values.firstWhere(
-            (e) => e.name == data['role'],
+            (e) => e.name == (data['role'] as String?),
         orElse: () => UserRole.user, // Default to 'user' if role is missing or invalid
       ),
       addresses: data['addresses'] != null
@@ -69,6 +84,9 @@ class UserModel extends Equatable {
       'name': name,
       'email': email,
       'phoneNumber': phoneNumber,
+      'phoneProvided': phoneProvided,
+      'phoneVerified': phoneVerified,
+      'phoneVerifiedAt': phoneVerifiedAt,
       'photoUrl': photoUrl,
       'role': role.name, // Store the enum as a string
       'addresses': addresses,
@@ -82,6 +100,9 @@ class UserModel extends Equatable {
     String? name,
     String? email,
     String? phoneNumber,
+    bool? phoneProvided,
+    bool? phoneVerified,
+    Timestamp? phoneVerifiedAt,
     String? photoUrl,
     UserRole? role,
     List<Map<String, dynamic>>? addresses,
@@ -92,6 +113,9 @@ class UserModel extends Equatable {
       name: name ?? this.name,
       email: email ?? this.email,
       phoneNumber: phoneNumber ?? this.phoneNumber,
+      phoneProvided: phoneProvided ?? this.phoneProvided,
+      phoneVerified: phoneVerified ?? this.phoneVerified,
+      phoneVerifiedAt: phoneVerifiedAt ?? this.phoneVerifiedAt,
       photoUrl: photoUrl ?? this.photoUrl,
       role: role ?? this.role,
       addresses: addresses ?? this.addresses,
@@ -100,5 +124,5 @@ class UserModel extends Equatable {
   }
 
   @override
-  List<Object?> get props => [uid, name, email, phoneNumber, photoUrl, role, addresses, createdAt];
+  List<Object?> get props => [uid, name, email, phoneNumber, phoneProvided, phoneVerified, phoneVerifiedAt, photoUrl, role, addresses, createdAt];
 }

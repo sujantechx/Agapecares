@@ -30,13 +30,21 @@ class AuthRegisterRequested extends AuthEvent {
   final String name;
   final String phone;
   final UserRole role;
-  const AuthRegisterRequested({
-    required this.email,
-    required this.password,
-    required this.name,
-    required this.phone,
-    required this.role,
-  });
+
+  const AuthRegisterRequested({required this.email, required this.password, required this.name, required this.phone, required this.role});
+}
+
+/// Register using phone OTP first, then create email account and send verification
+class AuthRegisterWithPhoneOtpRequested extends AuthEvent {
+  final String verificationId;
+  final String otp;
+  final String email;
+  final String password;
+  final String name;
+  final String phone;
+  final UserRole role;
+
+  const AuthRegisterWithPhoneOtpRequested({required this.verificationId, required this.otp, required this.email, required this.password, required this.name, required this.phone, required this.role});
 }
 
 /// Dispatched to request sending a phone OTP.
@@ -60,3 +68,16 @@ class AuthVerifyOtpRequested extends AuthEvent {
 
 /// Dispatched to sign the user out.
 class AuthSignOutRequested extends AuthEvent {}
+
+/// Dispatched to request Google Sign-In authentication.
+class AuthSignInWithGoogleRequested extends AuthEvent {}
+
+/// Dispatched to mark a user's phone as verified (e.g., after SMS provider confirms).
+class AuthMarkPhoneVerifiedRequested extends AuthEvent {
+  final String? uid;
+  const AuthMarkPhoneVerifiedRequested({this.uid});
+}
+
+// Note: SMS-provider request event removed per user request. Phone verification
+// is still supported through Firebase's phone auth (OTP) but there is no
+// automatic server-side SMS request created.

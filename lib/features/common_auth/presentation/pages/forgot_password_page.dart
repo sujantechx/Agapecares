@@ -20,6 +20,24 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   final _inputCtrl = TextEditingController();
   bool _isLoading = false;
 
+  String _friendlyErrorMessage(Object error) {
+    if (error is FirebaseAuthException) {
+      switch (error.code) {
+        case 'user-not-found':
+          return 'No account exists with this email.';
+        case 'invalid-email':
+          return 'The email address is invalid.';
+        case 'user-disabled':
+          return 'This user account has been disabled.';
+        case 'network-request-failed':
+          return 'Network error. Check your internet connection and try again.';
+        default:
+          return error.message ?? 'Failed to send reset email. Please try again.';
+      }
+    }
+    return error.toString();
+  }
+
   @override
   void dispose() {
     _inputCtrl.dispose();
@@ -32,46 +50,24 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    final value = _inputCtrl.text.trim();
+    final email = _inputCtrl.text.trim();
     setState(() => _isLoading = true);
-
     try {
-      if (_looksLikeEmail(value)) {
-        // Email reset
-        await FirebaseAuth.instance.sendPasswordResetEmail(email: value);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password reset email sent. Check your inbox.')));
-      } else {
-        // Phone reset: start phone verification and navigate to OTP page
-        await FirebaseAuth.instance.verifyPhoneNumber(
-          phoneNumber: value,
-          verificationCompleted: (credential) async {
-            // Auto-signed in; navigate to new password page
-            await FirebaseAuth.instance.signInWithCredential(credential);
-            if (!mounted) return;
-            context.push(AppRoutes.setNewPassword);
-          },
-          verificationFailed: (e) {
-            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Phone verification failed: ${e.message}')));
-          },
-          codeSent: (verificationId, resendToken) {
-            if (!mounted) return;
-            context.push(AppRoutes.phoneResetOtp, extra: {'verificationId': verificationId, 'phone': value});
-          },
-          codeAutoRetrievalTimeout: (verificationId) {},
-        );
-      }
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password reset email sent. Check your inbox.')));
+    } on FirebaseAuthException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_friendlyErrorMessage(e)), backgroundColor: Colors.red));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${_friendlyErrorMessage(e)}'), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   String? _inputValidator(String? v) {
-    if (v == null || v.isEmpty) return 'Enter email or phone';
-    if (_looksLikeEmail(v)) return Validators.validateEmail(v);
-    return Validators.validatePhoneNumber(v);
+    if (v == null || v.isEmpty) return 'Enter email';
+    return Validators.validateEmail(v);
   }
 
   @override
@@ -93,27 +89,24 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('Enter your registered email or phone number.\nIf you enter email you will receive a reset link. If you enter phone you will receive an OTP.', style: Theme.of(context).textTheme.bodyMedium),
+                      Text('Enter your registered email. A reset link will be sent to this email.', style: Theme.of(context).textTheme.bodyMedium),
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _inputCtrl,
                         decoration: InputDecoration(
-                          labelText: 'Email or Phone (include country code)',
-                          prefixIcon: const Icon(Icons.alternate_email_outlined),
+                          labelText: 'Email',
+                          prefixIcon: const Icon(Icons.email_outlined),
                           filled: true,
                           fillColor: Theme.of(context).colorScheme.surface,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                         ),
                         validator: _inputValidator,
+                        keyboardType: TextInputType.emailAddress,
                       ),
                       const SizedBox(height: 16),
                       CommonButton(onPressed: _submit, text: 'Continue', isLoading: _isLoading),
                       const SizedBox(height: 12),
-                      Center(child: Text('Or', style: Theme.of(context).textTheme.bodyMedium)),
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.g_mobiledata), label: const Text('Continue with Google')),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.apple), label: const Text('Continue with Apple')),
+                      // Social buttons left as placeholders if you plan to support them later.
                     ],
                   ),
                 ),

@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:agapecares/app/routes/app_routes.dart';
 import 'package:agapecares/core/utils/validators.dart';
@@ -52,9 +53,9 @@ class LoginView extends StatefulWidget {
 class _LoginViewState extends State<LoginView> {
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
-  final _emailController = TextEditingController();
+  final _email_controller = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _isEmailMode = false;
+  bool _isEmailMode = true;
   bool _isLoading = false;
 
   @override
@@ -86,7 +87,7 @@ class _LoginViewState extends State<LoginView> {
   @override
   void dispose() {
     _phoneController.dispose();
-    _emailController.dispose();
+    _email_controller.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -105,7 +106,7 @@ class _LoginViewState extends State<LoginView> {
     if (!_formKey.currentState!.validate()) return;
     // Dispatch login event to AuthBloc; the bloc/repository will handle sign-in and user fetching.
     setState(() => _isLoading = true);
-    context.read<AuthBloc>().add(AuthLoginWithEmailRequested(email: _emailController.text.trim(), password: _passwordController.text.trim()));
+    context.read<AuthBloc>().add(AuthLoginWithEmailRequested(email: _email_controller.text.trim(), password: _passwordController.text.trim()));
   }
 
   @override
@@ -116,6 +117,30 @@ class _LoginViewState extends State<LoginView> {
           if (state is AuthFailure) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.message), backgroundColor: Colors.red));
             if (mounted) setState(() => _isLoading = false);
+          }
+          if (state is AuthEmailVerificationSent) {
+            // Show dialog with guidance and a button to attempt resending by re-attempting login.
+            if (mounted) {
+              setState(() => _isLoading = false);
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Verify your email'),
+                  content: Text('A verification email has been sent to ${state.email ?? _email_controller.text}. Please check your inbox and verify your email before logging in.'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK')),
+                    TextButton(
+                      onPressed: () {
+                        // Encourage the user to retry login which will trigger another verification email.
+                        Navigator.of(ctx).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Try logging in again to resend verification email.')));
+                      },
+                      child: const Text('Resend'),
+                    ),
+                  ],
+                ),
+              );
+            }
           }
           if (state is AuthOtpSent) {
             // navigate to OTP verification page. Extra can be a map or the verificationId itself.
@@ -187,7 +212,7 @@ class _LoginViewState extends State<LoginView> {
                         const SizedBox(height: 18),
                         if (_isEmailMode) ...[
                           TextFormField(
-                            controller: _emailController,
+                            controller: _email_controller,
                             decoration: const InputDecoration(labelText: 'Email'),
                             keyboardType: TextInputType.emailAddress,
                             validator: Validators.validateEmail,
@@ -201,6 +226,20 @@ class _LoginViewState extends State<LoginView> {
                           ),
                           const SizedBox(height: 16),
                           CommonButton(onPressed: _signInWithEmail, text: 'Login', isLoading: _isLoading),
+
+                          const SizedBox(height: 12),
+                          // Google sign-in only on Android or Web
+                          if (kIsWeb || defaultTargetPlatform == TargetPlatform.android) ...[
+                            OutlinedButton.icon(
+                              onPressed: _isLoading ? null : () {
+                                setState(() => _isLoading = true);
+                                context.read<AuthBloc>().add(AuthSignInWithGoogleRequested());
+                              },
+                              icon: const Icon(Icons.g_mobiledata),
+                              label: Text(_isLoading ? 'Processing...' : 'Continue with Google'),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
                         ] else ...[
                           Text(
                             'Enter your phone number to continue',

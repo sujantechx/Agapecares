@@ -42,3 +42,11 @@ class AuthOtpSent extends AuthState {
   @override
   List<Object?> get props => [verificationId];
 }
+
+/// A temporary state indicating that a verification email was sent after registration.
+class AuthEmailVerificationSent extends AuthState {
+  final String? email;
+  const AuthEmailVerificationSent({this.email});
+  @override
+  List<Object?> get props => [email];
+}

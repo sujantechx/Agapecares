@@ -12,7 +12,20 @@
           "package_name": "com.example.agapecares"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1040620901-u9kuh805n3rhfjftpq3rb4fm89h5dc80.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.agapecares",
+            "certificate_hash": "5a01edafea40d012fac6bf589bb60a507462dc21"
+          }
+        },
+        {
+          "client_id": "1040620901-6gc4d3rlof2jjn599q5bvu2mi3pd10v3.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBFVPUIo_F3ipPp4nGuTzxqLtZD4mU4E0o"
@@ -20,7 +33,55 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1040620901-6gc4d3rlof2jjn599q5bvu2mi3pd10v3.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1040620901-0uvutpumepjf6trj7eui2g45lh7bgbtr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.agapecares"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1040620901:android:e77f5f265e2fd8f34ed58c",
+        "android_client_info": {
+          "package_name": "com.example.agapecares_admin"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1040620901-6gc4d3rlof2jjn599q5bvu2mi3pd10v3.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBFVPUIo_F3ipPp4nGuTzxqLtZD4mU4E0o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1040620901-6gc4d3rlof2jjn599q5bvu2mi3pd10v3.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1040620901-0uvutpumepjf6trj7eui2g45lh7bgbtr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.agapecares"
+              }
+            }
+          ]
         }
       }
     }

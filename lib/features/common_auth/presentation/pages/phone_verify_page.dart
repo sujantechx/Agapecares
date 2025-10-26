@@ -16,14 +16,32 @@ class PhoneVerifyPage extends StatelessWidget {
   final String? name;
   final String? email;
   final String? phone;
+  final String? password;
   final UserRole? role;
 
-  const PhoneVerifyPage({super.key, required this.verificationId, this.name, this.email, this.phone, this.role});
+  const PhoneVerifyPage({super.key, required this.verificationId, this.name, this.email, this.phone, this.password, this.role});
 
   void _verifyOtp(BuildContext context, String otp) {
-    context.read<AuthBloc>().add(
-      AuthVerifyOtpRequested(verificationId: verificationId, otp: otp, name: name, email: email, role: role),
-    );
+    // If email and password are present, this OTP is part of the registration flow
+    // where we link the phone credential to the newly created email account.
+    if ((email != null && email!.isNotEmpty) && (password != null && password!.isNotEmpty)) {
+      context.read<AuthBloc>().add(
+        AuthRegisterWithPhoneOtpRequested(
+          verificationId: verificationId,
+          otp: otp,
+          email: email!,
+          password: password!,
+          name: name ?? '',
+          phone: phone ?? '',
+          role: role ?? UserRole.user,
+        ),
+      );
+    } else {
+      // phone-only verification (login or standalone)
+      context.read<AuthBloc>().add(
+        AuthVerifyOtpRequested(verificationId: verificationId, otp: otp, name: name, email: email, role: role),
+      );
+    }
   }
 
   @override
@@ -35,6 +53,12 @@ class PhoneVerifyPage extends StatelessWidget {
           if (state is AuthFailure) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.message), backgroundColor: Colors.red),);
           }
+          if (state is AuthEmailVerificationSent) {
+            // Registration via phone linked to email requires email verification next.
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verification email sent to ${state.email ?? email ?? ''}. Please verify to complete registration.'), backgroundColor: Colors.orange));
+            if (context.canPop()) context.pop();
+            return;
+          }
           if (state is Authenticated) {
             if (context.canPop()) {
               context.pop();
@@ -43,33 +67,33 @@ class PhoneVerifyPage extends StatelessWidget {
           }
         },
         builder: (context, state) {
-          return Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20.0),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: Card(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  elevation: 6,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 28.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('Enter Code', style: Theme.of(context).textTheme.headlineSmall),
-                        const SizedBox(height: 12),
-                        Pinput(length: 6, onCompleted: (pin) => _verifyOtp(context, pin)),
-                        const SizedBox(height: 18),
-                        if (state is AuthLoading) const CircularProgressIndicator() else const SizedBox.shrink(),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
+           return Center(
+             child: SingleChildScrollView(
+               padding: const EdgeInsets.all(20.0),
+               child: ConstrainedBox(
+                 constraints: const BoxConstraints(maxWidth: 520),
+                 child: Card(
+                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                   elevation: 6,
+                   child: Padding(
+                     padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 28.0),
+                     child: Column(
+                       mainAxisSize: MainAxisSize.min,
+                       children: [
+                         Text('Enter Code', style: Theme.of(context).textTheme.headlineSmall),
+                         const SizedBox(height: 12),
+                         Pinput(length: 6, onCompleted: (pin) => _verifyOtp(context, pin)),
+                         const SizedBox(height: 18),
+                         if (state is AuthLoading) const CircularProgressIndicator() else const SizedBox.shrink(),
+                       ],
+                     ),
+                   ),
+                 ),
+               ),
+             ),
+           );
+         },
+       ),
+     );
+   }
+ }

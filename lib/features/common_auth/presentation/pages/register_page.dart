@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:go_router/go_router.dart';
 
@@ -25,9 +26,8 @@ class _RegisterPageState extends State<RegisterPage> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController(text: '+91');
   bool _isLoading = false;
-  bool _isRegistering = false; // true when user started email registration
   UserRole _role = UserRole.user;
 
   @override
@@ -41,39 +41,31 @@ class _RegisterPageState extends State<RegisterPage> {
 
   void _registerWithEmail() {
     if (!_formKey.currentState!.validate()) return;
+    // Normalize phone: if user entered without country code, prefix +91
+    String phone = _phoneCtrl.text.trim();
+    if (phone.isEmpty) return; // validator should have caught this
+    if (!phone.startsWith('+')) {
+      phone = '+91$phone';
+    }
     // mark that this flow is an email registration so that on success we pop back to login
-    _isRegistering = true;
     setState(() => _isLoading = true);
     // dispatch registration event to AuthBloc which will handle Firebase and Firestore writes
     context.read<AuthBloc>().add(AuthRegisterRequested(
       email: _emailCtrl.text.trim(),
       password: _passwordCtrl.text.trim(),
       name: _nameCtrl.text.trim(),
-      phone: _phoneCtrl.text.trim(),
+      phone: phone,
       role: _role,
     ));
   }
 
-  void _startPhoneRegistration() {
-    final phone = _phoneCtrl.text.trim();
-    if (phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter phone number')));
-      return;
-    }
-
-    // Enforce email-only registration: if the user filled name/email/password and now attempts
-    // phone registration, instruct them to use email registration instead. Phone flow is for
-    // login/OTP only in this app configuration.
-    final hasFilledRegistrationFields = _nameCtrl.text.trim().isNotEmpty || _emailCtrl.text.trim().isNotEmpty || _passwordCtrl.text.trim().isNotEmpty;
-    if (hasFilledRegistrationFields) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Phone cannot be used to create a new account. Please use "Register with Email".'),
-        backgroundColor: Colors.orange,
-      ));
-      return;
-    }
-
-    // Dispatch an event to send OTP; UI will navigate when AuthState changes to AuthOtpSent
+  void _registerAndVerifyPhone() {
+    if (!_formKey.currentState!.validate()) return;
+    String phone = _phoneCtrl.text.trim();
+    if (phone.isEmpty) return;
+    if (!phone.startsWith('+')) phone = '+91$phone';
+    setState(() => _isLoading = true);
+    // Send OTP; when AuthOtpSent is emitted the listener will navigate to PhoneVerifyPage
     context.read<AuthBloc>().add(AuthSendOtpRequested(phone));
   }
 
@@ -94,62 +86,44 @@ class _RegisterPageState extends State<RegisterPage> {
             // Explicit server-friendly message and reset register flag so subsequent success flows behave correctly
             final msg = state.message.isNotEmpty ? state.message : 'Registration failed. Please try again.';
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
-            _isRegistering = false;
             return;
           }
 
-          if (state is Authenticated) {
-            // If we initiated an email registration flow, return to the login screen so the user
-            // can sign in (and to avoid automatically logging in newly created users).
-            if (_isRegistering) {
-              if (mounted) {
-                // Show success snackbar, then pop back to Login with true.
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Registration successful. Please login.'),
-                  backgroundColor: Colors.green,
-                ));
-
-                // Small delay so the user notices the snackbar before the screen closes.
-                Future.delayed(const Duration(milliseconds: 400), () {
-                  if (!mounted) return;
-                  // If this page was pushed, pop with a positive result so callers can show success.
-                  if (Navigator.of(context).canPop()) {
-                    context.pop(true);
-                  } else {
-                    // As a fallback, route to login explicitly.
-                    GoRouter.of(context).go(AppRoutes.login);
-                  }
-                });
-
-                // Ensure loading state is reset.
-                if (mounted) setState(() => _isLoading = false);
-              }
-              _isRegistering = false;
-              return;
+          if (state is AuthEmailVerificationSent) {
+            // Inform user to check their email for verification and route to login
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verification email sent to ${state.email ?? _emailCtrl.text}. Please verify before logging in.'), backgroundColor: Colors.green));
+              // Small delay then navigate to login
+              Future.delayed(const Duration(milliseconds: 500), () {
+                if (!mounted) return;
+                if (Navigator.of(context).canPop()) context.pop(true);
+                else GoRouter.of(context).go(AppRoutes.login);
+              });
             }
-
-            // If this screen was pushed and we weren't the one who initiated registration, simply pop.
-            if (Navigator.of(context).canPop()) {
-              context.pop(true);
-            } else {
-              // Route admins to admin dashboard explicitly if not a registration flow
-              if (state.user.role == UserRole.admin) {
-                GoRouter.of(context).go(AppRoutes.adminDashboard);
-              } else if (state.user.role == UserRole.worker) {
-                GoRouter.of(context).go(AppRoutes.workerHome);
-              } else {
-                GoRouter.of(context).go(AppRoutes.home);
-              }
-            }
+            return;
           }
 
           if (state is AuthOtpSent) {
-            // When OTP is sent, navigate to OTP screen with arguments including name/email/role
+            // When OTP is sent for a registration flow, navigate to OTP screen with arguments including name/email/password/role
             GoRouter.of(context).push(AppRoutes.phoneVerify, extra: {
               'verificationId': state.verificationId,
-              // For phone-only login we don't pass name/email/role because registration is email-only
               'phone': _phoneCtrl.text.trim(),
+              'name': _nameCtrl.text.trim(),
+              'email': _emailCtrl.text.trim(),
+              'password': _passwordCtrl.text.trim(),
+              'role': _role,
             });
+          }
+
+          if (state is Authenticated) {
+            // Authenticated case (shouldn't normally reach here during registration flow)
+            if (Navigator.of(context).canPop()) {
+              context.pop(true);
+            } else {
+              if (state.user.role == UserRole.admin) GoRouter.of(context).go(AppRoutes.adminDashboard);
+              else if (state.user.role == UserRole.worker) GoRouter.of(context).go(AppRoutes.workerHome);
+              else GoRouter.of(context).go(AppRoutes.home);
+            }
           }
         },
         child: Center(
@@ -217,29 +191,37 @@ class _RegisterPageState extends State<RegisterPage> {
                         TextFormField(
                           controller: _phoneCtrl,
                           decoration: InputDecoration(
-                            labelText: 'Phone (include country code)',
-                            prefixIcon: const Icon(Icons.phone_outlined),
+                            labelText: 'Phone',
+                            prefixIcon: const Icon(Icons.phone),
+                            hintText: '+91 9876543210',
                             filled: true,
                             fillColor: Theme.of(context).colorScheme.surface,
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                           ),
                           keyboardType: TextInputType.phone,
-                          validator: Validators.validatePhoneNumberOptional,
+                          validator: (v) => Validators.validatePhoneNumber(v?.trim() ?? ''),
                         ),
                         const SizedBox(height: 20),
-                        CommonButton(onPressed: _registerWithEmail, text: 'Register with Email', isLoading: _isLoading),
+                        CommonButton(onPressed: _registerWithEmail, text: 'Register', isLoading: _isLoading),
+                        const SizedBox(height: 8),
+                        OutlinedButton(onPressed: _isLoading ? null : _registerAndVerifyPhone, child: const Text('Register & Verify Phone (OTP)'), ),
                         const SizedBox(height: 12),
-                        CommonButton(onPressed: _startPhoneRegistration, text: 'Register / Sign in with Phone', isLoading: _isLoading),
+                        // Show Google sign-in only on Android or Web
+                        if (kIsWeb || defaultTargetPlatform == TargetPlatform.android) ...[
+                          OutlinedButton.icon(
+                            onPressed: _isLoading ? null : () {
+                              // Trigger Google Sign-In via BLoC
+                              context.read<AuthBloc>().add(AuthSignInWithGoogleRequested());
+                            },
+                            icon: const Icon(Icons.g_mobiledata),
+                            label: Text(_isLoading ? 'Processing...' : 'Continue with Google'),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                         const SizedBox(height: 16),
                         Center(child: Text('Or', style: Theme.of(context).textTheme.bodyMedium)),
                         const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          onPressed: () {},
-                          icon: const Icon(Icons.g_mobiledata),
-                          label: const Text('Continue with Google'),
-                        ),
-                        const SizedBox(height: 8),
-                        OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.apple), label: const Text('Continue with Apple')),
+                        // Social buttons left as placeholders; registration must be done via email verification.
                       ],
                     ),
                   ),

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/common_auth/presentation/pages/login_page.dart';
 import '../../features/common_auth/presentation/pages/register_page.dart';
 import '../../features/common_auth/presentation/pages/phone_verify_page.dart';
+import '../../features/common_auth/presentation/pages/forgot_password_page.dart';
 import '../../features/common_auth/presentation/pages/onboarding_page.dart';
 import 'splash_router.dart';
 // TODO: Add imports for your SplashPage, ForgotPasswordPage, etc.
@@ -35,6 +36,7 @@ final List<RouteBase> publicRoutes = [
       String? name;
       String? email;
       String? phone;
+      String? password;
       UserRole? role;
       if (extra is String) {
         verificationId = extra;
@@ -43,6 +45,7 @@ final List<RouteBase> publicRoutes = [
         name = extra['name'] as String?;
         email = extra['email'] as String?;
         phone = extra['phone'] as String?;
+        password = extra['password'] as String?;
         final r = extra['role'];
         if (r is UserRole) role = r;
         if (r is String) {
@@ -57,13 +60,13 @@ final List<RouteBase> publicRoutes = [
         name: name,
         email: email,
         phone: phone,
+        password: password,
         role: role,
       );
     },
   ),
-  // TODO: Add other public routes like ForgotPassword
-  // GoRoute(
-  //   path: AppRoutes.forgotPassword,
-  //   builder: (context, state) => const ForgotPasswordPage(),
-  // ),
+  GoRoute(
+    path: AppRoutes.forgotPassword,
+    builder: (context, state) => const ForgotPasswordPage(),
+  ),
 ];

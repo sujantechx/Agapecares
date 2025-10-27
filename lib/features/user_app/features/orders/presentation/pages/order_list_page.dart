@@ -6,7 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../../../app/routes/app_routes.dart';
 import '../../../../../../core/models/order_model.dart';
 
-import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 
 
 import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
@@ -157,14 +157,12 @@ class _OrderListPageState extends State<OrderListPage> {
               ElevatedButton(
                 onPressed: () {
                   // Navigate to login - use centralized route constant and GoRouter
-                  // ignore: deprecated_member_use_from_same_package
-                  // Using context.go from go_router package
-                  // Replace at runtime
-                  final go = (context as dynamic).go as void Function(String);
+                  // Use GoRouter.of(context).go so we call the extension on the correct BuildContext
                   try {
-                    go(AppRoutes.login);
+                    // Prefer GoRouter if available
+                    GoRouter.of(context).go(AppRoutes.login);
                   } catch (_) {
-                    // Fallback: pushNamed if go_router not available at runtime
+                    // Fallback to Navigator if GoRouter isn't wired in this context
                     Navigator.of(context).pushNamed(AppRoutes.login);
                   }
                 },

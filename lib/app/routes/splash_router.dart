@@ -1,17 +1,14 @@
+// lib/routes/splash_router.dart
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../routes/app_routes.dart';
-import '../../core/models/user_model.dart';
 
-/// A small splash router that decides where to send the user after a brief delay.
-/// It shows onboarding on first launch, otherwise performs the same auth+role
-/// checks as the original splash screen and navigates accordingly.
+/// A small splash router that only decides if onboarding is needed.
+/// Auth redirection is handled by the main AppRouter.redirect logic.
 class SplashRouter extends StatefulWidget {
   const SplashRouter({super.key});
 
@@ -32,50 +29,29 @@ class _SplashRouterState extends State<SplashRouter> {
     if (!mounted) return;
     if (kDebugMode) debugPrint('SplashRouter: deciding navigation');
 
-    // 1) onboarding
     try {
+      // 1. Check if onboarding has been seen
       final prefs = await SharedPreferences.getInstance();
       final seen = prefs.getBool('seen_onboarding') ?? false;
+
       if (!seen) {
         if (!mounted) return;
         if (kDebugMode) debugPrint('SplashRouter: routing to onboarding');
         GoRouter.of(context).go(AppRoutes.onboarding);
-        return;
+      } else {
+        if (!mounted) return;
+        // 2. If onboarding IS seen, just go to the login route.
+        // The AppRouter.redirect logic will IMMEDIATELY catch this.
+        // - If user is Authenticated, redirect will send them to AppRoutes.home.
+        // - If user is Unauthenticated, redirect will allow them to see AppRoutes.login.
+        if (kDebugMode) debugPrint('SplashRouter: routing to login (AppRouter will redirect if needed)');
+        GoRouter.of(context).go(AppRoutes.login);
       }
     } catch (e) {
       if (kDebugMode) debugPrint('SplashRouter: prefs error $e');
-      // continue
-    }
-
-    // 2) auth check
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      if (!mounted) return;
-      if (kDebugMode) debugPrint('SplashRouter: routing to login');
-      GoRouter.of(context).go(AppRoutes.login);
-      return;
-    }
-
-    // 3) fetch role
-    try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      final data = doc.data();
-      final role = (data != null && data['role'] is String) ? (data['role'] as String) : UserRole.user.name;
-      final normalized = role.trim().toLowerCase();
-      if (!mounted) return;
-      if (normalized == UserRole.worker.name) {
-        GoRouter.of(context).go(AppRoutes.workerHome);
-      } else if (normalized == UserRole.admin.name) {
-        GoRouter.of(context).go(AppRoutes.adminDashboard);
-      } else {
-        GoRouter.of(context).go(AppRoutes.home);
+      if (mounted) {
+        GoRouter.of(context).go(AppRoutes.login);
       }
-      return;
-    } catch (e, st) {
-      if (kDebugMode) debugPrint('SplashRouter: role fetch error $e\n$st');
-      if (!mounted) return;
-      GoRouter.of(context).go(AppRoutes.home);
-      return;
     }
   }
 
@@ -99,4 +75,3 @@ class _SplashRouterState extends State<SplashRouter> {
     );
   }
 }
-

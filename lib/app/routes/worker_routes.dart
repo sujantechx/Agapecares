@@ -7,9 +7,13 @@ import 'package:agapecares/features/worker_app/presentation/pages/worker_order_d
 import 'package:agapecares/features/worker_app/presentation/pages/worker_profile_page.dart';
 import 'package:agapecares/features/worker_app/presentation/widgets/worker_dashboard_page.dart';
 import 'package:agapecares/features/worker_app/presentation/pages/worker_tasks_page.dart';
+import 'package:flutter/material.dart';
+
+final GlobalKey<NavigatorState> _workerShellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'workerShell');
 
 final List<RouteBase> workerRoutes = [
   ShellRoute(
+    navigatorKey: _workerShellNavigatorKey,
     builder: (context, state, child) => WorkerDashboardPage(child: child),
     routes: [
       GoRoute(

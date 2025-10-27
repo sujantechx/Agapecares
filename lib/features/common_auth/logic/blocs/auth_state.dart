@@ -50,3 +50,11 @@ class AuthEmailVerificationSent extends AuthState {
   @override
   List<Object?> get props => [email];
 }
+
+/// A temporary state indicating that a password reset email has been sent.
+class AuthPasswordResetSent extends AuthState {
+  final String email;
+  const AuthPasswordResetSent({required this.email});
+  @override
+  List<Object?> get props => [email];
+}

@@ -1,16 +1,20 @@
+// lib/features/common_auth/presentation/pages/phone_reset_otp_page.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+// --- FIX: Added import for AppRoutes ---
+import 'package:agapecares/app/routes/app_routes.dart';
+// --- End Fix ---
+
 import '../../../../core/models/user_model.dart';
 import '../../../../core/services/session_service.dart';
 import '../../../../core/widgets/common_button.dart';
 import '../../../user_app/features/cart/bloc/cart_bloc.dart';
 import '../../../user_app/features/cart/bloc/cart_event.dart';
 import '../../../user_app/features/cart/data/repositories/cart_repository.dart';
-
-
 
 class PhoneResetOtpPage extends StatefulWidget {
   final String verificationId;
@@ -47,35 +51,34 @@ class _PhoneResetOtpPageState extends State<PhoneResetOtpPage> {
         // Save session so user remains logged in
         try {
           final session = context.read<SessionService>();
-          // Provide a safe default role ('user') when saving a session after phone sign-in.
           final um = UserModel(
             uid: user.uid,
             phoneNumber: widget.phone,
             name: user.displayName ?? '',
             email: user.email,
             role: UserRole.user,
-            createdAt: Timestamp.fromDate(user.metadata.creationTime ?? DateTime.now()),          );
+            createdAt: Timestamp.fromDate(user.metadata.creationTime ?? DateTime.now()),
+          );
           await session.saveUser(um);
-          // Seed cart and notify CartBloc
+          // Try to seed cart
           try {
-            final cartRepo = context.read<CartRepository>();
-            await cartRepo.getCartItems();
-          } catch (_) {}
-          try {
+            context.read<CartRepository>().getCartItems();
             context.read<CartBloc>().add(CartStarted());
           } catch (_) {}
         } catch (_) {}
         if (!mounted) return;
-         // Navigate to set new password page where user can set a new password
-         // Use literal path to avoid any constant lookup issue in analyzer
-         context.push('/set-new-password');
-       }
-     } catch (e) {
-       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verification failed: $e')));
-     } finally {
-       if (mounted) setState(() => _isLoading = false);
-     }
-   }
+
+        // --- FIX: Use AppRoutes constant ---
+        context.push(AppRoutes.setNewPassword);
+        // --- End Fix ---
+
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verification failed: $e')));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

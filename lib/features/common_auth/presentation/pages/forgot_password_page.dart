@@ -1,10 +1,13 @@
-import 'package:flutter/material.dart';
+// lib/features/common_auth/presentation/pages/forgot_password_page.dart
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../logic/blocs/auth_bloc.dart';
+import '../../logic/blocs/auth_event.dart';
+import '../../logic/blocs/auth_state.dart';
 
-import '../../../../app/routes/app_routes.dart';
 import '../../../../core/utils/validators.dart';
-
 import '../../../../core/widgets/common_button.dart';
 
 
@@ -20,32 +23,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   final _inputCtrl = TextEditingController();
   bool _isLoading = false;
 
-  String _friendlyErrorMessage(Object error) {
-    if (error is FirebaseAuthException) {
-      switch (error.code) {
-        case 'user-not-found':
-          return 'No account exists with this email.';
-        case 'invalid-email':
-          return 'The email address is invalid.';
-        case 'user-disabled':
-          return 'This user account has been disabled.';
-        case 'network-request-failed':
-          return 'Network error. Check your internet connection and try again.';
-        default:
-          return error.message ?? 'Failed to send reset email. Please try again.';
-      }
-    }
-    return error.toString();
-  }
-
   @override
   void dispose() {
     _inputCtrl.dispose();
     super.dispose();
-  }
-
-  bool _looksLikeEmail(String input) {
-    return input.contains('@');
   }
 
   Future<void> _submit() async {
@@ -53,61 +34,72 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     final email = _inputCtrl.text.trim();
     setState(() => _isLoading = true);
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password reset email sent. Check your inbox.')));
-    } on FirebaseAuthException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_friendlyErrorMessage(e)), backgroundColor: Colors.red));
+      context.read<AuthBloc>().add(AuthPasswordResetRequested(email: email));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${_friendlyErrorMessage(e)}'), backgroundColor: Colors.red));
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+        setState(() => _isLoading = false);
+      }
     }
-  }
-
-  String? _inputValidator(String? v) {
-    if (v == null || v.isEmpty) return 'Enter email';
-    return Validators.validateEmail(v);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Forgot Password')),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              elevation: 6,
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text('Enter your registered email. A reset link will be sent to this email.', style: Theme.of(context).textTheme.bodyMedium),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _inputCtrl,
-                        decoration: InputDecoration(
-                          labelText: 'Email',
-                          prefixIcon: const Icon(Icons.email_outlined),
-                          filled: true,
-                          fillColor: Theme.of(context).colorScheme.surface,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+      body: BlocListener<AuthBloc, AuthState>(
+        listener: (context, state) {
+          if (state is AuthLoading) {
+            if (mounted) setState(() => _isLoading = true);
+            return;
+          } else {
+            if (mounted) setState(() => _isLoading = false);
+          }
+
+          if (state is AuthPasswordResetSent) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Password reset email sent to ${state.email}.'), backgroundColor: Colors.green));
+            Future.delayed(const Duration(milliseconds: 400), () {
+              if (mounted && Navigator.of(context).canPop()) context.pop();
+            });
+          }
+
+          if (state is AuthFailure) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.message), backgroundColor: Colors.red));
+          }
+        },
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20.0),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Card(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 6,
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text('Enter your registered email. A reset link will be sent to this email.', style: Theme.of(context).textTheme.bodyMedium),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _inputCtrl,
+                          decoration: InputDecoration(
+                            labelText: 'Email',
+                            prefixIcon: const Icon(Icons.email_outlined),
+                            filled: true,
+                          ),
+                          validator: Validators.validateEmail,
+                          keyboardType: TextInputType.emailAddress,
                         ),
-                        validator: _inputValidator,
-                        keyboardType: TextInputType.emailAddress,
-                      ),
-                      const SizedBox(height: 16),
-                      CommonButton(onPressed: _submit, text: 'Continue', isLoading: _isLoading),
-                      const SizedBox(height: 12),
-                      // Social buttons left as placeholders if you plan to support them later.
-                    ],
+                        const SizedBox(height: 16),
+                        CommonButton(onPressed: _submit, text: 'Send Reset Link', isLoading: _isLoading),
+                      ],
+                    ),
                   ),
                 ),
               ),

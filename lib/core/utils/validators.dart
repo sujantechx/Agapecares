@@ -1,33 +1,59 @@
 // lib/core/utils/validators.dart
 
-/// A utility class for common input validation logic.
 class Validators {
-  /// Validates a phone number.
-  /// Returns null if the number is valid, otherwise returns an error message string.
+  static String? validateEmail(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Email is required';
+    }
+    final emailRegex = RegExp(
+        r'^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$');
+    if (!emailRegex.hasMatch(value)) {
+      return 'Please enter a valid email address';
+    }
+    return null;
+  }
+
+  static String? validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Password is required';
+    }
+    if (value.length < 6) {
+      return 'Password must be at least 6 characters long';
+    }
+    return null;
+  }
+
   static String? validatePhoneNumber(String? value) {
     if (value == null || value.isEmpty) {
-      return 'Phone number cannot be empty.';
+      return 'Phone number is required';
     }
-    // A simple regex for a 10-digit phone number.
-    // This can be adjusted for country codes or other formats.
-    final phoneRegExp = RegExp(r'^\d{10}$');
-    if (!phoneRegExp.hasMatch(value)) {
-      return 'Enter a valid 10-digit phone number.';
+    // This regex is basic. It allows an optional '+' and then 10-14 digits.
+    final phoneRegex = RegExp(r'^\+?[0-9]{10,14}$');
+    if (!phoneRegex.hasMatch(value)) {
+      return 'Please enter a valid phone number (e.g., +911234567890)';
     }
     return null;
   }
 
-  /// Validate email address. Returns null when valid.
-  static String? validateEmail(String? value) {
-    if (value == null || value.isEmpty) return 'Email cannot be empty.';
-    final emailRegExp = RegExp(r"^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$");
-    if (!emailRegExp.hasMatch(value)) return 'Enter a valid email address.';
-    return null;
-  }
-
-  /// Optional phone validator: accepts empty/null as valid, otherwise validates the phone.
   static String? validatePhoneNumberOptional(String? value) {
-    if (value == null || value.isEmpty) return null;
-    return validatePhoneNumber(value);
+    if (value == null || value.isEmpty) {
+      return null; // It's optional, so empty is fine
+    }
+    // If it's not empty, it must be valid
+    final phoneRegex = RegExp(r'^\+?[0-9]{10,14}$');
+    if (!phoneRegex.hasMatch(value)) {
+      return 'Please enter a valid phone number (e.g., +911234567890)';
+    }
+    return null;
+  }
+
+  static String? validateName(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Name is required';
+    }
+    if (value.length < 2) {
+      return 'Please enter a valid name';
+    }
+    return null;
   }
 }

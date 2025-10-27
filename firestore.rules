@@ -1,4 +1,4 @@
-/// last updated: 2025-10-18
+/// last updated: 2025-10-26
 
 rules_version = '2';
 service cloud.firestore {
@@ -373,6 +373,18 @@ service cloud.firestore {
         isAdmin()
         || (isWorker() && resource.data.workerId == request.auth.uid)
       );
+    }
+
+    // Allow users to create a temporary pending profile before email verification.
+    // This collection is used by the client to store registration data until
+    // the user verifies their email and a full profile is created in /users.
+    match /pending_profiles/{userId} {
+      allow create: if isSignedIn() && request.auth.uid == userId && noServerFields();
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      // Allow delete by owner or admin (cleanup after profile creation)
+      allow delete: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      // Prevent direct updates from clients; prefer delete+create or server-side flows.
+      allow update: if false;
     }
   }
 }

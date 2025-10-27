@@ -72,6 +72,15 @@ class AuthSignOutRequested extends AuthEvent {}
 /// Dispatched to request Google Sign-In authentication.
 class AuthSignInWithGoogleRequested extends AuthEvent {}
 
+/// Dispatched to request resetting a password via email.
+class AuthPasswordResetRequested extends AuthEvent {
+  final String email;
+  const AuthPasswordResetRequested({required this.email});
+
+  @override
+  List<Object?> get props => [email];
+}
+
 /// Dispatched to mark a user's phone as verified (e.g., after SMS provider confirms).
 class AuthMarkPhoneVerifiedRequested extends AuthEvent {
   final String? uid;

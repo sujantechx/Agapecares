@@ -24,7 +24,10 @@ class _RegisterPageState extends State<RegisterPage> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController(text: '+91');
+  final _confirmPasswordCtrl = TextEditingController();
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
+  final _phoneCtrl = TextEditingController();
   bool _isLoading = false;
   UserRole _role = UserRole.user;
 
@@ -34,6 +37,7 @@ class _RegisterPageState extends State<RegisterPage> {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _phoneCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
     super.dispose();
   }
 
@@ -131,7 +135,9 @@ class _RegisterPageState extends State<RegisterPage> {
                             labelText: 'Full name',
                             prefixIcon: const Icon(Icons.person_outline),
                             filled: true,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
                           ),
+
                           validator: (v) => (v == null || v.isEmpty) ? 'Enter name' : null,
                         ),
                         const SizedBox(height: 12),
@@ -141,6 +147,7 @@ class _RegisterPageState extends State<RegisterPage> {
                             labelText: 'Email',
                             prefixIcon: const Icon(Icons.email_outlined),
                             filled: true,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
                           ),
                           keyboardType: TextInputType.emailAddress,
                           validator: Validators.validateEmail,
@@ -152,9 +159,34 @@ class _RegisterPageState extends State<RegisterPage> {
                             labelText: 'Password',
                             prefixIcon: const Icon(Icons.lock_outline),
                             filled: true,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+                            suffixIcon: IconButton(
+                              icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                            ),
                           ),
-                          obscureText: true,
+                          obscureText: _obscurePassword,
                           validator: (v) => (v == null || v.length < 6) ? 'Enter min 6 chars' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _confirmPasswordCtrl,
+                          decoration: InputDecoration(
+                            labelText: 'Confirm Password',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            filled: true,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+                            suffixIcon: IconButton(
+                              icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility),
+                              onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+                            ),
+                          ),
+                          obscureText: _obscureConfirm,
+                          validator: (v) {
+                            if (v == null || v.isEmpty) return 'Confirm password';
+                            if (v != _passwordCtrl.text) return 'Passwords do not match';
+                            return null;
+                          },
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
@@ -162,16 +194,58 @@ class _RegisterPageState extends State<RegisterPage> {
                           decoration: InputDecoration(
                             labelText: 'Phone',
                             prefixIcon: const Icon(Icons.phone),
-                            hintText: '+91 9876543210',
+                            hintText: '9876543210',
                             filled: true,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
                           ),
                           keyboardType: TextInputType.phone,
                           validator: (v) => Validators.validatePhoneNumber(v?.trim() ?? ''),
                         ),
                         const SizedBox(height: 20),
-                        CommonButton(onPressed: _registerWithEmail, text: 'Register (Email Verify)', isLoading: _isLoading),
-                        const SizedBox(height: 8),
-                        OutlinedButton(onPressed: _isLoading ? null : _registerAndVerifyPhone, child: const Text('Register & Verify Phone (OTP)'), ),
+                        CommonButton(
+                          onPressed: _isLoading ? null : () async {
+                            final choice = await showDialog<String>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Confirm Email'),
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Please cross-check the email below before continuing:'),
+                                    const SizedBox(height: 8),
+                                    SelectableText(
+                                      _emailCtrl.text.trim().isEmpty ? '(no email entered)' : _emailCtrl.text.trim(),
+                                      style: const TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    const Text("Please cross-check the phone above before continuing."),
+                                    SelectableText(
+                                      _phoneCtrl.text.trim().isEmpty ? '(no phone entered)' : _phoneCtrl.text.trim(),
+                                      style: const TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.of(ctx).pop(null),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.of(ctx).pop('confirm'),
+                                    child: const Text('Confirm & Register'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (choice == 'confirm') {
+                              _registerWithEmail();
+                            }
+                          },
+                          text: 'Register',
+                          isLoading: _isLoading,
+                        ),
+                        // const SizedBox(height: 8),
+                        // OutlinedButton(onPressed: _isLoading ? null : _registerAndVerifyPhone, child: const Text('Register & Verify Phone (OTP)'), ),
                         const SizedBox(height: 12),
                         if (kIsWeb || defaultTargetPlatform == TargetPlatform.android) ...[
                           OutlinedButton.icon(

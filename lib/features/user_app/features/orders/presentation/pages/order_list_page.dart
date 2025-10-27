@@ -8,6 +8,8 @@ import '../../../../../../core/models/order_model.dart';
 
 import 'package:go_router/go_router.dart';
 
+import 'order_details_page.dart';
+
 
 import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
 import '../../logic/order_bloc.dart';
@@ -263,11 +265,9 @@ class _OrderListPageState extends State<OrderListPage> {
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 final o = orders[index];
-                final created = o.createdAt;
-                // created may be a Timestamp from Firestore, a DateTime, or an ISO string; convert defensively
-                DateTime createdDate;
+                DateTime createdDate = DateTime.now();
                 try {
-                  final dynamic val = created;
+                  final dynamic val = o.createdAt;
                   if (val is DateTime) {
                     createdDate = val;
                   } else if (val is String) {
@@ -275,107 +275,114 @@ class _OrderListPageState extends State<OrderListPage> {
                   } else if (val is int) {
                     createdDate = DateTime.fromMillisecondsSinceEpoch(val);
                   } else if (val != null) {
-                    // Firestore Timestamp or other object with toDate()
                     try {
                       createdDate = (val as dynamic).toDate() as DateTime;
                     } catch (_) {
                       createdDate = DateTime.tryParse(val.toString()) ?? DateTime.now();
                     }
-                  } else {
-                    createdDate = DateTime.now();
                   }
                 } catch (_) {
                   createdDate = DateTime.now();
                 }
 
-                // Use _orderStatusLabel (existing helper) and _statusColor for display
                 final statusColor = _statusColor(o.orderStatus);
 
-                return ExpansionTile(
-                  key: ValueKey(o.id.isNotEmpty ? o.id : index),
-                  title: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Order • ${o.orderNumber.isNotEmpty ? o.orderNumber : (o.id.isNotEmpty ? o.id : '-')}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 4),
-                            Text('Placed: ${_formatDateTime(createdDate)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                // New, friendlier card-based UI with explicit actions
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                  child: Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('₹${o.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 6),
                           Row(
                             children: [
-                              Chip(
-                                label: Text(_orderStatusLabel(o.orderStatus), style: const TextStyle(color: Colors.white, fontSize: 12)),
-                                backgroundColor: statusColor,
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Order • ${o.orderNumber.isNotEmpty ? o.orderNumber : (o.id.isNotEmpty ? o.id : '-')}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    const SizedBox(height: 6),
+                                    Text('Placed: ${_formatDateTime(createdDate)}', style: const TextStyle(fontSize: 13, color: Colors.black54)),
+                                  ],
+                                ),
                               ),
-                              const SizedBox(width: 6),
-                              Chip(
-                                label: Text(_paymentStatusLabel(o.paymentStatus), style: const TextStyle(color: Colors.white, fontSize: 12)),
-                                backgroundColor: _paymentStatusColor(o.paymentStatus),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text('₹${o.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Chip(
+                                        label: Text(_orderStatusLabel(o.orderStatus), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                        backgroundColor: statusColor,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Chip(
+                                        label: Text(_paymentStatusLabel(o.paymentStatus), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                        backgroundColor: _paymentStatusColor(o.paymentStatus),
+                                      ),
+                                    ],
+                                  )
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          // Short summary line for address / first item
+                          Text('To: ${(o.addressSnapshot['name'] ?? o.addressSnapshot['address'] ?? 'Address')}', style: const TextStyle(fontSize: 14)),
+                          const SizedBox(height: 6),
+                          Text('Items: ${o.items.length} • Subtotal: ₹${o.subtotal.toStringAsFixed(2)}', style: const TextStyle(color: Colors.black54)),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: () {
+                                  // Local 'Check' action: show confirmation and mark visually (no backend change)
+                                  showDialog(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Confirm'),
+                                      content: const Text('Mark this order as received/checked?'),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+                                        ElevatedButton(
+                                          onPressed: () {
+                                            Navigator.of(ctx).pop();
+                                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order marked as checked')));
+                                          },
+                                          child: const Text('Yes'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                                child: const Text('Check'),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton(
+                                onPressed: () async {
+                                  // Navigate to a full details page
+                                  try {
+                                    GoRouter.of(context).push('/orders/details', extra: o);
+                                  } catch (_) {
+                                    // Fallback: push named route if available
+                                    Navigator.of(context).push(MaterialPageRoute(builder: (c) => OrderDetailsPage(order: o)));
+                                  }
+                                },
+                                child: const Text('View details'),
                               ),
                             ],
                           )
                         ],
                       ),
-                    ],
+                    ),
                   ),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              // Show userId (uid) as identifier and fallback
-                              Text(o.userId.isNotEmpty ? o.userId : 'Unknown User', style: const TextStyle(fontWeight: FontWeight.w600)),
-                              Text(_paymentStatusLabel(o.paymentStatus), style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          // Address snapshot
-                          const SizedBox(height: 6),
-                          Text('Address: ${o.addressSnapshot['address'] ?? 'Not provided'}', style: const TextStyle(fontSize: 13)),
-                          const SizedBox(height: 8),
-                          // payment id not stored on OrderModel by default
-                          const Divider(),
-                          const SizedBox(height: 6),
-                          const Text('Items:', style: TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 6),
-                          ...o.items.map((it) => Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(child: Text('${it.serviceName} × ${it.quantity}', style: const TextStyle(fontSize: 14))),
-                                    Text('₹${(it.unitPrice * it.quantity).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                                  ],
-                                ),
-                              )),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Text('Subtotal: ₹${o.subtotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13)),
-                              const SizedBox(width: 12),
-                              Text('Total: ₹${o.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          // Rating not available on current OrderModel; remove rating UI
-                        ],
-                      ),
-                    )
-                  ],
                 );
               },
             );
@@ -384,7 +391,7 @@ class _OrderListPageState extends State<OrderListPage> {
       );
     }
 
-    // Fallback: no OrderBloc -> keep existing FutureBuilder behavior
+    // Fallback: no OrderBloc -> keep existing FutureBuilder behavior but render as cards
     return Scaffold(
       appBar: AppBar(title: const Text('My Orders')),
       body: RefreshIndicator(
@@ -427,11 +434,9 @@ class _OrderListPageState extends State<OrderListPage> {
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 final o = orders[index];
-                final created = o.createdAt;
-                // created may be a Timestamp from Firestore, a DateTime, or an ISO string; convert defensively
-                DateTime createdDate;
+                DateTime createdDate = DateTime.now();
                 try {
-                  final dynamic val = created;
+                  final dynamic val = o.createdAt;
                   if (val is DateTime) {
                     createdDate = val;
                   } else if (val is String) {
@@ -439,107 +444,109 @@ class _OrderListPageState extends State<OrderListPage> {
                   } else if (val is int) {
                     createdDate = DateTime.fromMillisecondsSinceEpoch(val);
                   } else if (val != null) {
-                    // Firestore Timestamp or other object with toDate()
                     try {
                       createdDate = (val as dynamic).toDate() as DateTime;
                     } catch (_) {
                       createdDate = DateTime.tryParse(val.toString()) ?? DateTime.now();
                     }
-                  } else {
-                    createdDate = DateTime.now();
                   }
                 } catch (_) {
                   createdDate = DateTime.now();
                 }
 
-                // Use _orderStatusLabel (existing helper) and _statusColor for display
                 final statusColor = _statusColor(o.orderStatus);
 
-                return ExpansionTile(
-                  key: ValueKey(o.id.isNotEmpty ? o.id : index),
-                  title: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Order • ${o.orderNumber.isNotEmpty ? o.orderNumber : (o.id.isNotEmpty ? o.id : '-')}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 4),
-                            Text('Placed: ${_formatDateTime(createdDate)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                  child: Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('₹${o.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 6),
                           Row(
                             children: [
-                              Chip(
-                                label: Text(_orderStatusLabel(o.orderStatus), style: const TextStyle(color: Colors.white, fontSize: 12)),
-                                backgroundColor: statusColor,
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Order • ${o.orderNumber.isNotEmpty ? o.orderNumber : (o.id.isNotEmpty ? o.id : '-')}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    const SizedBox(height: 6),
+                                    Text('Placed: ${_formatDateTime(createdDate)}', style: const TextStyle(fontSize: 13, color: Colors.black54)),
+                                  ],
+                                ),
                               ),
-                              const SizedBox(width: 6),
-                              Chip(
-                                label: Text(_paymentStatusLabel(o.paymentStatus), style: const TextStyle(color: Colors.white, fontSize: 12)),
-                                backgroundColor: _paymentStatusColor(o.paymentStatus),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text('₹${o.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Chip(
+                                        label: Text(_orderStatusLabel(o.orderStatus), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                        backgroundColor: statusColor,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Chip(
+                                        label: Text(_paymentStatusLabel(o.paymentStatus), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                        backgroundColor: _paymentStatusColor(o.paymentStatus),
+                                      ),
+                                    ],
+                                  )
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text('To: ${(o.addressSnapshot['name'] ?? o.addressSnapshot['address'] ?? 'Address')}', style: const TextStyle(fontSize: 14)),
+                          const SizedBox(height: 6),
+                          Text('Items: ${o.items.length} • Subtotal: ₹${o.subtotal.toStringAsFixed(2)}', style: const TextStyle(color: Colors.black54)),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Confirm'),
+                                      content: const Text('Mark this order as received/checked?'),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+                                        ElevatedButton(
+                                          onPressed: () {
+                                            Navigator.of(ctx).pop();
+                                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order marked as checked')));
+                                          },
+                                          child: const Text('Yes'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                                child: const Text('Check'),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton(
+                                onPressed: () async {
+                                  try {
+                                    GoRouter.of(context).push('/orders/details', extra: o);
+                                  } catch (_) {
+                                    Navigator.of(context).push(MaterialPageRoute(builder: (c) => OrderDetailsPage(order: o)));
+                                  }
+                                },
+                                child: const Text('View details'),
                               ),
                             ],
                           )
                         ],
                       ),
-                    ],
+                    ),
                   ),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              // Show userId (uid) as identifier and fallback
-                              Text(o.userId.isNotEmpty ? o.userId : 'Unknown User', style: const TextStyle(fontWeight: FontWeight.w600)),
-                              Text(_paymentStatusLabel(o.paymentStatus), style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          // Address snapshot
-                          const SizedBox(height: 6),
-                          Text('Address: ${o.addressSnapshot['address'] ?? 'Not provided'}', style: const TextStyle(fontSize: 13)),
-                          const SizedBox(height: 8),
-                          // payment id not stored on OrderModel by default
-                          const Divider(),
-                          const SizedBox(height: 6),
-                          const Text('Items:', style: TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 6),
-                          ...o.items.map((it) => Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(child: Text('${it.serviceName} × ${it.quantity}', style: const TextStyle(fontSize: 14))),
-                                    Text('₹${(it.unitPrice * it.quantity).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                                  ],
-                                ),
-                              )),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Text('Subtotal: ₹${o.subtotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13)),
-                              const SizedBox(width: 12),
-                              Text('Total: ₹${o.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          // Rating not available on current OrderModel; remove rating UI
-                        ],
-                      ),
-                    )
-                  ],
                 );
               },
             );

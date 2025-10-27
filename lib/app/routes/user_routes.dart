@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 // Prefer package imports so analyzer can resolve symbols reliably.
 import 'package:agapecares/features/user_app/features/presentation/widgets/dashboard_page.dart';
 import 'package:agapecares/features/user_app/features/presentation/pages/user_home_page.dart';
-import 'package:agapecares/features/user_app/features/cart/presentation/cart_page.dart';
+import 'package:agapecares/features/user_app/features/cart/presentation/pages/cart_page.dart';
 import 'package:agapecares/features/user_app/features/orders/presentation/pages/order_list_page.dart';
 import 'package:agapecares/features/user_app/features/presentation/pages/profile_page.dart';
 import 'package:agapecares/app/routes/app_routes.dart';
@@ -27,6 +27,8 @@ import 'package:agapecares/features/user_app/features/cart/data/repositories/car
 import 'package:agapecares/features/user_app/features/payment_gateway/bloc/checkout_bloc.dart';
 import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:agapecares/features/user_app/features/orders/presentation/pages/order_details_page.dart';
+import 'package:agapecares/core/models/order_model.dart';
 
 final GlobalKey<NavigatorState> _userShellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'userShell');
 
@@ -132,6 +134,22 @@ final List<RouteBase> userRoutes = [
           }
           return ServiceDetailPage(service: snap.data!);
         },
+      );
+    },
+  ),
+
+  // Order details page: accepts an OrderModel via `extra` when navigation uses `extra`.
+  GoRoute(
+    path: AppRoutes.orderDetails,
+    builder: (context, state) {
+      final extra = state.extra;
+      if (extra != null && extra is OrderModel) {
+        return OrderDetailsPage(order: extra);
+      }
+      // If no extra provided, show a simple message
+      return Scaffold(
+        appBar: AppBar(title: const Text('Order')),
+        body: const Center(child: Text('Order details not available')),
       );
     },
   ),

@@ -15,7 +15,6 @@ import '../../logic/blocs/auth_state.dart';
 import '../../data/repositories/auth_repository.dart';
 import 'package:agapecares/core/services/session_service.dart';
 import 'package:agapecares/core/models/user_model.dart';
-import 'package:agapecares/app/theme/theme_cubit.dart';
 
 
 class LoginPage extends StatelessWidget {
@@ -178,15 +177,7 @@ class _LoginViewState extends State<LoginView> {
                         height: 64,
                         child: Image.asset('assets/logos/app_logo.png', fit: BoxFit.contain),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.brightness_6),
-                        onPressed: () {
-                          try {
-                            context.read<ThemeCubit>().toggle();
-                          } catch (_) {}
-                        },
-                        tooltip: 'Toggle theme',
-                      ),
+                      // Theme toggle removed: app follows system theme automatically
                     ],
                   ),
                   const SizedBox(height: 12),

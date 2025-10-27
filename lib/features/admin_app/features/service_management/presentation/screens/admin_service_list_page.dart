@@ -6,7 +6,6 @@ import '../bloc/service_management_bloc.dart';
 import '../bloc/service_management_event.dart';
 import '../bloc/service_management_state.dart';
 import 'package:agapecares/features/admin_app/features/service_management/presentation/widgets/service_list_item.dart';
-import 'package:agapecares/app/theme/theme_cubit.dart';
 
 class AdminServiceListScreen extends StatelessWidget {
   const AdminServiceListScreen({super.key});
@@ -18,12 +17,7 @@ class AdminServiceListScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Manage Services'), actions: [
-        // Theme toggle for quick testing
-        IconButton(
-          tooltip: 'Toggle theme',
-          icon: const Icon(Icons.brightness_6),
-          onPressed: () => context.read<ThemeCubit>().toggle(),
-        ),
+        // Theme toggle removed: app follows system theme automatically
       ]),
       body: BlocBuilder<ServiceManagementBloc, ServiceManagementState>(
         builder: (context, state) {

@@ -23,6 +23,7 @@ class LoginPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Standard BlocProvider setup (no changes needed here)
     try {
       context.read<AuthBloc>();
       return const LoginView();
@@ -46,17 +47,16 @@ class LoginView extends StatefulWidget {
 
 class _LoginViewState extends State<LoginView> {
   final _formKey = GlobalKey<FormState>();
-  final _phoneController = TextEditingController();
-  final _email_controller = TextEditingController();
+  // Removed _phoneController
+  final _emailController = TextEditingController(); // Renamed for clarity
   final _passwordController = TextEditingController();
-  bool _isEmailMode = true;
+  // Removed _isEmailMode state variable
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    // This logic is good, but your AppRouter.redirect already handles this.
-    // You can keep it for a faster redirect if you want.
+    // Keep the initial redirect check based on session
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
         final session = context.read<SessionService>();
@@ -76,18 +76,13 @@ class _LoginViewState extends State<LoginView> {
 
   @override
   void dispose() {
-    _phoneController.dispose();
-    _email_controller.dispose();
+    // Removed _phoneController.dispose()
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  void _sendOtp() {
-    if (_formKey.currentState?.validate() ?? false) {
-      final phoneNumber = _phoneController.text.trim();
-      context.read<AuthBloc>().add(AuthSendOtpRequested(phoneNumber));
-    }
-  }
+  // Removed _sendOtp function
 
   Future<void> _signInWithEmail() async {
     FocusScope.of(context).unfocus();
@@ -96,8 +91,9 @@ class _LoginViewState extends State<LoginView> {
     if (mounted) setState(() => _isLoading = true);
 
     try {
+      // Dispatch email/password login event
       context.read<AuthBloc>().add(AuthLoginWithEmailRequested(
-        email: _email_controller.text.trim(),
+        email: _emailController.text.trim(), // Use the email controller
         password: _passwordController.text.trim(),
       ));
     } catch (e) {
@@ -111,11 +107,13 @@ class _LoginViewState extends State<LoginView> {
     return Scaffold(
       body: BlocListener<AuthBloc, AuthState>(
         listener: (context, state) {
+          // --- Listener logic remains largely the same ---
           if (state is AuthLoading) {
             if (mounted) setState(() => _isLoading = true);
             return;
           }
 
+          // Stop loading indicator on any non-loading state
           if (mounted) setState(() => _isLoading = false);
 
           if (state is AuthFailure) {
@@ -129,14 +127,14 @@ class _LoginViewState extends State<LoginView> {
             ));
           }
 
-          // This is the "email-not-verified" state
           if (state is AuthEmailVerificationSent) {
+            // Handle email verification required
             if (mounted) {
               showDialog(
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text('Verify your email'),
-                  content: Text('A verification email has been sent to ${state.email ?? _email_controller.text}. Please check your inbox and verify your email before logging in.'),
+                  content: Text('A verification email has been sent to ${state.email ?? _emailController.text}. Please check your inbox and verify your email before logging in.'),
                   actions: [
                     TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK')),
                     TextButton(
@@ -151,12 +149,17 @@ class _LoginViewState extends State<LoginView> {
               );
             }
           }
-          if (state is AuthOtpSent) {
-            GoRouter.of(context).push(AppRoutes.phoneVerify, extra: state.verificationId);
-          }
+          // Removed AuthOtpSent handler as OTP login is not part of this form anymore
+
           if (state is Authenticated) {
-            // The AppRouter.redirect will handle navigation, no need to push here.
-            // You can remove the GoRouter.of(context).go(...) lines
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('Login Successful!'),
+                backgroundColor: Colors.green,
+                duration: Duration(milliseconds: 1500),
+              ));
+              // AppRouter redirect handles navigation
+            }
           }
         },
         child: Center(
@@ -168,7 +171,7 @@ class _LoginViewState extends State<LoginView> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
+                  Row( // Logo and Theme Toggle Row
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       SizedBox(
@@ -187,7 +190,7 @@ class _LoginViewState extends State<LoginView> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Card(
+                  Card( // Main Login Card
                     elevation: 6,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     child: Padding(
@@ -196,89 +199,84 @@ class _LoginViewState extends State<LoginView> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text('Welcome Back!', style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              ChoiceChip(
-                                label: const Text('Email'),
-                                selected: _isEmailMode,
-                                onSelected: (selected) {
-                                  if (selected) setState(() => _isEmailMode = true);
-                                },
-                              ),
-                              const SizedBox(width: 8),
-                              ChoiceChip(
-                                label: const Text('Phone'),
-                                selected: !_isEmailMode,
-                                onSelected: (selected) {
-                                  if (selected) setState(() => _isEmailMode = false);
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 18),
-                          if (_isEmailMode) ...[
-                            TextFormField(
-                              controller: _email_controller,
-                              decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email_outlined)),
-                              keyboardType: TextInputType.emailAddress,
-                              validator: Validators.validateEmail,
-                            ),
-                            const SizedBox(height: 8),
-                            TextFormField(
-                              controller: _passwordController,
-                              decoration: const InputDecoration(labelText: 'Password', prefixIcon: Icon(Icons.lock_outlined)),
-                              obscureText: true,
-                              validator: (v) => (v == null || v.length < 6) ? 'Enter min 6 chars' : null,
-                            ),
-                            const SizedBox(height: 16),
-                            CommonButton(onPressed: _signInWithEmail, text: 'Login', isLoading: _isLoading),
-                          ] else ...[
-                            Text(
-                              'Enter your phone number to continue',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 8),
-                            TextFormField(
-                              controller: _phoneController,
-                              keyboardType: TextInputType.phone,
-                              decoration: const InputDecoration(
-                                labelText: 'Phone Number',
-                                hintText: '+911234567890',
-                                prefixIcon: Icon(Icons.phone),
-                              ),
-                              validator: Validators.validatePhoneNumber,
-                            ),
-                            const SizedBox(height: 24),
-                            CommonButton(onPressed: _sendOtp, text: 'Send OTP', isLoading: _isLoading),
-                          ],
+                          const SizedBox(height: 24), // Increased spacing
 
-                          const SizedBox(height: 12),
+                          // --- REMOVED ChoiceChip Row ---
+
+                          // --- Email Input Field ---
+                          TextFormField(
+                            controller: _emailController, // Use email controller
+                            decoration: const InputDecoration(
+                              labelText: 'Email', // Label is Email
+                              prefixIcon: Icon(Icons.email_outlined),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(15))),
+                            ),
+                            keyboardType: TextInputType.emailAddress,
+                            validator: Validators.validateEmail, // Validate as Email
+                          ),
+                          const SizedBox(height: 12), // Increased spacing
+
+                          // --- Password Input Field ---
+                          TextFormField(
+                            controller: _passwordController,
+                            decoration: const InputDecoration(
+                              labelText: 'Password',
+                              prefixIcon: Icon(Icons.lock_outlined),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(15))),
+                            ),
+                            obscureText: true,
+                            validator: Validators.validatePassword, // Use standard password validator
+                          ),
+                          const SizedBox(height: 20), // Increased spacing
+
+                          // --- Login Button ---
+                          CommonButton(
+                              onPressed: _signInWithEmail, // Always call email sign in
+                              text: 'Login',
+                              isLoading: _isLoading
+                          ),
+                          const SizedBox(height: 16), // Increased spacing
+
+                          // --- REMOVED Phone Number Input and Send OTP Button ---
+
+                          // --- Google Sign In Button ---
                           if (kIsWeb || defaultTargetPlatform == TargetPlatform.android) ...[
                             OutlinedButton.icon(
                               onPressed: _isLoading ? null : () {
                                 setState(() => _isLoading = true);
                                 context.read<AuthBloc>().add(AuthSignInWithGoogleRequested());
                               },
-                              icon: const Icon(Icons.g_mobiledata), // Use a Google Icon Asset
+                              icon: const Image(image: AssetImage('assets/logos/google_logo.png'),
+                                height: 35,width: 30,),
                               label: Text(_isLoading ? 'Processing...' : 'Continue with Google'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12), // Adjust padding
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                              ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 12), // Increased spacing
                           ],
-                          const SizedBox(height: 12),
-                          TextButton(onPressed: _isLoading ? null : () async {
-                            final result = await GoRouter.of(context).push(AppRoutes.register);
-                            if (result == true && mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registration successful! Please check your email to verify.'), backgroundColor: Colors.green));
-                            }
-                          }, child: const Text('Don\'t have an account? Register')),
-                          const SizedBox(height: 8),
-                          TextButton(
-                            onPressed: _isLoading ? null : () => GoRouter.of(context).push(AppRoutes.forgotPassword),
-                            child: const Text('Forgot password?'),
+
+                          // --- Register and Forgot Password Links ---
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              TextButton(
+                                onPressed: _isLoading ? null : () => GoRouter.of(context).push(AppRoutes.forgotPassword),
+                                child: const Text('Forgot password?'),
+                              ),
+                              TextButton(
+                                onPressed: _isLoading ? null : () async {
+                                  final result = await GoRouter.of(context).push(AppRoutes.register);
+                                  if (result == true && mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registration successful! Please check your email to verify.'), backgroundColor: Colors.green));
+                                  }
+                                },
+                                child: const Text('Register'),
+                              ),
+                            ],
                           ),
+                          // Removed extra SizedBox and TextButton duplication
                         ],
                       ),
                     ),

@@ -212,13 +212,13 @@ class _RegisterPageState extends State<RegisterPage> {
                                   mainAxisSize: MainAxisSize.min,
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text('Please cross-check the email below before continuing:'),
+                                    const Text('Please cross-check the email:'),
                                     const SizedBox(height: 8),
                                     SelectableText(
                                       _emailCtrl.text.trim().isEmpty ? '(no email entered)' : _emailCtrl.text.trim(),
                                       style: const TextStyle(fontWeight: FontWeight.bold),
                                     ),
-                                    const Text("Please cross-check the phone above before continuing."),
+                                    const Text("Please cross-check the phone:"),
                                     SelectableText(
                                       _phoneCtrl.text.trim().isEmpty ? '(no phone entered)' : _phoneCtrl.text.trim(),
                                       style: const TextStyle(fontWeight: FontWeight.bold),
@@ -252,7 +252,9 @@ class _RegisterPageState extends State<RegisterPage> {
                             onPressed: _isLoading ? null : () {
                               context.read<AuthBloc>().add(AuthSignInWithGoogleRequested());
                             },
-                            icon: const Icon(Icons.g_mobiledata),
+                            icon: const Image(image: AssetImage('assets/logos/google_logo.png'),
+                            height: 26,
+                              width:30 ,  ),
                             label: Text(_isLoading ? 'Processing...' : 'Continue with Google'),
                           ),
                         ],

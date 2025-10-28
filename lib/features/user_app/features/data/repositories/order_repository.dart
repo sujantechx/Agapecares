@@ -607,20 +607,47 @@ class OrderRepositoryImpl implements OrderRepository {
       for (final sid in uniqueServiceIds) {
         try {
           final svcRatingCol = _firestore.collection('services').doc(sid).collection('ratings');
-          final rdoc = svcRatingCol.doc();
-          final rdata = <String, dynamic>{
-            'serviceId': sid,
-            'orderId': order.id,
-            'orderNumber': order.orderNumber,
-            'userId': currentUser.uid,
-            'rating': serviceRating,
-            'review': review ?? '',
-            'createdAt': FieldValue.serverTimestamp(),
-            'remoteId': rdoc.id,
-          };
-          await rdoc.set(rdata);
 
-          // Also attempt to store the rating inside the parent service document
+          // Try to find existing rating by this user for this order
+          DocumentReference? docRef;
+          try {
+            final existing = await svcRatingCol
+                .where('userId', isEqualTo: currentUser.uid)
+                .where('orderId', isEqualTo: order.id)
+                .limit(1)
+                .get();
+            if (existing.docs.isNotEmpty) {
+              docRef = existing.docs.first.reference;
+              await docRef.update({
+                'rating': serviceRating,
+                'review': review ?? '',
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+              debugPrint('[OrderRepository] submitRatingForOrder: updated existing service rating for $sid');
+            }
+          } catch (e) {
+            debugPrint('[OrderRepository] submitRatingForOrder: checking existing service rating failed: $e');
+          }
+
+          if (docRef == null) {
+            // create new
+            final rdoc = svcRatingCol.doc();
+            final rdata = <String, dynamic>{
+              'serviceId': sid,
+              'orderId': order.id,
+              'orderNumber': order.orderNumber,
+              'userId': currentUser.uid,
+              'rating': serviceRating,
+              'review': review ?? '',
+              'createdAt': FieldValue.serverTimestamp(),
+              'remoteId': rdoc.id,
+            };
+            await rdoc.set(rdata);
+            docRef = rdoc;
+            debugPrint('[OrderRepository] submitRatingForOrder: created new service rating for $sid');
+          }
+
+          // Also attempt to store/update the rating inside the parent service document
           // under a nested map `ratings.<ratingId> = { userId, rating, review, createdAt }`.
           try {
             final embedded = <String, dynamic>{
@@ -628,16 +655,14 @@ class OrderRepositoryImpl implements OrderRepository {
               'rating': serviceRating,
               'review': review ?? '',
               'createdAt': FieldValue.serverTimestamp(),
-              'remoteId': rdoc.id,
+              'remoteId': docRef.id,
             };
             final serviceDocRef = _firestore.collection('services').doc(sid);
-            // Use update with field-path to avoid overwriting the whole 'ratings' map.
-            await serviceDocRef.update({'ratings.${rdoc.id}': embedded});
+            await serviceDocRef.update({'ratings.${docRef.id}': embedded});
           } catch (e) {
             debugPrint('[OrderRepository] submitRatingForOrder: failed to add embedded rating to service doc (may be restricted by rules): $e');
           }
           anySucceeded = true;
-          debugPrint('[OrderRepository] submitRatingForOrder: created service rating for $sid');
         } catch (e) {
           debugPrint('[OrderRepository] submitRatingForOrder: failed to write service rating for $sid: $e');
         }
@@ -647,36 +672,60 @@ class OrderRepositoryImpl implements OrderRepository {
       if (order.workerId != null && order.workerId!.isNotEmpty && workerRating != null) {
         try {
           final wcol = _firestore.collection('workers').doc(order.workerId).collection('ratings');
-          final wdoc = wcol.doc();
-          final wdata = <String, dynamic>{
-            'workerId': order.workerId,
-            'orderId': order.id,
-            'orderNumber': order.orderNumber,
-            'userId': currentUser.uid,
-            'rating': workerRating,
-            'review': review ?? '',
-            'createdAt': FieldValue.serverTimestamp(),
-            'remoteId': wdoc.id,
-          };
-          await wdoc.set(wdata);
 
-          // Also try to add embedded rating into the worker's top-level document
-          // under `ratings.<ratingId>` for quick access and denormalized listing.
+          // Try to find existing worker rating by user+order
+          DocumentReference? wdocRef;
           try {
-            final embedded = <String, dynamic>{
+            final existing = await wcol
+                .where('userId', isEqualTo: currentUser.uid)
+                .where('orderId', isEqualTo: order.id)
+                .limit(1)
+                .get();
+            if (existing.docs.isNotEmpty) {
+              wdocRef = existing.docs.first.reference;
+              await wdocRef.update({
+                'rating': workerRating,
+                'review': review ?? '',
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+              debugPrint('[OrderRepository] submitRatingForOrder: updated existing worker rating for ${order.workerId}');
+            }
+          } catch (e) {
+            debugPrint('[OrderRepository] submitRatingForOrder: checking existing worker rating failed: $e');
+          }
+
+          if (wdocRef == null) {
+            final wdoc = wcol.doc();
+            final wdata = <String, dynamic>{
+              'workerId': order.workerId,
+              'orderId': order.id,
+              'orderNumber': order.orderNumber,
               'userId': currentUser.uid,
               'rating': workerRating,
               'review': review ?? '',
               'createdAt': FieldValue.serverTimestamp(),
               'remoteId': wdoc.id,
             };
+            await wdoc.set(wdata);
+            wdocRef = wdoc;
+            debugPrint('[OrderRepository] submitRatingForOrder: created new worker rating for ${order.workerId}');
+          }
+
+          // Also try to add/update embedded rating into the worker's top-level document
+          try {
+            final embedded = <String, dynamic>{
+              'userId': currentUser.uid,
+              'rating': workerRating,
+              'review': review ?? '',
+              'createdAt': FieldValue.serverTimestamp(),
+              'remoteId': wdocRef.id,
+            };
             final workerDocRef = _firestore.collection('workers').doc(order.workerId);
-            await workerDocRef.update({'ratings.${wdoc.id}': embedded});
+            await workerDocRef.update({'ratings.${wdocRef.id}': embedded});
           } catch (e) {
             debugPrint('[OrderRepository] submitRatingForOrder: failed to add embedded rating to worker doc (may be restricted by rules): $e');
           }
           anySucceeded = true;
-          debugPrint('[OrderRepository] submitRatingForOrder: created worker rating for ${order.workerId}');
         } catch (e) {
           debugPrint('[OrderRepository] submitRatingForOrder: failed to write worker rating: $e');
         }

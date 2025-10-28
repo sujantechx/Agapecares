@@ -31,13 +31,16 @@ class ReviewModel extends Equatable {
 
   factory ReviewModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
+    // Accept both 'comment' and legacy 'review' fields when reading from
+    // Firestore so older writes remain visible in the UI.
+    final comment = (data['comment'] as String?) ?? (data['review'] as String?);
     return ReviewModel(
       id: doc.id,
       orderId: data['orderId'] as String? ?? '',
       userId: data['userId'] as String? ?? '',
       workerId: data['workerId'] as String? ?? '',
       rating: (data['rating'] as num?)?.toInt() ?? 0,
-      comment: data['comment'] as String?,
+      comment: comment,
       createdAt: data['createdAt'] as Timestamp? ?? Timestamp.now(),
     );
   }

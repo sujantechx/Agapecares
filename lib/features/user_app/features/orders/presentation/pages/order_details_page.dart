@@ -18,6 +18,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   double? _selectedRating;
   double? _selectedWorkerRating;
   bool _isSubmitting = false;
+  bool _isEditingRating = false;
   final TextEditingController _reviewController = TextEditingController();
   late OrderModel _order;
   String? _workerName;
@@ -38,6 +39,36 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     _order = widget.order;
     // Load worker profile if workerId is present
     if (_order.workerId != null && _order.workerId!.isNotEmpty) _loadWorkerProfile(_order.workerId!);
+  }
+
+  /// Try to fetch an existing rating document for this order and user so we
+  /// can prefill the review text and rating when editing. This uses a
+  /// collectionGroup query on 'ratings' which searches under both
+  /// services/*/ratings and workers/*/ratings.
+  Future<void> _prefillExistingReview() async {
+    try {
+      final cg = FirebaseFirestore.instance.collectionGroup('ratings')
+          .where('orderId', isEqualTo: _order.id)
+          .where('userId', isEqualTo: _order.userId)
+          .limit(1);
+      final snap = await cg.get();
+      if (snap.docs.isNotEmpty) {
+        final d = snap.docs.first.data();
+        final comment = (d['review'] as String?) ?? (d['comment'] as String?) ?? '';
+        final ratingVal = (d['rating'] as num?)?.toDouble();
+        setState(() {
+          _reviewController.text = comment;
+          if (ratingVal != null) _selectedRating = ratingVal;
+        });
+      } else {
+        setState(() {
+          _reviewController.text = '';
+        });
+      }
+    } catch (e) {
+      debugPrint('[OrderDetailsPage] _prefillExistingReview failed: $e');
+      // best-effort – leave controller empty
+    }
   }
 
   @override
@@ -301,17 +332,35 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                const SizedBox(height: 12),
                Text('Rate your service', style: Theme.of(context).textTheme.titleMedium),
                const SizedBox(height: 8),
-               if (order.serviceRating != null) ...[
+               // If a rating exists and we're not in edit mode: show rating summary + Edit button
+               if (order.serviceRating != null && !_isEditingRating) ...[
                  Row(
+                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                    children: [
-                     Text('Service rating: ', style: const TextStyle(fontWeight: FontWeight.w600)),
-                     Text(order.serviceRating!.toStringAsFixed(1), style: const TextStyle(color: Colors.black54)),
-                     const SizedBox(width: 8),
-                     Row(children: List.generate(order.serviceRating!.round(), (i) => const Icon(Icons.star, color: Colors.amber, size: 20))),
+                     Expanded(
+                       child: Row(
+                         children: [
+                           Text('Service rating: ', style: const TextStyle(fontWeight: FontWeight.w600)),
+                           Text(order.serviceRating!.toStringAsFixed(1), style: const TextStyle(color: Colors.black54)),
+                           const SizedBox(width: 8),
+                           Row(children: List.generate(order.serviceRating!.round(), (i) => const Icon(Icons.star, color: Colors.amber, size: 20))),
+                         ],
+                       ),
+                     ),
+                     TextButton.icon(
+                       onPressed: () async {
+                         // Enter edit mode and prefill existing review/rating if any
+                         setState(() { _isEditingRating = true; _selectedRating = order.serviceRating; _selectedWorkerRating = order.workerRating; });
+                         await _prefillExistingReview();
+                       },
+                        icon: const Icon(Icons.edit, size: 18),
+                        label: const Text('Edit'),
+                      ),
                    ],
                  ),
                  const SizedBox(height: 12),
                ] else ...[
+                 // Editing mode or no prior rating: show inputs
                  // Primary: service rating (most important)
                  _buildStarRating(),
                  const SizedBox(height: 8),
@@ -331,7 +380,11 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                    children: [
                      Expanded(
                        child: OutlinedButton(
-                         onPressed: _isSubmitting || _selectedRating == null ? null : _submitRating,
+                         onPressed: _isSubmitting || _selectedRating == null ? null : () async {
+                           await _submitRating();
+                           // Exit edit mode on success
+                           if (mounted) setState(() => _isEditingRating = false);
+                         },
                          child: _isSubmitting ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Submit rating'),
                        ),
                      ),
@@ -339,9 +392,19 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                      Expanded(
                        child: ElevatedButton(
                          onPressed: () {
-                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contacting support...')));
+                           if (_isEditingRating) {
+                             // Cancel editing and restore displayed values
+                             setState(() {
+                               _isEditingRating = false;
+                               _selectedRating = order.serviceRating;
+                               _selectedWorkerRating = order.workerRating;
+                               _reviewController.text = '';
+                             });
+                           } else {
+                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contacting support...')));
+                           }
                          },
-                         child: const Text('Contact support'),
+                         child: Text(_isEditingRating ? 'Cancel' : 'Contact support'),
                        ),
                      ),
                    ],

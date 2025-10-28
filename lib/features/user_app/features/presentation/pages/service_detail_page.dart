@@ -8,16 +8,18 @@ import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:agapecares/app/routes/app_routes.dart';
+
+import '../../../../../core/models/cart_item_model.dart';
 import '../../../../../core/models/service_model.dart';
 import '../../../../../core/models/service_option_model.dart';
 import '../../../../../core/models/subscription_plan_model.dart';
-import '../../../../../core/models/cart_item_model.dart';
 import '../../cart/bloc/cart_bloc.dart';
 import '../../cart/bloc/cart_event.dart';
-import 'package:agapecares/app/routes/app_routes.dart';
-
 import '../widgets/service_options_widget.dart';
 import '../widgets/subscription_options_widget.dart';
+import 'package:agapecares/features/user_app/features/services/data/repositories/ratings_repository.dart';
+import 'package:agapecares/core/models/review_model.dart';
 
 class ServiceDetailPage extends StatefulWidget {
   final ServiceModel service;
@@ -37,6 +39,15 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
   String _priceSubtitle = 'One-time fee';
   double _activeDiscount = 0;
 
+  // Ratings state
+  final RatingsRepository _ratingsRepo = RatingsRepository();
+  List<ReviewModel> _reviews = [];
+  Map<String, String> _userNames = {};
+  bool _loadingReviews = true;
+
+  // Subscription mode: false = one-time, true = subscription
+  bool _isSubscriptionMode = false;
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +60,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
         final show = _scrollController.offset > 200;
         if (show != _showFab) setState(() => _showFab = show);
       });
+    // Load reviews for this service
+    _loadRatings();
   }
 
   void _calculateAndUpdatePrice() {
@@ -57,7 +70,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
     String subtitle;
     double discountValue = 0;
 
-    if (_selectedSubscription == null) {
+    if (!_isSubscriptionMode || _selectedSubscription == null) {
       finalPrice = basePrice;
       subtitle = 'One-time fee';
     } else {
@@ -72,6 +85,23 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
       _priceSubtitle = subtitle;
       _activeDiscount = discountValue;
     });
+  }
+
+  Future<void> _loadRatings() async {
+    try {
+      setState(() => _loadingReviews = true);
+      final reviews = await _ratingsRepo.fetchServiceRatings(widget.service.id);
+      final userIds = reviews.map((r) => r.userId).where((id) => id.isNotEmpty).toSet();
+      final names = await _ratingsRepo.fetchUserNames(userIds);
+      setState(() {
+        _reviews = reviews;
+        _userNames = names;
+        _loadingReviews = false;
+      });
+    } catch (e) {
+      if (kDebugMode) debugPrint('[RATINGS] failed to load: $e');
+      setState(() => _loadingReviews = false);
+    }
   }
 
   @override
@@ -123,8 +153,11 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
   }
 
   Widget _buildServiceRatingRow() {
-    final avg = widget.service.ratingAvg ?? 0.0;
-    final count = widget.service.ratingCount ?? 0;
+    // Compute average from fetched reviews
+    final count = _reviews.length;
+    if (_loadingReviews) {
+      return Row(children: const [SizedBox(width: 18, height: 18, child: CircularProgressIndicator()), SizedBox(width: 8), Text('Loading ratings...')]);
+    }
     if (count == 0) {
       return Row(
         children: const [
@@ -134,6 +167,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
         ],
       );
     }
+    final avg = _reviews.map((r) => r.rating).fold<int>(0, (prev, r) => prev + r) / count;
     final fullStars = avg.floor();
     final hasHalf = (avg - fullStars) >= 0.5;
     return Row(
@@ -175,6 +209,52 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
               ],
             ),
             const SizedBox(height: 16),
+
+            // Mode selector: One-time vs Subscription
+            if (hasSubscriptions)
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: !_isSubscriptionMode ? Theme.of(context).colorScheme.primary : Colors.grey[200],
+                        foregroundColor: !_isSubscriptionMode ? Colors.white : Colors.black,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isSubscriptionMode = false;
+                          _selectedSubscription = null;
+                          _calculateAndUpdatePrice();
+                        });
+                      },
+                      child: const Text('ONE TIME'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isSubscriptionMode ? Theme.of(context).colorScheme.primary : Colors.grey[200],
+                        foregroundColor: _isSubscriptionMode ? Colors.white : Colors.black,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isSubscriptionMode = true;
+                          // default to first plan when switching to subscription mode
+                          if (widget.service.subscriptionPlans.isNotEmpty && _selectedSubscription == null) {
+                            _selectedSubscription = widget.service.subscriptionPlans.first;
+                          }
+                          _calculateAndUpdatePrice();
+                        });
+                      },
+                      child: const Text('SUBSCRIPTION'),
+                    ),
+                  ),
+                ],
+              ),
+
+            const SizedBox(height: 12),
+
             _buildPriceAndAction(),
             const SizedBox(height: 16),
             if (hasOptions)
@@ -186,7 +266,9 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
                 },
               ),
             if (hasOptions) const Divider(height: 48),
-            if (hasSubscriptions)
+
+            // Show subscription options only when subscription mode active
+            if (hasSubscriptions && _isSubscriptionMode)
               SubscriptionOptionsWidget(
                 plans: widget.service.subscriptionPlans,
                 onPlanSelected: (plan) {
@@ -194,11 +276,14 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
                   _calculateAndUpdatePrice();
                 },
               ),
-            if (hasSubscriptions) const Divider(height: 48),
+            if (hasSubscriptions && _isSubscriptionMode) const Divider(height: 48),
+
             const SizedBox(height: 8),
             Text('Details', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(widget.service.description),
+            const SizedBox(height: 16),
+            _buildReviewsSection(),
             const SizedBox(height: 80),
           ],
         ),
@@ -207,7 +292,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
   }
 
   Widget _buildPriceAndAction() {
-    final buttonText = _selectedSubscription == null ? 'ADD' : 'SUBSCRIBE';
+    final buttonText = !_isSubscriptionMode ? 'ADD' : 'SUBSCRIBE';
     final originalTotalPrice = (_selectedOption.price * max(1, _selectedSubscription?.durationInMonths ?? 1)).round();
 
     return Row(
@@ -245,7 +330,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
               return;
             }
 
-            final optionName = _selectedSubscription == null ? _selectedOption.name : '${_selectedOption.name} - ${_selectedSubscription!.name}';
+            final optionName = !_isSubscriptionMode ? _selectedOption.name : '${_selectedOption.name} - ${_selectedSubscription?.name ?? ''}';
             final cartItem = CartItemModel(
               serviceId: widget.service.id,
               serviceName: widget.service.name,
@@ -255,25 +340,17 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
             );
 
             try {
-              // Debug log to indicate add-to-cart sequence started. Matches requested "start_console" marker.
               if (kDebugMode) debugPrint('CART_DEBUG: User initiating add-to-cart for serviceId=${cartItem.serviceId} option=${cartItem.optionName} (start_console)');
 
-              // Dispatch event to CartBloc which will handle local storage / remote sync and recalc totals.
               context.read<CartBloc>().add(CartItemAdded(cartItem));
-              // Inform the user and give quick action to view cart. Keep message delivery non-blocking.
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                   content: Text('${widget.service.name} added to cart!'),
-                  // Use `go` to switch to the cart route inside the ShellRoute instead
-                  // of `push`, which would create a new page with the same key and
-                  // cause the duplicate-page-key assertion.
                   action: SnackBarAction(label: 'VIEW CART', onPressed: () {
-                    // Use GoRouterState to read current URI string safely.
                     final current = GoRouterState.of(context).uri.toString();
                     if (!current.startsWith(AppRoutes.cart)) {
                       GoRouter.of(context).go(AppRoutes.cart);
                     } else {
-                      // Already on cart, just close snack bar.
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();
                     }
                   }),
@@ -287,6 +364,59 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
           icon: const Icon(Icons.add_shopping_cart),
           label: Text(buttonText),
         ),
+      ],
+    );
+  }
+
+  Widget _buildReviewsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Reviews', style: Theme.of(context).textTheme.titleMedium),
+            // Removed write-review button: repository is read-only and reviews are submitted elsewhere
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_loadingReviews)
+          const Center(child: CircularProgressIndicator())
+        else if (_reviews.isEmpty)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Text('No reviews yet', style: TextStyle(color: Colors.black54)),
+              SizedBox(height: 8),
+            ],
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _reviews.length,
+            separatorBuilder: (_, __) => const Divider(),
+            itemBuilder: (context, idx) {
+              final r = _reviews[idx];
+              final reviewer = _userNames[r.userId] ?? r.userId;
+              final created = r.createdAt.toDate().toLocal().toString().split(' ')[0];
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Row(children: [
+                  Row(children: List.generate(5, (i) => Icon(i < r.rating ? Icons.star : Icons.star_border, color: Colors.amber, size: 16))),
+                  const SizedBox(width: 8),
+                  Text(reviewer, style: const TextStyle(fontWeight: FontWeight.w600)),
+                ]),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (r.comment != null && r.comment!.isNotEmpty) Text(r.comment!),
+                    if (created.isNotEmpty) Text(created, style: const TextStyle(color: Colors.black45, fontSize: 12)),
+                  ],
+                ),
+              );
+            },
+          ),
       ],
     );
   }

@@ -23,6 +23,8 @@ class CartPage extends StatefulWidget {
 class _CartPageState extends State<CartPage> {
   StreamSubscription<User?>? _authSub;
   late final TextEditingController _couponController;
+  Timer? _scrollTimer;
+  bool _isScrolling = false;
 
   @override
   void initState() {
@@ -43,9 +45,22 @@ class _CartPageState extends State<CartPage> {
 
   @override
   void dispose() {
+    _scrollTimer?.cancel();
     _couponController.dispose();
     _authSub?.cancel();
     super.dispose();
+  }
+
+  void _onScrollActivity() {
+    // Called on scroll updates/start. Show the summary only when user stops scrolling.
+    if (!_isScrolling) {
+      setState(() => _isScrolling = true);
+    }
+    _scrollTimer?.cancel();
+    _scrollTimer = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      if (_isScrolling) setState(() => _isScrolling = false);
+    });
   }
 
   @override
@@ -61,11 +76,11 @@ class _CartPageState extends State<CartPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Cart'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => context.pop(),
-        ),
+        title: Center(child: const Text('My Cart')),
+        // leading: IconButton(
+        //   icon: const Icon(Icons.close),
+        //   onPressed: () => context.pop(),
+        // ),
       ),
       body: BlocBuilder<CartBloc, CartState>(
         builder: (context, state) {
@@ -85,16 +100,36 @@ class _CartPageState extends State<CartPage> {
           return Column(
             children: [
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(8.0),
-                  itemCount: state.items.length,
-                  itemBuilder: (context, index) {
-                    final item = state.items[index];
-                    return CartItemCard(item: item);
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    // Treat any scroll start/update as activity
+                    if (notification is ScrollStartNotification || notification is ScrollUpdateNotification) {
+                      _onScrollActivity();
+                    }
+                    return false; // allow the notification to continue to other listeners
                   },
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(8.0),
+                    itemCount: state.items.length,
+                    itemBuilder: (context, index) {
+                      final item = state.items[index];
+                      return CartItemCard(item: item);
+                    },
+                  ),
                 ),
               ),
-              _buildSummary(context, state, couponController),
+
+              // Animated summary: hides while scrolling and shows when scrolling stops
+              AnimatedSlide(
+                offset: _isScrolling ? const Offset(0, 1) : const Offset(0, 0),
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOut,
+                child: AnimatedOpacity(
+                  opacity: _isScrolling ? 0.0 : 1.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: _buildSummary(context, state, couponController),
+                ),
+              ),
             ],
           );
         },
@@ -132,7 +167,7 @@ class _CartPageState extends State<CartPage> {
                 child: TextField(
                   controller: controller,
                   decoration: InputDecoration(
-                    hintText: 'Enter Coupon (e.g. AGAPE10)',
+                    hintText: 'Enter Coupon',
                     border: const OutlineInputBorder(),
                     isDense: true,
                     suffixIcon: state.appliedCoupon != null
@@ -186,6 +221,8 @@ class _CartPageState extends State<CartPage> {
                 context.go(AppRoutes.checkout);
               },
               style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF0948EA),
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),

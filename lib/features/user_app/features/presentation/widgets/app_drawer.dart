@@ -12,19 +12,6 @@ import '../../../../../core/services/session_service.dart';
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
 
-  // Helper function to create an email link
-  void _launchEmail() async {
-    final Uri emailLaunchUri = Uri(
-      scheme: 'mailto',
-      path: 'support@nakoda.com', // Your support email
-      queryParameters: {'subject': 'App Support Inquiry'},
-    );
-    if (await canLaunchUrl(emailLaunchUri)) {
-      await launchUrl(emailLaunchUri);
-    } else {
-      throw 'Could not launch $emailLaunchUri';
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,21 +37,67 @@ class AppDrawer extends StatelessWidget {
         padding: EdgeInsets.zero,
         children: <Widget>[
           _buildDrawerHeader(),
-          _buildSubheading('Pages:'),
-          _buildDrawerItem(context: context, icon: Icons.login, text: 'Login', onTap: () => GoRouter.of(context).go('/login')),
-          if (showWorkerMenu) _buildDrawerItem(context: context, icon: Icons.dashboard_outlined, text: 'Worker Dashboard', onTap: () => GoRouter.of(context).go(AppRoutes.workerHome)),
-          if (showWorkerMenu) _buildDrawerItem(context: context, icon: Icons.work_outline, text: 'Worker Orders', onTap: () => GoRouter.of(context).go(AppRoutes.workerOrders)),
-          _buildDrawerItem(context: context, icon: Icons.info_outline, text: 'About Us', onTap: () => GoRouter.of(context).push('/about-us')),
+          // _buildSubheading('Pages:'),
+          // _buildDrawerItem(context: context, icon: Icons.login, text: 'Login', onTap: () => GoRouter.of(context).go('/login')),
+          // if (showWorkerMenu) _buildDrawerItem(context: context, icon: Icons.dashboard_outlined, text: 'Worker Dashboard', onTap: () => GoRouter.of(context).go(AppRoutes.workerHome)),
+          // if (showWorkerMenu) _buildDrawerItem(context: context, icon: Icons.work_outline, text: 'Worker Orders', onTap: () => GoRouter.of(context).go(AppRoutes.workerOrders)),
           _buildDrawerItem(context: context, icon: Icons.cleaning_services, text: 'Cleaning Services', onTap: () => GoRouter.of(context).push('/cleaning-services')),
-          _buildDrawerItem(context: context, icon: Icons.settings_outlined, text: 'AC Services', onTap: () => GoRouter.of(context).push('/ac-services')),
-          _buildDrawerItem(context: context, icon: Icons.pest_control, text: 'Pest Control', onTap: () => GoRouter.of(context).push('/pest-control')),
-          _buildDrawerItem(context: context, icon: Icons.article_outlined, text: 'Our Blog', onTap: () => GoRouter.of(context).push('/blog')),
-          const Divider(),
-          _buildSubheading('Info Pages:'),
-          _buildDrawerItem(context: context, icon: Icons.phone_outlined, text: 'Contact Us', onTap: () => GoRouter.of(context).push('/contact-us')),
-          _buildDrawerItem(context: context, icon: Icons.email_outlined, text: 'Email', onTap: _launchEmail), // Use the special function here
-          _buildDrawerItem(context: context, icon: Icons.description_outlined, text: 'Terms of Use', onTap: () => GoRouter.of(context).push('/terms')),
-          const Divider(),
+          // _buildDrawerItem(context: context, icon: Icons.settings_outlined, text: 'AC Services', onTap: () => GoRouter.of(context).push('/ac-services')),
+          // _buildDrawerItem(context: context, icon: Icons.pest_control, text: 'Pest Control', onTap: () => GoRouter.of(context).push('/pest-control')),
+          // _buildDrawerItem(context: context, icon: Icons.article_outlined, text: 'Our Blog', onTap: () => GoRouter.of(context).push('/blog')),
+          // const Divider(),
+          // _buildSubheading('Info Pages:'),
+          _buildDrawerItem(
+            context: context,
+            icon: Icons.support_agent_outlined,
+            text: 'Support',
+            onTap: () {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                showModalBottomSheet(
+                  context: context,
+                  builder: (sheetCtx) {
+                    return SafeArea(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ListTile(
+                            leading: const Icon(Icons.phone_outlined),
+                            title: const Text('Contact Us'),
+                            onTap: () async {
+                              Navigator.of(sheetCtx).pop();
+                              final Uri phoneUri = Uri(scheme: 'tel', path: '+91 78538 95060'); // replace with real number
+                              if (await canLaunchUrl(phoneUri)) {
+                                await launchUrl(phoneUri);
+                              }
+                            },
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.email_outlined),
+                            title: const Text('Email'),
+                            onTap: () async {
+                              Navigator.of(sheetCtx).pop();
+                              final Uri emailLaunchUri = Uri(
+                                scheme: 'mailto',
+                                path: 'Help@agapecare.in',
+                                queryParameters: {'subject': 'App Support Inquiry'},
+                              );
+                              if (await canLaunchUrl(emailLaunchUri)) {
+                                await launchUrl(emailLaunchUri);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              });
+            },
+          ),
+          _buildDrawerItem(context: context, icon: Icons.description_outlined, text: 'Terms and Conditions', onTap: () => GoRouter.of(context).push('/terms')),
+          _buildDrawerItem(context: context, icon: Icons.info_outline, text: 'About Us', onTap: () => GoRouter.of(context).push('/about-us')),
+
+          // const Divider(),
           // Logout option for signed-in users
           Builder(builder: (ctx) {
             try {
@@ -112,7 +145,7 @@ class AppDrawer extends StatelessWidget {
             ),
           ),
           Text(
-            'Agapecares',
+            'AgapeCares',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,

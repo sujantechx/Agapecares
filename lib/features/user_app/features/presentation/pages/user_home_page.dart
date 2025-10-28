@@ -11,7 +11,7 @@ import 'package:agapecares/features/user_app/features/services/logic/service_blo
 import 'package:agapecares/features/user_app/features/services/logic/service_event.dart';
 import 'package:agapecares/features/user_app/features/services/logic/service_state.dart';
 import 'package:agapecares/app/theme/app_theme.dart';
-import 'package:agapecares/features/user_app/features/presentation/widgets/location_search.dart';
+import 'package:agapecares/features/user_app/features/presentation/widgets/location_search.dart' hide AppTheme;
 
 class UserHomePage extends StatefulWidget {
   const UserHomePage({super.key});
@@ -73,20 +73,20 @@ class _UserHomePageState extends State<UserHomePage> {
               _buildOfferCarousel(context),
               const SizedBox(height: 10),
               const LocationSearchBar(),
-              const Divider(height: 1, thickness: 1),
-              _buildSectionTitle('Services'),
+              // const Divider(height: 1, thickness: 1),
+              _buildSectionTitle('Cleaning Services'),
               _buildTopServicesGrid(context, topServices),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Popular Cleaning Services'),
-              _buildPopularCleaningGrid(context, popularServices),
+              // const SizedBox(height: 24),
+              // _buildSectionTitle('Popular Cleaning Services'),
+              // _buildPopularCleaningGrid(context, popularServices),
               const SizedBox(height: 24),
               _buildSectionTitle('Why Agapecares Cleaning Services?'),
               _buildWhyUsGrid(context),
               const SizedBox(height: 24),
-              _buildTestimonialCard(context),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Our Client and Partners'),
-              const SizedBox(height: 24),
+              // _buildTestimonialCard(context),
+              // const SizedBox(height: 24),
+              // _buildSectionTitle('Our Client and Partners'),
+              // const SizedBox(height: 24),
             ],
           ),
         );
@@ -127,12 +127,14 @@ class _UserHomePageState extends State<UserHomePage> {
 Widget _buildSectionTitle(String title) {
   return Padding(
     padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
-    child: Text(
-      title.toUpperCase(),
-      style: const TextStyle(
-        fontWeight: FontWeight.bold,
-        fontSize: 16,
-        color: AppTheme.textColor,
+    child: Center(
+      child: Text(
+        title.toUpperCase(),
+        style:  TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+          color: AppTheme.textColor,
+        ),
       ),
     ),
   );
@@ -184,9 +186,9 @@ Widget _buildTopServicesGrid(BuildContext context, List<ServiceModel> topService
         },
       ),
       const SizedBox(height: 16),
-      // New: All Services label + grid
-      _buildSectionTitle('All Services'),
-      _buildAllServicesGrid(context, topServices),
+      // // New: All Services label + grid
+      // _buildSectionTitle('All Services'),
+      // _buildAllServicesGrid(context, topServices),
     ],
   );
 }

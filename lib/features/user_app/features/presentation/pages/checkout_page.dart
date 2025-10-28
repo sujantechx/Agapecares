@@ -51,6 +51,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
+  // --- All non-UI logic methods (unchanged) ---
+
   Future<void> _seedUserDetails() async {
     try {
       // 1) Try SessionService cached user first (fast, offline-friendly)
@@ -176,9 +178,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return items.fold(0.0, (prev, el) => prev + (el.unitPrice * el.quantity));
   }
 
-  // Helper: detect presence of CheckoutBloc to avoid ProviderNotFoundException.
-  // If the app didn't provide CheckoutBloc above this page, we gracefully
-  // disable checkout actions and show a helpful message instead of crashing.
   bool _hasCheckoutBloc(BuildContext ctx) {
     try {
       // read will throw if not found
@@ -187,224 +186,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
     } catch (_) {
       return false;
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final items = _buildItemsFromExtraOrCart(context);
-    final total = _totalForItems(items);
-    // Try to read the CheckoutBloc instance safely. Using the instance directly
-    // with BlocListener.value and BlocBuilder(bloc: ...) prevents a race where
-    // the provider existed during an earlier build but is no longer an ancestor
-    // of the listener/builder when Flutter attaches the widget tree (causing
-    // ProviderNotFoundException). If no bloc is available, `checkoutBloc` is null
-    // and we render a disabled checkout button with an informative message.
-    CheckoutBloc? checkoutBloc;
-    try {
-      checkoutBloc = context.read<CheckoutBloc>();
-    } catch (_) {
-      checkoutBloc = null;
-    }
-
-    // Build the main form; if CheckoutBloc exists, wrap with BlocListener to react to success/errors.
-    final form = Form(
-      key: _formKey,
-      child: ListView(
-        children: [
-          if (items.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24.0),
-              child: Center(child: Text('Your cart is empty or service not found.')),
-            )
-          else
-            ...items.map((it) => ListTile(
-                  title: Text(it.serviceName),
-                  subtitle: Text('${it.optionName} x${it.quantity}'),
-                  trailing: Text('₹${(it.unitPrice * it.quantity).toStringAsFixed(2)}'),
-                )),
-
-          const SizedBox(height: 12),
-          ListTile(
-            title: const Text('Total', style: TextStyle(fontWeight: FontWeight.bold)),
-            trailing: Text('₹${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-          ),
-          const SizedBox(height: 12),
-
-          // Contact fields
-          TextFormField(
-            controller: _nameCtrl,
-            decoration: const InputDecoration(labelText: 'Name'),
-            validator: (v) => (v == null || v.isEmpty) ? 'Enter name' : null,
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _emailCtrl,
-            decoration: const InputDecoration(labelText: 'Email'),
-            keyboardType: TextInputType.emailAddress,
-            readOnly: true, // email is not writable from checkout UI
-            validator: (v) => (v == null || v.isEmpty) ? 'Enter email' : null,
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _phoneCtrl,
-            decoration: const InputDecoration(labelText: 'Phone'),
-            keyboardType: TextInputType.phone,
-            validator: (v) => (v == null || v.isEmpty) ? 'Enter phone' : null,
-          ),
-          const SizedBox(height: 8),
-
-          // Address selector: if saved addresses available allow picking one or entering new address
-          if (_savedAddresses.isNotEmpty) ...[
-            DropdownButtonFormField<String>(
-              initialValue: _selectedAddressValue ?? (_savedAddresses.isNotEmpty ? _savedAddresses.first : null),
-              decoration: const InputDecoration(labelText: 'Saved addresses'),
-              items: [
-                ..._savedAddresses.map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
-                const DropdownMenuItem(value: _useNewAddressValue, child: Text('Use a different / new address'))
-              ],
-              onChanged: (v) {
-                setState(() {
-                  _selectedAddressValue = v;
-                  if (v == _useNewAddressValue) {
-                    _addressCtrl.text = '';
-                  } else if (v != null) {
-                    _addressCtrl.text = v;
-                  }
-                });
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-
-          TextFormField(
-            controller: _addressCtrl,
-            decoration: const InputDecoration(labelText: 'Address'),
-            validator: (v) => (v == null || v.isEmpty) ? 'Enter address' : null,
-          ),
-
-          const SizedBox(height: 12),
-          // Use a dropdown to select payment method to avoid deprecated RadioListTile API
-          DropdownButtonFormField<String>(
-            initialValue: _paymentMethod,
-            decoration: const InputDecoration(labelText: 'Payment Method'),
-            items: const [
-              DropdownMenuItem(value: 'razorpay', child: Text('Pay with Razorpay')),
-              DropdownMenuItem(value: 'cod', child: Text('Cash on Delivery')),
-            ],
-            onChanged: (v) {
-              if (v == null) return;
-              setState(() => _paymentMethod = v);
-            },
-          ),
-          const SizedBox(height: 16),
-
-          // If there is a CheckoutBloc available, show the real button wired to it.
-          // Otherwise show a disabled informative button to avoid ProviderNotFoundException.
-          Builder(builder: (btnCtx) {
-            if (checkoutBloc == null) {
-              return ElevatedButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(btnCtx).showSnackBar(const SnackBar(content: Text('Checkout not available: missing CheckoutBloc provider.')));
-                },
-                child: const Text('Place Order (Unavailable)'),
-              );
-            }
-
-            // We have a bloc -> use BlocBuilder to react to inProgress state safely
-            return BlocBuilder<CheckoutBloc, CheckoutState>(
-              bloc: checkoutBloc,
-              builder: (context, state) {
-                return ElevatedButton(
-                  onPressed: state.isInProgress
-                      ? null
-                      : () async {
-                          if (!_formKey.currentState!.validate()) return;
-                          if (items.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No items to checkout')));
-                            return;
-                          }
-
-                          // If user selected one of saved addresses and didn't edit address text, we
-                          // already set _addressCtrl accordingly. If user selected 'new', the text must be provided.
-                          // Persist address if changed/new
-                          await _maybePersistAddressChange(context);
-
-                          final req = PaymentRequest(
-                            totalAmount: total,
-                            userEmail: _emailCtrl.text.trim(),
-                            userPhone: _phoneCtrl.text.trim(),
-                            userName: _nameCtrl.text.trim(),
-                            userAddress: _addressCtrl.text.trim(),
-                            items: items.map((e) => e.toMap()).toList(),
-                          );
-
-                          // Dispatch the real checkout event through the provided bloc
-                          try {
-                            checkoutBloc!.add(CheckoutSubmitted(request: req, paymentMethod: _paymentMethod));
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Checkout failed: internal error')));
-                          }
-                        },
-                  child: state.isInProgress ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Place Order'),
-                );
-              });
-          })
-        ],
-      ),
-    );
-
-    if (checkoutBloc != null) {
-      // Safe to add BlocListener using the explicit bloc instance to avoid provider lookup
-      return Scaffold(
-        appBar: AppBar(title: const Text('Checkout')),
-        body: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: BlocListener<CheckoutBloc, CheckoutState>(
-            bloc: checkoutBloc!,
-            listener: (context, state) {
-              if (state.isInProgress) return;
-              if (state.successMessage != null) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.successMessage!)));
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  try {
-                    try {
-                      GoRouter.of(context).go(AppRoutes.orders);
-                      return;
-                    } catch (_) {}
-                    try {
-                      Navigator.of(context).pushReplacementNamed(AppRoutes.orders);
-                      return;
-                    } catch (_) {}
-                  } catch (_) {}
-                });
-              }
-              if (state.errorMessage != null) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.errorMessage!)));
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  try {
-                    try {
-                      GoRouter.of(context).go(AppRoutes.orders);
-                      return;
-                    } catch (_) {}
-                    try {
-                      Navigator.of(context).pushReplacementNamed(AppRoutes.orders);
-                      return;
-                    } catch (_) {}
-                  } catch (_) {}
-                });
-              }
-            },
-            child: form,
-          ),
-        ),
-      );
-    }
-
-    // No bloc -> show form but without listener
-    return Scaffold(
-      appBar: AppBar(title: const Text('Checkout')),
-      body: Padding(padding: const EdgeInsets.all(12.0), child: form),
-    );
   }
 
   Future<void> _maybePersistAddressChange(BuildContext ctx) async {
@@ -453,5 +234,395 @@ class _CheckoutPageState extends State<CheckoutPage> {
       debugPrint('[CheckoutPage] failed to persist address: $e');
       ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Failed to save address')));
     }
+  }
+
+  // --- NEW: UI Helper Methods ---
+
+  /// Builds a styled section header
+  Widget _buildSectionHeader(String title, TextTheme textTheme) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 24.0, bottom: 12.0, left: 4.0),
+      child: Text(
+        title,
+        style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  /// Builds the Order Summary card
+  Widget _buildOrderSummary(
+      List<CartItemModel> items,
+      double total,
+      TextTheme textTheme,
+      ColorScheme colorScheme,
+      ) {
+    if (items.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Center(
+            child: Text(
+              'Your cart is empty or service not found.',
+              style: textTheme.bodyLarge,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: Column(
+        children: [
+          ...items.map((it) => ListTile(
+            title: Text(it.serviceName, style: textTheme.bodyLarge),
+            subtitle: Text(
+              '${it.optionName} x${it.quantity}',
+              style: textTheme.bodyMedium,
+            ),
+            trailing: Text(
+              '₹${(it.unitPrice * it.quantity).toStringAsFixed(2)}',
+              style: textTheme.bodyLarge,
+            ),
+          )),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          ListTile(
+            title: Text(
+              'Total',
+              style: textTheme.titleLarge,
+            ),
+            trailing: Text(
+              '₹${total.toStringAsFixed(2)}',
+              style: textTheme.titleLarge?.copyWith(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Builds the User Details card
+  Widget _buildUserDetails() {
+    // Define a modern input decoration
+    final inputDecoration = InputDecoration(
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+    );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextFormField(
+              controller: _nameCtrl,
+              decoration: inputDecoration.copyWith(
+                labelText: 'Name',
+                prefixIcon: const Icon(Icons.person_outline),
+              ),
+              validator: (v) => (v == null || v.isEmpty) ? 'Enter name' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _emailCtrl,
+              decoration: inputDecoration.copyWith(
+                labelText: 'Email',
+                prefixIcon: const Icon(Icons.email_outlined),
+              ),
+              keyboardType: TextInputType.emailAddress,
+              readOnly: true, // email is not writable from checkout UI
+              validator: (v) => (v == null || v.isEmpty) ? 'Enter email' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _phoneCtrl,
+              decoration: inputDecoration.copyWith(
+                labelText: 'Phone',
+                prefixIcon: const Icon(Icons.phone_outlined),
+              ),
+              keyboardType: TextInputType.phone,
+              validator: (v) => (v == null || v.isEmpty) ? 'Enter phone' : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Builds the Address Section card
+  Widget _buildAddressSection() {
+    final inputDecoration = InputDecoration(
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+    );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            if (_savedAddresses.isNotEmpty) ...[
+              DropdownButtonFormField<String>(
+                value: _selectedAddressValue,
+                isExpanded: true,
+                decoration: inputDecoration.copyWith(
+                  labelText: 'Saved addresses',
+                  prefixIcon: const Icon(Icons.bookmark_outline),
+                ),
+                items: [
+                  ..._savedAddresses.map((a) => DropdownMenuItem(
+                    value: a,
+                    child: Text(a, overflow: TextOverflow.ellipsis),
+                  )),
+                  const DropdownMenuItem(
+                    value: _useNewAddressValue,
+                    child: Text('Use a different / new address'),
+                  )
+                ],
+                onChanged: (v) {
+                  setState(() {
+                    _selectedAddressValue = v;
+                    if (v == _useNewAddressValue) {
+                      _addressCtrl.text = '';
+                    } else if (v != null) {
+                      _addressCtrl.text = v;
+                    }
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+            TextFormField(
+              controller: _addressCtrl,
+              decoration: inputDecoration.copyWith(
+                labelText: 'Full Address',
+                prefixIcon: const Icon(Icons.home_outlined),
+              ),
+              validator: (v) => (v == null || v.isEmpty) ? 'Enter address' : null,
+              maxLines: 3,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Builds the Payment Method card
+  Widget _buildPaymentSection() {
+    return Card(
+      child: Column(
+        children: [
+          RadioListTile<String>(
+            title: const Text('Pay with Razorpay'),
+            subtitle: const Text('Online payment (Cards, UPI)'),
+            value: 'razorpay',
+            groupValue: _paymentMethod,
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _paymentMethod = v);
+            },
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          RadioListTile<String>(
+            title: const Text('Cash on Delivery'),
+            subtitle: const Text('Pay after service is completed'),
+            value: 'cod',
+            groupValue: _paymentMethod,
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _paymentMethod = v);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Main Build Method (Refactored) ---
+
+  @override
+  Widget build(BuildContext context) {
+    // Get theme data for consistent styling
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final colorScheme = theme.colorScheme;
+
+    final items = _buildItemsFromExtraOrCart(context);
+    final total = _totalForItems(items);
+    CheckoutBloc? checkoutBloc;
+    try {
+      checkoutBloc = context.read<CheckoutBloc>();
+    } catch (_) {
+      checkoutBloc = null;
+    }
+
+    // This is the new, cleaner form body
+    final formBody = Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          // 1. Order Summary
+          _buildSectionHeader('Your Order Details', textTheme),
+          _buildOrderSummary(items, total, textTheme, colorScheme),
+
+          // 2. User Details
+          _buildSectionHeader('Contact Details', textTheme),
+          _buildUserDetails(),
+
+          // 3. Address
+          _buildSectionHeader('Shipping Address', textTheme),
+          _buildAddressSection(),
+
+          // 4. Payment Method
+          _buildSectionHeader('Payment Method', textTheme),
+          _buildPaymentSection(),
+
+          const SizedBox(height: 24),
+
+          // 5. Place Order Button
+          Builder(builder: (btnCtx) {
+            if (checkoutBloc == null) {
+              return SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16.0),
+                    textStyle: textTheme.titleMedium,
+                  ),
+                  onPressed: () {
+                    ScaffoldMessenger.of(btnCtx).showSnackBar(const SnackBar(
+                        content: Text(
+                            'Checkout not available: missing CheckoutBloc provider.')));
+                  },
+                  child: const Text('Place Order (Unavailable)'),
+                ),
+              );
+            }
+
+            // We have a bloc -> use BlocBuilder to react to inProgress state safely
+            return BlocBuilder<CheckoutBloc, CheckoutState>(
+              bloc: checkoutBloc,
+              builder: (context, state) {
+                return SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16.0),
+                      textStyle: textTheme.titleMedium,
+                      backgroundColor: Color(0xFF0948EA),
+                      foregroundColor: Colors.white
+                    ),
+                    onPressed: state.isInProgress
+                        ? null
+                        : () async {
+                      if (!_formKey.currentState!.validate()) return;
+                      if (items.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('No items to checkout')));
+                        return;
+                      }
+
+                      // If user selected one of saved addresses and didn't edit address text, we
+                      // already set _addressCtrl accordingly. If user selected 'new', the text must be provided.
+                      // Persist address if changed/new
+                      await _maybePersistAddressChange(context);
+
+                      final req = PaymentRequest(
+                        totalAmount: total,
+                        userEmail: _emailCtrl.text.trim(),
+                        userPhone: _phoneCtrl.text.trim(),
+                        userName: _nameCtrl.text.trim(),
+                        userAddress: _addressCtrl.text.trim(),
+                        items: items.map((e) => e.toMap()).toList(),
+                      );
+
+                      // Dispatch the real checkout event through the provided bloc
+                      try {
+                        checkoutBloc!.add(CheckoutSubmitted(
+                            request: req, paymentMethod: _paymentMethod));
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content:
+                                Text('Checkout failed: internal error')));
+                      }
+                    },
+                    child: state.isInProgress
+                        ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                        : const Text('Place Order'),
+                  ),
+                );
+              },
+            );
+          })
+        ],
+      ),
+    );
+
+    // --- Scaffold wrapper with BlocListener (unchanged logic) ---
+    if (checkoutBloc != null) {
+      // Safe to add BlocListener using the explicit bloc instance
+      return Scaffold(
+        // appBar: AppBar(title: const Text('Checkout')),
+        body: BlocListener<CheckoutBloc, CheckoutState>(
+          bloc: checkoutBloc,
+          listener: (context, state) {
+            if (state.isInProgress) return;
+            if (state.successMessage != null) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text(state.successMessage!)));
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                try {
+                  try {
+                    GoRouter.of(context).go(AppRoutes.orders);
+                    return;
+                  } catch (_) {}
+                  try {
+                    Navigator.of(context)
+                        .pushReplacementNamed(AppRoutes.orders);
+                    return;
+                  } catch (_) {}
+                } catch (_) {}
+              });
+            }
+            if (state.errorMessage != null) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text(state.errorMessage!)));
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                try {
+                  try {
+                    GoRouter.of(context).go(AppRoutes.orders);
+                    return;
+                  } catch (_) {}
+                  try {
+                    Navigator.of(context)
+                        .pushReplacementNamed(AppRoutes.orders);
+                    return;
+                  } catch (_) {}
+                } catch (_) {}
+              });
+            }
+          },
+          child: formBody, // Use the new formBody
+        ),
+      );
+    }
+
+    // No bloc -> show form but without listener
+    return Scaffold(
+      appBar: AppBar(title: const Text('Checkout')),
+      body: formBody, // Use the new formBody
+    );
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../../../app/routes/app_routes.dart';
 import '../../../../../../core/models/order_model.dart';
@@ -304,7 +305,33 @@ class _OrderListPageState extends State<OrderListPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Order • ${o.orderNumber.isNotEmpty ? o.orderNumber : (o.id.isNotEmpty ? o.id : '-')}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    Row(
+                                      children: [
+                                        const Text('Order • ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                        Flexible(
+                                          child: SelectableText(
+                                            o.orderNumber.isNotEmpty ? o.orderNumber : (o.id.isNotEmpty ? o.id : '-'),
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                                fontFamily: 'monospace'),
+                                            maxLines: 1,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        IconButton(
+                                          icon: const Icon(Icons.copy, size: 18),
+                                          tooltip: 'Copy order number',
+                                          onPressed: () {
+                                            final txt = o.orderNumber.isNotEmpty ? o.orderNumber : (o.id.isNotEmpty ? o.id : '');
+                                            if (txt.isNotEmpty) {
+                                              Clipboard.setData(ClipboardData(text: txt));
+                                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Copied: $txt')));
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    ),
                                     const SizedBox(height: 6),
                                     Text('Placed: ${_formatDateTime(createdDate)}', style: const TextStyle(fontSize: 13, color: Colors.black54)),
                                   ],
@@ -472,7 +499,33 @@ class _OrderListPageState extends State<OrderListPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Order • ${o.orderNumber.isNotEmpty ? o.orderNumber : (o.id.isNotEmpty ? o.id : '-')}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    Row(
+                                      children: [
+                                        const Text('Order • ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                        Flexible(
+                                          child: SelectableText(
+                                            o.orderNumber.isNotEmpty ? o.orderNumber : (o.id.isNotEmpty ? o.id : '-'),
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                                fontFamily: 'monospace'),
+                                            maxLines: 1,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        IconButton(
+                                          icon: const Icon(Icons.copy, size: 18),
+                                          tooltip: 'Copy order number',
+                                          onPressed: () {
+                                            final txt = o.orderNumber.isNotEmpty ? o.orderNumber : (o.id.isNotEmpty ? o.id : '');
+                                            if (txt.isNotEmpty) {
+                                              Clipboard.setData(ClipboardData(text: txt));
+                                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Copied: $txt')));
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    ),
                                     const SizedBox(height: 6),
                                     Text('Placed: ${_formatDateTime(createdDate)}', style: const TextStyle(fontSize: 13, color: Colors.black54)),
                                   ],

@@ -122,6 +122,37 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
     );
   }
 
+  Widget _buildServiceRatingRow() {
+    final avg = widget.service.ratingAvg ?? 0.0;
+    final count = widget.service.ratingCount ?? 0;
+    if (count == 0) {
+      return Row(
+        children: const [
+          Icon(Icons.star_border, color: Colors.amber, size: 18),
+          SizedBox(width: 6),
+          Text('No ratings yet', style: TextStyle(color: Colors.black54)),
+        ],
+      );
+    }
+    final fullStars = avg.floor();
+    final hasHalf = (avg - fullStars) >= 0.5;
+    return Row(
+      children: [
+        Row(
+          children: List.generate(5, (i) {
+            if (i < fullStars) return const Icon(Icons.star, color: Colors.amber, size: 18);
+            if (i == fullStars && hasHalf) return const Icon(Icons.star_half, color: Colors.amber, size: 18);
+            return const Icon(Icons.star_border, color: Colors.amber, size: 18);
+          }),
+        ),
+        const SizedBox(width: 8),
+        Text(avg.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(width: 6),
+        Text('($count)', style: const TextStyle(color: Colors.black54)),
+      ],
+    );
+  }
+
   SliverToBoxAdapter _buildServiceContent() {
     final hasOptions = widget.service.options.isNotEmpty;
     final hasSubscriptions = widget.service.subscriptionPlans.isNotEmpty;
@@ -134,7 +165,15 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
           children: [
             Text(widget.service.name, style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 8),
-            Text(widget.service.category, style: Theme.of(context).textTheme.bodyMedium),
+            // Show service rating and category
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(child: _buildServiceRatingRow()),
+                const SizedBox(width: 12),
+                Text(widget.service.category, style: Theme.of(context).textTheme.bodyMedium),
+              ],
+            ),
             const SizedBox(height: 16),
             _buildPriceAndAction(),
             const SizedBox(height: 16),

@@ -53,7 +53,7 @@ class FakeOrderRepo implements user_orders_repo.OrderRepository {
   }
 
   @override
-  Future<bool> submitRatingForOrder({required OrderModel order, required double rating, String? review}) async {
+  Future<bool> submitRatingForOrder({required OrderModel order, required double serviceRating, double? workerRating, String? review}) async {
     return true;
   }
 

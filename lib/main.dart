@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:go_router/go_router.dart';
 
 import 'firebase_options.dart';
+import 'core/firebase_emulator.dart';
 
 import 'app/theme/app_theme.dart';
 import 'package:agapecares/app/app.dart' as di;
@@ -22,6 +23,11 @@ Future<void> main() async {
 
   // Initialize Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // If you're running local emulators for Firestore/Functions set the flag
+  // `useFirebaseEmulator = true` in `lib/core/firebase_emulator.dart`.
+  // This call is a no-op when the flag is false.
+  configureFirebaseEmulators();
 
   // Initialize dependency injection container and get repository providers
   final repoProviders = await di.init();

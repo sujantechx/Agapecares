@@ -1,9 +1,19 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
 // Assuming your model is in this location, adjust if necessary
 import '../../../../../core/models/order_model.dart';
+
+/// Helper to format an order number from a date and a sequence number.
+/// Produces YYYYMMDDxxxxx where seq=1 maps to suffix 10000.
+String formatOrderNumberFromDateAndSeq(DateTime dt, int seq) {
+  final datePart = DateFormat('yyyyMMdd').format(dt);
+  final suffixNumber = (10000 + seq - 1);
+  final suffix = suffixNumber.toString().padLeft(5, '0');
+  return '$datePart$suffix';
+}
 
 // -----------------------------------------------------------------------------
 // ABSTRACTION (THE REPOSITORY INTERFACE)
@@ -43,7 +53,7 @@ abstract class OrderRepository {
   Future<List<OrderModel>> fetchOrdersForAdmin({Map<String, dynamic>? filters});
 
   /// Submit a rating and an optional review for a completed order.
-  Future<bool> submitRatingForOrder({required OrderModel order, required double rating, String? review});
+  Future<bool> submitRatingForOrder({required OrderModel order, required double serviceRating, double? workerRating, String? review});
 
   /// Administrative helper to find and remove duplicate remote orders for a
   /// given user and order number, keeping only the earliest created one.
@@ -84,6 +94,9 @@ class OrderRepositoryImpl implements OrderRepository {
         'tax': order.tax,
         'total': order.total,
         'totalAmount': order.total,
+        // Preserve the human-readable order number when present so downstream
+        // systems (payments, bookings, admin tools) can display and reference it.
+        if (order.orderNumber.isNotEmpty) 'orderNumber': order.orderNumber,
         'orderStatus': order.orderStatus.name,
         'status': order.orderStatus.name,
         'paymentStatus': order.paymentStatus.name,
@@ -119,7 +132,8 @@ class OrderRepositoryImpl implements OrderRepository {
     // pass the `userId` parameter but the order already contains it.
     final userOrdersCol = _firestore.collection('users').doc(order.userId).collection('orders');
     final data = order.toFirestore();
-    data.remove('orderNumber');
+    // Keep orderNumber in the payload - do not remove it so the human-friendly
+    // orderNumber is stored in Firestore documents.
     data['totalAmount'] = data['total'] ?? order.total;
     data['createdAt'] = FieldValue.serverTimestamp();
     data['updatedAt'] = FieldValue.serverTimestamp();
@@ -131,8 +145,11 @@ class OrderRepositoryImpl implements OrderRepository {
   @override
   Future<String> generateOrderNumber() async {
     final now = DateTime.now();
-    final datePrefix = DateFormat('yyyyMMdd').format(now);
-    final counterDocRef = _firestore.collection('order_counters').doc(datePrefix);
+    // Use a document id without slashes for the counter (safe as a doc id),
+    // and return the human-facing order number as YYYYMMDDxxxxx (no slashes) per requirement.
+    final counterDocId = DateFormat('yyyyMMdd').format(now);
+    final counterDocRef = _firestore.collection('order_counters').doc(counterDocId);
+    final orderDateString = DateFormat('yyyyMMdd').format(now);
 
     try {
       return await _firestore.runTransaction((transaction) async {
@@ -144,9 +161,14 @@ class OrderRepositoryImpl implements OrderRepository {
         }
         transaction.set(counterDocRef, {'seq': newSeq, 'updatedAt': FieldValue.serverTimestamp()});
 
-        // The first order of the day (seq=1) will have a suffix of 100 (1+99).
-        final suffix = (newSeq + 99).toString().padLeft(5, '0');
-        return '$datePrefix$suffix';
+        // The requirement: 5-digit suffix starting at 10000 for the first order of the day.
+        // Map sequence 1 -> 10000, seq N -> (10000 + N - 1).
+        final suffixNumber = (10000 + newSeq - 1);
+        final suffix = suffixNumber.toString().padLeft(5, '0');
+        // Produce order number concatenated: YYYYMMDDxxxxx
+        final orderNumber = '$orderDateString$suffix';
+        debugPrint('[OrderRepository] generateOrderNumber reserved seq=$newSeq orderNumber=$orderNumber');
+        return orderNumber;
       });
     } on FirebaseException catch (e) {
       // If the client does not have permission to update the counter (common when
@@ -154,12 +176,18 @@ class OrderRepositoryImpl implements OrderRepository {
       // number using the date + a millisecond-based suffix so ordering is still
       // reasonably unique.
       debugPrint('[OrderRepository] generateOrderNumber transaction failed: ${e.message}');
-      final fallbackSuffix = (now.millisecondsSinceEpoch % 100000).toString().padLeft(5, '0');
-      return '$datePrefix$fallbackSuffix';
+      // Ensure the fallback suffix follows the same 5-digit format starting at 10000
+      // (i.e. range 10000..99999). Use a millisecond-based value reduced into the
+      // allowed range to reduce collisions while keeping the required format.
+      final fallbackNumber = 10000 + (now.millisecondsSinceEpoch % 90000);
+      final fallbackSuffix = fallbackNumber.toString().padLeft(5, '0');
+      debugPrint('[OrderRepository] generateOrderNumber using fallback suffix: $fallbackSuffix');
+      return '${DateFormat('yyyyMMdd').format(now)}$fallbackSuffix';
     } catch (e) {
       debugPrint('[OrderRepository] generateOrderNumber unexpected error: $e');
-      final fallbackSuffix = (now.millisecondsSinceEpoch % 100000).toString().padLeft(5, '0');
-      return '$datePrefix$fallbackSuffix';
+      final fallbackNumber = 10000 + (now.millisecondsSinceEpoch % 90000);
+      final fallbackSuffix = fallbackNumber.toString().padLeft(5, '0');
+      return '${DateFormat('yyyyMMdd').format(now)}$fallbackSuffix';
     }
   }
 
@@ -170,7 +198,7 @@ class OrderRepositoryImpl implements OrderRepository {
 
     // Prepare a clean payload, removing fields managed by the server/backend.
     final cleanedData = localOrder.toFirestore();
-    cleanedData.remove('orderNumber');
+    // Keep orderNumber so the human-readable id is stored with the document.
     cleanedData.remove('assignmentHistory');
     cleanedData.remove('paymentRef');
     cleanedData.remove('remoteId');
@@ -225,7 +253,7 @@ class OrderRepositoryImpl implements OrderRepository {
 
       // Prepare a cleaned map to avoid violating security rules
       final cleanedData = order.toFirestore();
-      cleanedData.remove('orderNumber');
+      // Keep orderNumber so updates don't strip the human-readable number from docs.
       cleanedData.remove('assignmentHistory');
       cleanedData.remove('paymentRef');
       cleanedData.remove('remoteId');
@@ -503,16 +531,154 @@ class OrderRepositoryImpl implements OrderRepository {
   }
 
   @override
-  Future<bool> submitRatingForOrder({required OrderModel order, required double rating, String? review}) async {
+  Future<bool> submitRatingForOrder({required OrderModel order, required double serviceRating, double? workerRating, String? review}) async {
+    // Validate inputs
+    if (order.id.isEmpty || order.userId.isEmpty) return false;
+
+    // First try: call a trusted backend callable function 'submitRating' which performs
+    // validation, creates rating docs and updates aggregates atomically.
     try {
-      if (order.id.isNotEmpty && order.userId.isNotEmpty) {
-        final ref = _firestore.collection('orders').doc(order.id);
-        await ref.update({'rating': rating, 'review': review ?? ''});
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('submitRating');
+      final payload = <String, dynamic>{
+        'orderId': order.id,
+        'orderNumber': order.orderNumber,
+        'serviceRating': serviceRating,
+        'workerRating': workerRating,
+        'review': review ?? '',
+      };
+      final HttpsCallableResult result = await callable.call(payload);
+      final data = result.data;
+      if (data is Map && data['success'] == true) {
+        debugPrint('[OrderRepository] submitRatingForOrder: submitRating callable succeeded');
         return true;
       }
-      return false;
+      debugPrint('[OrderRepository] submitRatingForOrder: submitRating callable returned non-success: $data');
     } catch (e) {
-      debugPrint('[OrderRepository] submitRatingForOrder failed: $e');
+      // Callable may not be deployed or callable failed; fall back to client-side writes.
+      debugPrint('[OrderRepository] submitRatingForOrder: submitRating callable failed (falling back): $e');
+    }
+
+    // Fallback: perform client-side writes that conform to Firestore rules.
+    try {
+      // Prepare order update payload (merge-safe). We intentionally avoid touching
+      // protected fields like workerId/status/orderNumber/paymentRef.
+      final orderUpdate = <String, dynamic>{
+        'serviceRating': serviceRating,
+        'rating': serviceRating, // legacy compatibility
+        'rated': true,
+        'ratingAt': FieldValue.serverTimestamp(),
+      };
+      if (workerRating != null) {
+        orderUpdate['workerRating'] = workerRating;
+      }
+
+      final batch = _firestore.batch();
+
+      // 1) Update user's order doc (users/{userId}/orders/{order.id}) if it exists or create-merge.
+      try {
+        final userOrderRef = _firestore.collection('users').doc(order.userId).collection('orders').doc(order.id);
+        batch.set(userOrderRef, orderUpdate, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('[OrderRepository] submitRatingForOrder: failed to prepare user subcollection update: $e');
+      }
+
+      // 2) Update top-level orders/{order.id} (merge). This will be denied on some setups
+      // for non-admins but we attempt it; failures will surface at commit time.
+      try {
+        final topRef = _firestore.collection('orders').doc(order.id);
+        batch.set(topRef, orderUpdate, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('[OrderRepository] submitRatingForOrder: failed to prepare top-level order update: $e');
+      }
+
+      // 3) Also attempt to update any users/*/orders doc that stores this order under `remoteId`.
+      try {
+        final cg = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: order.id).get();
+        for (final d in cg.docs) {
+          batch.set(d.reference, orderUpdate, SetOptions(merge: true));
+        }
+      } catch (e) {
+        debugPrint('[OrderRepository] submitRatingForOrder: collectionGroup lookup for remoteId failed (non-fatal): $e');
+      }
+
+      // 4) Create service rating documents for each unique service in the order.
+      final uniqueServiceIds = order.items.map((i) => i.serviceId).toSet();
+      for (final sid in uniqueServiceIds) {
+        try {
+          final svcRatingCol = _firestore.collection('services').doc(sid).collection('ratings');
+          final rdoc = svcRatingCol.doc();
+          final rdata = <String, dynamic>{
+            'serviceId': sid,
+            'orderId': order.id,
+            'orderNumber': order.orderNumber,
+            'userId': order.userId,
+            'rating': serviceRating,
+            'review': review ?? '',
+            'createdAt': FieldValue.serverTimestamp(),
+            'remoteId': rdoc.id,
+          };
+          batch.set(rdoc, rdata);
+        } catch (e) {
+          debugPrint('[OrderRepository] submitRatingForOrder: failed to prepare service rating for service=$sid: $e');
+        }
+      }
+
+      // 5) Create worker rating document if worker exists and workerRating provided.
+      if (order.workerId != null && order.workerId!.isNotEmpty && workerRating != null) {
+        try {
+          final wcol = _firestore.collection('workers').doc(order.workerId).collection('ratings');
+          final wdoc = wcol.doc();
+          final wdata = <String, dynamic>{
+            'workerId': order.workerId,
+            'orderId': order.id,
+            'orderNumber': order.orderNumber,
+            'userId': order.userId,
+            'rating': workerRating,
+            'review': review ?? '',
+            'createdAt': FieldValue.serverTimestamp(),
+            'remoteId': wdoc.id,
+          };
+          batch.set(wdoc, wdata);
+        } catch (e) {
+          debugPrint('[OrderRepository] submitRatingForOrder: failed to prepare worker rating: $e');
+        }
+      }
+
+      // Commit batch (may fail partially if rules block some writes). We let Firestore
+      // throw which we catch below and surface as a boolean false result.
+      await batch.commit();
+
+      // 6) Best-effort: attempt to update aggregate counters on service and worker docs.
+      // These may be restricted by rules; ignore failures but log them.
+      for (final sid in uniqueServiceIds) {
+        try {
+          final svcDocRef = _firestore.collection('services').doc(sid);
+          await svcDocRef.set({
+            'ratingCount': FieldValue.increment(1),
+            'ratingSum': FieldValue.increment(serviceRating),
+          }, SetOptions(merge: true));
+        } catch (e) {
+          debugPrint('[OrderRepository] submitRatingForOrder: failed to update service aggregate for service=$sid: $e');
+        }
+      }
+
+      if (order.workerId != null && order.workerId!.isNotEmpty && workerRating != null) {
+        try {
+          final wRef = _firestore.collection('workers').doc(order.workerId);
+          await wRef.set({
+            'ratingCount': FieldValue.increment(1),
+            'ratingSum': FieldValue.increment(workerRating),
+          }, SetOptions(merge: true));
+        } catch (e) {
+          debugPrint('[OrderRepository] submitRatingForOrder: failed to update worker aggregate: $e');
+        }
+      }
+
+      debugPrint('[OrderRepository] submitRatingForOrder: fallback client-side writes committed');
+      return true;
+    } catch (e) {
+      debugPrint('[OrderRepository] submitRatingForOrder: fallback failed: $e');
       return false;
     }
   }

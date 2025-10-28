@@ -42,8 +42,15 @@ class ServiceModel extends Equatable {
   /// when creating a local instance before write completes.
   final Timestamp? createdAt;
 
-  /// Firestore server timestamp when the document was last updated.
+  /// Firestore server timestamp when the document was last updated. May be null
+  /// when creating a local instance before write completes.
   final Timestamp? updatedAt;
+
+  /// Aggregate user rating for this service (average of ratings), 1.0 - 5.0.
+  final double? ratingAvg;
+
+  /// Number of ratings submitted for this service.
+  final int? ratingCount;
 
   const ServiceModel({
     required this.id,
@@ -58,6 +65,8 @@ class ServiceModel extends Equatable {
     this.subscriptionPlans = const [],
     this.createdAt,
     this.updatedAt,
+    this.ratingAvg,
+    this.ratingCount,
   });
 
   /// Creates a `ServiceModel` instance from a Firestore document snapshot.
@@ -88,6 +97,8 @@ class ServiceModel extends Equatable {
           .toList() ?? [],
       createdAt: data['createdAt'] as Timestamp?,
       updatedAt: data['updatedAt'] as Timestamp?,
+      ratingAvg: (data['ratingAvg'] as num?)?.toDouble() ?? (data['rating'] as num?)?.toDouble(),
+      ratingCount: (data['ratingCount'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -118,6 +129,8 @@ class ServiceModel extends Equatable {
           .toList() ?? [],
       createdAt: data['createdAt'] as Timestamp?,
       updatedAt: data['updatedAt'] as Timestamp?,
+      ratingAvg: (data['ratingAvg'] as num?)?.toDouble() ?? (data['rating'] as num?)?.toDouble(),
+      ratingCount: (data['ratingCount'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -133,6 +146,8 @@ class ServiceModel extends Equatable {
       'images': images,
       'options': options.map((o) => o.toMap()).toList(),
       'subscriptionPlans': subscriptionPlans.map((s) => s.toMap()).toList(),
+      if (ratingAvg != null) 'ratingAvg': ratingAvg,
+      if (ratingCount != null) 'ratingCount': ratingCount,
       // timestamps are intentionally not set here to allow repositories to
       // control whether to write server timestamps using FieldValue.serverTimestamp().
       'createdAt': createdAt,
@@ -141,5 +156,5 @@ class ServiceModel extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, name, category, basePrice, imageUrl, images, createdAt, updatedAt];
+  List<Object?> get props => [id, name, category, basePrice, imageUrl, images, createdAt, updatedAt, ratingAvg, ratingCount];
 }

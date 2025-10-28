@@ -3,29 +3,63 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-// Persisted theme preference removed: app will always follow system theme.
+import 'package:shared_preferences/shared_preferences.dart';
 
+/// ThemeCubit persists a user's theme preference in SharedPreferences under
+/// the key 'theme_mode'. Valid stored values are: 'light', 'dark', 'system'.
+///
+/// Behavior:
+/// - On construction it asynchronously loads the saved preference and emits it
+///   (defaults to ThemeMode.system when missing).
+/// - `setLight()`, `setDark()`, `setSystem()` set and persist the chosen mode.
+/// - `toggle()` toggles between light and dark (system -> light).
 class ThemeCubit extends Cubit<ThemeMode> {
-  // Start with system so the app follows the phone's theme by default.
-  ThemeCubit() : super(ThemeMode.system);
+  static const _prefsKey = 'theme_mode';
 
-  // No-op persistence and setter methods: always use system theme.
+  ThemeCubit() : super(ThemeMode.system) {
+    _loadFromPrefs();
+  }
+
+  Future<void> _loadFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getString(_prefsKey);
+      if (v == 'light') emit(ThemeMode.light);
+      else if (v == 'dark') emit(ThemeMode.dark);
+      else emit(ThemeMode.system);
+    } catch (_) {
+      // On error default to system
+      emit(ThemeMode.system);
+    }
+  }
+
+  Future<void> _save(String value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefsKey, value);
+    } catch (_) {
+      // ignore persistence errors
+    }
+  }
+
   void setLight() {
-    // Intentionally enforce system theme; do not switch to explicit light.
-    emit(ThemeMode.system);
+    emit(ThemeMode.light);
+    _save('light');
   }
 
   void setDark() {
-    // Intentionally enforce system theme; do not switch to explicit dark.
-    emit(ThemeMode.system);
+    emit(ThemeMode.dark);
+    _save('dark');
   }
 
   void setSystem() {
     emit(ThemeMode.system);
+    _save('system');
   }
 
   void toggle() {
-    // No-op toggle: keep following the system.
-    emit(ThemeMode.system);
+    final cur = state;
+    if (cur == ThemeMode.light) setDark();
+    else setLight();
   }
 }

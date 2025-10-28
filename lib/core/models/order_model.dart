@@ -46,6 +46,12 @@ class OrderModel extends Equatable {
   final Timestamp createdAt;
   /// The timestamp when the order was last updated.
   final Timestamp updatedAt;
+  /// Optional user rating for the completed order (1.0 - 5.0). This is the
+  /// primary rating for the service quality (most important).
+  final double? serviceRating;
+  /// Optional rating specifically about the worker (1.0 - 5.0). This is
+  /// secondary and may be omitted.
+  final double? workerRating;
 
   const OrderModel({
     required this.id,
@@ -65,6 +71,8 @@ class OrderModel extends Equatable {
     required this.scheduledAt,
     required this.createdAt,
     required this.updatedAt,
+    this.serviceRating,
+    this.workerRating,
   });
 
   /// Creates an `OrderModel` instance from a Firestore document snapshot.
@@ -129,6 +137,30 @@ class OrderModel extends Equatable {
 
     final paymentRef = data['paymentRef'] is Map ? Map<String, dynamic>.from(data['paymentRef'] as Map) : null;
 
+    double? parsedServiceRating;
+    double? parsedWorkerRating;
+    // Support legacy single 'rating' field as serviceRating for backward compatibility
+    if (data['serviceRating'] != null) {
+      try {
+        parsedServiceRating = (data['serviceRating'] as num).toDouble();
+      } catch (_) {
+        parsedServiceRating = double.tryParse(data['serviceRating'].toString());
+      }
+    } else if (data['rating'] != null) {
+      try {
+        parsedServiceRating = (data['rating'] as num).toDouble();
+      } catch (_) {
+        parsedServiceRating = double.tryParse(data['rating'].toString());
+      }
+    }
+    if (data['workerRating'] != null) {
+      try {
+        parsedWorkerRating = (data['workerRating'] as num).toDouble();
+      } catch (_) {
+        parsedWorkerRating = double.tryParse(data['workerRating'].toString());
+      }
+    }
+
     return OrderModel(
       id: doc.id,
       orderNumber: orderNum,
@@ -147,6 +179,8 @@ class OrderModel extends Equatable {
       scheduledAt: data['scheduledAt'] as Timestamp? ?? Timestamp.now(),
       createdAt: data['createdAt'] as Timestamp? ?? Timestamp.now(),
       updatedAt: data['updatedAt'] as Timestamp? ?? Timestamp.now(),
+      serviceRating: parsedServiceRating,
+      workerRating: parsedWorkerRating,
     );
   }
 
@@ -169,6 +203,8 @@ class OrderModel extends Equatable {
       'updatedAt': FieldValue.serverTimestamp(), // Automatically set on write
       if (assignmentHistory != null) 'assignmentHistory': assignmentHistory,
       if (paymentRef != null) 'paymentRef': paymentRef,
+      if (serviceRating != null) 'serviceRating': serviceRating,
+      if (workerRating != null) 'workerRating': workerRating,
     };
   }
 
@@ -191,6 +227,8 @@ class OrderModel extends Equatable {
     Timestamp? scheduledAt,
     Timestamp? createdAt,
     Timestamp? updatedAt,
+    double? serviceRating,
+    double? workerRating,
   }) {
     return OrderModel(
       id: id ?? this.id,
@@ -210,9 +248,11 @@ class OrderModel extends Equatable {
       scheduledAt: scheduledAt ?? this.scheduledAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      serviceRating: serviceRating ?? this.serviceRating,
+      workerRating: workerRating ?? this.workerRating,
     );
   }
 
   @override
-  List<Object?> get props => [id, orderNumber, userId, workerId, orderStatus, paymentStatus, total];
+  List<Object?> get props => [id, orderNumber, userId, workerId, orderStatus, paymentStatus, total, serviceRating, workerRating];
 }

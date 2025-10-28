@@ -16,6 +16,14 @@ service cloud.firestore {
       );
     }
 
+    // Allow a user document to be read publicly when the user is a registered worker
+    // or when there's a separate /workers/$(userId) document. This permits showing
+    // assigned worker's public contact info (phone, name) in order details pages
+    // while keeping full profile edits restricted.
+    function isWorkerProfilePublic(userId) {
+      return (resource.data.role == 'worker') || exists(/databases/$(database)/documents/workers/$(userId));
+    }
+
     // Admin detection: prefer custom claim, fall back to users/{uid}.role == 'admin'
     function isAdmin() {
       return isSignedIn() && (
@@ -62,10 +70,14 @@ service cloud.firestore {
 
       // Allow reads for the owner, or when the requester has an admin claim,
       // or when the requester's users/{uid} doc contains role == 'admin'.
+      // Also allow read when the target user is a worker so the client can
+      // display assigned worker contact details in order pages. This keeps
+      // full write/update protections intact.
       allow read: if isSignedIn() && (
         isOwner(userId)
         || (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
         || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        || isWorkerProfilePublic(userId)
       );
 
       allow update: if isSignedIn() && (
@@ -113,49 +125,59 @@ service cloud.firestore {
           || (isWorker() && resource.data.workerId == request.auth.uid)
         );
 
+        // Allow the owner to perform normal updates but forbid changing
+        // `workerId` or `status`. Permit owners to add rating-related fields
+        // (e.g. `rated`, `serviceRated`, `workerRated`, `rating`, `ratingAt`) as
+        // long as the payload does not touch protected fields.
         allow update: if isSignedIn() && (
-          // Admins can update any order
-          (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
-          || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
-          || (
-            isOwner(userId)
-            && !( 'workerId' in request.resource.data )
-            && !( 'status' in request.resource.data )
-            && noServerFields()
-          )
-          || (
-            // Allow assigned worker to update order even if `isWorker()` is false
-            // (covers cases where auth token lacks role claim or a /workers doc isn't present).
-            resource.data.workerId == request.auth.uid
-            && noServerFields()
-            // allow only limited status updates by the worker to a controlled set
-            && (
-              ( 'status' in request.resource.data && (
-                  // worker may update status to one of these states provided the order is not already completed
-                  request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
-                  && resource.data.status != 'completed'
-                ) && request.resource.data.workerId == resource.data.workerId)
-              || ( !('status' in request.resource.data) && !('workerId' in request.resource.data) )
-            )
-          )
-          // Narrow fallback: allow assigned worker to perform a minimal, safe status-only update
-          // even if other checks fail — only for the exact fields below and permitted values.
-          || (
-            isSignedIn()
-            && resource.data.workerId == request.auth.uid
-            // allow updatedAt as well (client may send serverTimestamp)
-            // Accept either payloads that include workerId or that omit it (status-only)
-            && (
-              request.resource.data.keys().hasOnly(['status','orderStatus','workerId','updatedAt'])
-              || request.resource.data.keys().hasOnly(['status','orderStatus','updatedAt'])
-            )
-            // if workerId is provided, ensure it matches the existing value
-            && ( !('workerId' in request.resource.data) || request.resource.data.workerId == resource.data.workerId )
-            && request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
-            && resource.data.status != 'completed'
-            // ensure updatedAt is either not written or is a server timestamp or unchanged
-            && allowedServerTimestamp('updatedAt')
-          )
+           // Admins can update any order
+           (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
+           || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+           || (
+             isOwner(userId)
+             && !( 'workerId' in request.resource.data )
+             && !( 'status' in request.resource.data )
+             // Disallow clients from overwriting server-managed identifiers/timestamps
+             // but allow adding rating flags/fields.
+             && !( 'orderNumber' in request.resource.data )
+             && !( 'assignmentHistory' in request.resource.data )
+             && !( 'paymentRef' in request.resource.data )
+             && !( 'createdAt' in request.resource.data )
+             && !( 'updatedAt' in request.resource.data )
+           )
+           || (
+             // Allow assigned worker to update order even if `isWorker()` is false
+             // (covers cases where auth token lacks role claim or a /workers doc isn't present).
+             resource.data.workerId == request.auth.uid
+             && noServerFields()
+             // allow only limited status updates by the worker to a controlled set
+             && (
+               ( 'status' in request.resource.data && (
+                   // worker may update status to one of these states provided the order is not already completed
+                   request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
+                   && resource.data.status != 'completed'
+                 ) && request.resource.data.workerId == resource.data.workerId)
+               || ( !('status' in request.resource.data) && !('workerId' in request.resource.data) )
+             )
+           )
+           // Narrow fallback: allow assigned worker to perform a minimal, safe status-only update
+           // even if other checks fail — only for the exact fields below and permitted values.
+           || (
+             isSignedIn()
+             && resource.data.workerId == request.auth.uid
+             // allow updatedAt as well (client may send serverTimestamp)
+             // Accept either payloads that include workerId or that omit it (status-only)
+             && (
+               request.resource.data.keys().hasOnly(['status','orderStatus','workerId','updatedAt'])
+               || request.resource.data.keys().hasOnly(['status','orderStatus','updatedAt'])
+             )
+             // if workerId is provided, ensure it matches the existing value
+             && ( !('workerId' in request.resource.data) || request.resource.data.workerId == resource.data.workerId )
+             && request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
+             && resource.data.status != 'completed'
+             // ensure updatedAt is either not written or is a server timestamp or unchanged
+             && allowedServerTimestamp('updatedAt')
+           )
         );
 
         allow delete: if isSignedIn() && (
@@ -183,9 +205,28 @@ service cloud.firestore {
     // -----------------------
     match /workers/{workerId} {
       allow create: if isSignedIn() && (isAdmin() || isOwner(workerId)) && noServerFields();
-      allow read: if isSignedIn() && (isAdmin() || isWorker() || isOwner(workerId));
+      // Allow authenticated users to read worker public profiles (name, phone, avatar).
+      // Updates/removal remain restricted to admin or the worker owner.
+      allow read: if isSignedIn();
       allow update: if isSignedIn() && (isAdmin() || isOwner(workerId)) && noServerFields();
       allow delete: if isSignedIn() && isAdmin();
+
+      // Per-worker ratings subcollection: clients may create ratings for assigned workers.
+      match /ratings/{ratingId} {
+        // Accept rating docs that either set `createdAt` to server time or omit it
+        // (client can use FieldValue.serverTimestamp()).
+        allow create: if isSignedIn()
+          && request.resource.data.keys().hasOnly(['workerId','orderId','orderNumber','userId','rating','review','createdAt','remoteId'])
+          && request.resource.data.workerId == workerId
+          && request.resource.data.userId == request.auth.uid
+          && (request.resource.data.rating is number)
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5
+          && ( !('createdAt' in request.resource.data) || request.resource.data.createdAt == request.time );
+
+        allow read: if true;
+        allow update, delete: if isSignedIn() && isAdmin();
+      }
     }
 
     // Per-worker assigned orders mirror. Use a trusted server/Cloud Function to
@@ -222,6 +263,28 @@ service cloud.firestore {
     match /services/{serviceId} {
       allow read: if true;
       allow create, update, delete: if isSignedIn() && isAdmin();
+
+      // Per-service ratings subcollection: clients may create ratings entries.
+      match /ratings/{ratingId} {
+        // Allow anyone signed-in to create a rating for the service, provided
+        // the payload is well-formed and the userId matches the authenticated user.
+        // Accept rating docs that either set `createdAt` to server time or omit it
+        // (client can use FieldValue.serverTimestamp()).
+        allow create: if isSignedIn()
+          && request.resource.data.keys().hasOnly(['serviceId','orderId','orderNumber','userId','rating','review','createdAt','remoteId'])
+          && request.resource.data.serviceId == serviceId
+          && request.resource.data.userId == request.auth.uid
+          && (request.resource.data.rating is number)
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5
+          && ( !('createdAt' in request.resource.data) || request.resource.data.createdAt == request.time );
+
+        // Allow read publicly so service pages can show ratings.
+        allow read: if true;
+
+        // Only admins may update or delete rating documents (for moderation).
+        allow update, delete: if isSignedIn() && isAdmin();
+      }
     }
 
     // -----------------------
@@ -373,6 +436,40 @@ service cloud.firestore {
         isAdmin()
         || (isWorker() && resource.data.workerId == request.auth.uid)
       );
+    }
+
+    // -----------------------
+    // order_counters collection (daily incrementing counter used to generate order numbers)
+    // Clients need to run a transaction on a per-day document `order_counters/{YYYYMMDD}`
+    // to reserve the next sequence number. The rules below permit authenticated
+    // clients to create the day's document with seq==1, or to increment an
+    // existing document's seq by exactly +1, and only allow the fields `seq`
+    // and `updatedAt` to be written. This limits abuse while allowing the
+    // client-side `runTransaction` in `generateOrderNumber()` to succeed.
+    match /order_counters/{counterId} {
+      // Allow reads for authenticated clients (optional; useful for debugging)
+      allow get, list: if isSignedIn();
+
+      // Allow create only when the request provides exactly the allowed fields
+      // and initializes the sequence to 1 and uses server time for updatedAt.
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['seq','updatedAt'])
+        && (request.resource.data.seq is int) && request.resource.data.seq == 1
+        // updatedAt must be set to request.time (clients may send request.time when using serverTimestamp)
+        && (request.resource.data.updatedAt == request.time);
+
+      // Allow update only when the request increments seq by exactly 1 and
+      // doesn't write any other fields. Also require updatedAt to be request.time.
+      allow update: if isSignedIn()
+        && resource.data.keys().hasAny(['seq'])
+        && request.resource.data.keys().hasOnly(['seq','updatedAt'])
+        && (request.resource.data.seq is int)
+        // only allow increment-by-one updates
+        && (request.resource.data.seq == (resource.data.seq + 1))
+        && (request.resource.data.updatedAt == request.time);
+
+      // Deletes are not allowed from clients
+      allow delete: if false;
     }
 
     // Allow users to create a temporary pending profile before email verification.

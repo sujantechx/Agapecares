@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 // Assuming your model is in this location, adjust if necessary
 import '../../../../../core/models/order_model.dart';
@@ -535,8 +536,10 @@ class OrderRepositoryImpl implements OrderRepository {
     // Validate inputs
     if (order.id.isEmpty || order.userId.isEmpty) return false;
 
-    // First try: call a trusted backend callable function 'submitRating' which performs
-    // validation, creates rating docs and updates aggregates atomically.
+    // Ensure we have an authenticated user before attempting client-side writes.
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    // Try trusted backend callable first even if unauthenticated (it will fail if not allowed)
     try {
       final functions = FirebaseFunctions.instance;
       final callable = functions.httpsCallable('submitRating');
@@ -555,11 +558,17 @@ class OrderRepositoryImpl implements OrderRepository {
       }
       debugPrint('[OrderRepository] submitRatingForOrder: submitRating callable returned non-success: $data');
     } catch (e) {
-      // Callable may not be deployed or callable failed; fall back to client-side writes.
       debugPrint('[OrderRepository] submitRatingForOrder: submitRating callable failed (falling back): $e');
     }
 
+    // If there's no authenticated user, do not attempt client-side writes — rules require auth and userId==auth.uid.
+    if (currentUser == null) {
+      debugPrint('[OrderRepository] submitRatingForOrder: no authenticated user available for fallback writes; aborting');
+      return false;
+    }
+
     // Fallback: perform client-side writes that conform to Firestore rules.
+    bool anySucceeded = false; // moved here so scope covers the final checks
     try {
       // Prepare order update payload (merge-safe). We intentionally avoid touching
       // protected fields like workerId/status/orderNumber/paymentRef.
@@ -573,36 +582,27 @@ class OrderRepositoryImpl implements OrderRepository {
         orderUpdate['workerRating'] = workerRating;
       }
 
-      final batch = _firestore.batch();
-
-      // 1) Update user's order doc (users/{userId}/orders/{order.id}) if it exists or create-merge.
+      // 1) Update user's order doc under the authenticated user's subcollection.
+      final effectiveUserId = currentUser.uid;
+      final userOrderRef = _firestore.collection('users').doc(effectiveUserId).collection('orders').doc(order.id);
       try {
-        final userOrderRef = _firestore.collection('users').doc(order.userId).collection('orders').doc(order.id);
-        batch.set(userOrderRef, orderUpdate, SetOptions(merge: true));
-      } catch (e) {
-        debugPrint('[OrderRepository] submitRatingForOrder: failed to prepare user subcollection update: $e');
-      }
-
-      // 2) Update top-level orders/{order.id} (merge). This will be denied on some setups
-      // for non-admins but we attempt it; failures will surface at commit time.
-      try {
-        final topRef = _firestore.collection('orders').doc(order.id);
-        batch.set(topRef, orderUpdate, SetOptions(merge: true));
-      } catch (e) {
-        debugPrint('[OrderRepository] submitRatingForOrder: failed to prepare top-level order update: $e');
-      }
-
-      // 3) Also attempt to update any users/*/orders doc that stores this order under `remoteId`.
-      try {
-        final cg = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: order.id).get();
-        for (final d in cg.docs) {
-          batch.set(d.reference, orderUpdate, SetOptions(merge: true));
+        final userOrderSnap = await userOrderRef.get();
+        if (userOrderSnap.exists) {
+          try {
+            await userOrderRef.set(orderUpdate, SetOptions(merge: true));
+            anySucceeded = true;
+            debugPrint('[OrderRepository] submitRatingForOrder: updated user subcollection order doc');
+          } catch (e) {
+            debugPrint('[OrderRepository] submitRatingForOrder: permission denied updating user order doc: $e');
+          }
+        } else {
+          debugPrint('[OrderRepository] submitRatingForOrder: user subcollection order doc does not exist, skipping update');
         }
       } catch (e) {
-        debugPrint('[OrderRepository] submitRatingForOrder: collectionGroup lookup for remoteId failed (non-fatal): $e');
+        debugPrint('[OrderRepository] submitRatingForOrder: checking user subcollection doc failed (skipping): $e');
       }
 
-      // 4) Create service rating documents for each unique service in the order.
+      // 2) Create service rating documents for each unique service in the order.
       final uniqueServiceIds = order.items.map((i) => i.serviceId).toSet();
       for (final sid in uniqueServiceIds) {
         try {
@@ -612,19 +612,38 @@ class OrderRepositoryImpl implements OrderRepository {
             'serviceId': sid,
             'orderId': order.id,
             'orderNumber': order.orderNumber,
-            'userId': order.userId,
+            'userId': currentUser.uid,
             'rating': serviceRating,
             'review': review ?? '',
             'createdAt': FieldValue.serverTimestamp(),
             'remoteId': rdoc.id,
           };
-          batch.set(rdoc, rdata);
+          await rdoc.set(rdata);
+
+          // Also attempt to store the rating inside the parent service document
+          // under a nested map `ratings.<ratingId> = { userId, rating, review, createdAt }`.
+          try {
+            final embedded = <String, dynamic>{
+              'userId': currentUser.uid,
+              'rating': serviceRating,
+              'review': review ?? '',
+              'createdAt': FieldValue.serverTimestamp(),
+              'remoteId': rdoc.id,
+            };
+            final serviceDocRef = _firestore.collection('services').doc(sid);
+            // Use update with field-path to avoid overwriting the whole 'ratings' map.
+            await serviceDocRef.update({'ratings.${rdoc.id}': embedded});
+          } catch (e) {
+            debugPrint('[OrderRepository] submitRatingForOrder: failed to add embedded rating to service doc (may be restricted by rules): $e');
+          }
+          anySucceeded = true;
+          debugPrint('[OrderRepository] submitRatingForOrder: created service rating for $sid');
         } catch (e) {
-          debugPrint('[OrderRepository] submitRatingForOrder: failed to prepare service rating for service=$sid: $e');
+          debugPrint('[OrderRepository] submitRatingForOrder: failed to write service rating for $sid: $e');
         }
       }
 
-      // 5) Create worker rating document if worker exists and workerRating provided.
+      // 3) Create worker rating document if worker exists and workerRating provided.
       if (order.workerId != null && order.workerId!.isNotEmpty && workerRating != null) {
         try {
           final wcol = _firestore.collection('workers').doc(order.workerId).collection('ratings');
@@ -633,88 +652,111 @@ class OrderRepositoryImpl implements OrderRepository {
             'workerId': order.workerId,
             'orderId': order.id,
             'orderNumber': order.orderNumber,
-            'userId': order.userId,
+            'userId': currentUser.uid,
             'rating': workerRating,
             'review': review ?? '',
             'createdAt': FieldValue.serverTimestamp(),
             'remoteId': wdoc.id,
           };
-          batch.set(wdoc, wdata);
+          await wdoc.set(wdata);
+
+          // Also try to add embedded rating into the worker's top-level document
+          // under `ratings.<ratingId>` for quick access and denormalized listing.
+          try {
+            final embedded = <String, dynamic>{
+              'userId': currentUser.uid,
+              'rating': workerRating,
+              'review': review ?? '',
+              'createdAt': FieldValue.serverTimestamp(),
+              'remoteId': wdoc.id,
+            };
+            final workerDocRef = _firestore.collection('workers').doc(order.workerId);
+            await workerDocRef.update({'ratings.${wdoc.id}': embedded});
+          } catch (e) {
+            debugPrint('[OrderRepository] submitRatingForOrder: failed to add embedded rating to worker doc (may be restricted by rules): $e');
+          }
+          anySucceeded = true;
+          debugPrint('[OrderRepository] submitRatingForOrder: created worker rating for ${order.workerId}');
         } catch (e) {
-          debugPrint('[OrderRepository] submitRatingForOrder: failed to prepare worker rating: $e');
+          debugPrint('[OrderRepository] submitRatingForOrder: failed to write worker rating: $e');
         }
       }
 
-      // Commit batch (may fail partially if rules block some writes). We let Firestore
-      // throw which we catch below and surface as a boolean false result.
-      await batch.commit();
-
-      // 6) Best-effort: attempt to update aggregate counters on service and worker docs.
-      // These may be restricted by rules; ignore failures but log them.
-      for (final sid in uniqueServiceIds) {
-        try {
-          final svcDocRef = _firestore.collection('services').doc(sid);
-          await svcDocRef.set({
-            'ratingCount': FieldValue.increment(1),
-            'ratingSum': FieldValue.increment(serviceRating),
-          }, SetOptions(merge: true));
-        } catch (e) {
-          debugPrint('[OrderRepository] submitRatingForOrder: failed to update service aggregate for service=$sid: $e');
-        }
-      }
-
-      if (order.workerId != null && order.workerId!.isNotEmpty && workerRating != null) {
-        try {
-          final wRef = _firestore.collection('workers').doc(order.workerId);
-          await wRef.set({
-            'ratingCount': FieldValue.increment(1),
-            'ratingSum': FieldValue.increment(workerRating),
-          }, SetOptions(merge: true));
-        } catch (e) {
-          debugPrint('[OrderRepository] submitRatingForOrder: failed to update worker aggregate: $e');
-        }
-      }
-
-      debugPrint('[OrderRepository] submitRatingForOrder: fallback client-side writes committed');
-      return true;
     } catch (e) {
       debugPrint('[OrderRepository] submitRatingForOrder: fallback failed: $e');
+      return false;
+    }
+
+    if (anySucceeded) {
+      debugPrint('[OrderRepository] submitRatingForOrder: some writes succeeded in fallback path');
+      return true;
+    } else {
+      debugPrint('[OrderRepository] submitRatingForOrder: no fallback writes succeeded');
       return false;
     }
   }
 
   @override
   Future<void> dedupeRemoteOrdersForUser({required String userId, required String orderNumber}) async {
+    // Best-effort client-side dedupe: find all orders with the same orderNumber
+    // for the specified user and delete duplicates, keeping the earliest createdAt.
+    if (userId.trim().isEmpty || orderNumber.trim().isEmpty) return;
     try {
-      if (userId.trim().isEmpty || orderNumber.trim().isEmpty) return;
+      // Search the user's orders subcollection first
+      final userOrdersCol = _firestore.collection('users').doc(userId).collection('orders');
+      final snap = await userOrdersCol.where('orderNumber', isEqualTo: orderNumber).get();
+      if (snap.docs.length <= 1) {
+        // nothing to dedupe
+        return;
+      }
 
-      final querySnapshot = await _firestore
-          .collection('orders')
-          .where('orderNumber', isEqualTo: orderNumber)
-          .where('orderOwner', isEqualTo: userId)
-          .get();
-
-      final docs = querySnapshot.docs;
-      if (docs.length <= 1) return; // No duplicates found
-
-      // Sort documents to find the original (oldest) one
+      // Sort by createdAt ascending (earliest first) and keep the first
+      final docs = List.of(snap.docs);
       docs.sort((a, b) {
         final aTs = a.data()['createdAt'] as Timestamp?;
         final bTs = b.data()['createdAt'] as Timestamp?;
-        if (aTs != null && bTs != null) return aTs.compareTo(bTs);
-        return a.id.compareTo(b.id); // Fallback to doc ID if timestamp is missing
+        final aMillis = aTs?.millisecondsSinceEpoch ?? 0;
+        final bMillis = bTs?.millisecondsSinceEpoch ?? 0;
+        return aMillis.compareTo(bMillis);
       });
 
-      // Delete all documents except the first one (the original)
-      final toDelete = docs.skip(1);
-      final batch = _firestore.batch();
-      for (final doc in toDelete) {
-        batch.delete(doc.reference);
+      // Keep first, delete the rest
+      for (var i = 1; i < docs.length; i++) {
+        try {
+          await docs[i].reference.delete();
+        } catch (e) {
+          debugPrint('[OrderRepository] dedupeRemoteOrdersForUser: failed to delete duplicate doc ${docs[i].id}: $e');
+        }
       }
-      await batch.commit();
-      debugPrint('[OrderRepository] Deduplicated ${toDelete.length} orders for orderNumber: $orderNumber');
+
+      // Also attempt to remove duplicates from top-level orders collection (if present)
+      try {
+        final topSnap = await _firestore.collection('orders').where('orderNumber', isEqualTo: orderNumber).where('orderOwner', isEqualTo: userId).get();
+        if (topSnap.docs.length > 1) {
+          final topDocs = List.of(topSnap.docs);
+          topDocs.sort((a, b) {
+            final aTs = a.data()['createdAt'] as Timestamp?;
+            final bTs = b.data()['createdAt'] as Timestamp?;
+            final aMillis = aTs?.millisecondsSinceEpoch ?? 0;
+            final bMillis = bTs?.millisecondsSinceEpoch ?? 0;
+            return aMillis.compareTo(bMillis);
+          });
+          for (var i = 1; i < topDocs.length; i++) {
+            try {
+              await topDocs[i].reference.delete();
+            } catch (e) {
+              debugPrint('[OrderRepository] dedupeRemoteOrdersForUser: failed to delete top-level duplicate ${topDocs[i].id}: $e');
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[OrderRepository] dedupeRemoteOrdersForUser: top-level dedupe attempt failed: $e');
+      }
     } catch (e) {
       debugPrint('[OrderRepository] dedupeRemoteOrdersForUser failed: $e');
     }
   }
-}
+
+} // end class OrderRepositoryImpl
+
+// End of file

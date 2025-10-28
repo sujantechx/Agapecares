@@ -145,38 +145,14 @@ service cloud.firestore {
              && !( 'createdAt' in request.resource.data )
              && !( 'updatedAt' in request.resource.data )
            )
-           || (
-             // Allow assigned worker to update order even if `isWorker()` is false
-             // (covers cases where auth token lacks role claim or a /workers doc isn't present).
-             resource.data.workerId == request.auth.uid
-             && noServerFields()
-             // allow only limited status updates by the worker to a controlled set
-             && (
-               ( 'status' in request.resource.data && (
-                   // worker may update status to one of these states provided the order is not already completed
-                   request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
-                   && resource.data.status != 'completed'
-                 ) && request.resource.data.workerId == resource.data.workerId)
-               || ( !('status' in request.resource.data) && !('workerId' in request.resource.data) )
-             )
-           )
-           // Narrow fallback: allow assigned worker to perform a minimal, safe status-only update
-           // even if other checks fail — only for the exact fields below and permitted values.
+           // Narrow explicit branch: allow the existing order owner to submit rating fields
+           // even when other update checks fail. This only permits a tightly-scoped set
+           // of keys to be written and requires the existing document to belong to the caller.
            || (
              isSignedIn()
-             && resource.data.workerId == request.auth.uid
-             // allow updatedAt as well (client may send serverTimestamp)
-             // Accept either payloads that include workerId or that omit it (status-only)
-             && (
-               request.resource.data.keys().hasOnly(['status','orderStatus','workerId','updatedAt'])
-               || request.resource.data.keys().hasOnly(['status','orderStatus','updatedAt'])
-             )
-             // if workerId is provided, ensure it matches the existing value
-             && ( !('workerId' in request.resource.data) || request.resource.data.workerId == resource.data.workerId )
-             && request.resource.data.status in ['accepted', 'on_my_way', 'arrived', 'in_progress', 'paused', 'completed']
-             && resource.data.status != 'completed'
-             // ensure updatedAt is either not written or is a server timestamp or unchanged
-             && allowedServerTimestamp('updatedAt')
+             && isOwner(userId)
+             // Validate rating payloads using helper to ensure types and ranges.
+             && isValidOrderRatingPayload()
            )
         );
 
@@ -348,6 +324,12 @@ service cloud.firestore {
           // ensure updatedAt is either not written or is a server timestamp or unchanged
           && allowedServerTimestamp('updatedAt')
         )
+        // Allow the order owner to submit rating fields on the top-level order with validation
+        || (
+          isSignedIn()
+          && (resource.data.orderOwner == request.auth.uid || resource.data.userId == request.auth.uid || resource.data.orderOwner == request.auth.token.phone_number)
+          && isValidOrderRatingPayload()
+        )
       );
 
       allow delete: if isSignedIn() && (
@@ -482,6 +464,26 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       // Prevent direct updates from clients; prefer delete+create or server-side flows.
       allow update: if false;
+    }
+
+    // -----------------------
+    // Custom functions (rating helpers)
+    // -----------------------
+    // Helper: validate a simple scalar rating (1..5)
+    function isValidRatingValue(val) {
+      return (val is number) && val >= 1 && val <= 5;
+    }
+
+    // Helper: validate order-level rating payloads written by the order owner.
+    // Implemented as a single boolean expression (no imperative `if` statements).
+    function isValidOrderRatingPayload() {
+      return request.resource.data.keys().hasOnly(['serviceRating','workerRating','rating','review','rated','ratingAt','remoteId'])
+        && ( !('rating' in request.resource.data) || isValidRatingValue(request.resource.data.rating) )
+        && ( !('serviceRating' in request.resource.data) || isValidRatingValue(request.resource.data.serviceRating) )
+        && ( !('workerRating' in request.resource.data) || isValidRatingValue(request.resource.data.workerRating) )
+        && ( !('review' in request.resource.data) || (request.resource.data.review is string) )
+        && ( !('ratingAt' in request.resource.data) || request.resource.data.ratingAt == request.time )
+        && ( !('rated' in request.resource.data) || (request.resource.data.rated is bool) );
     }
   }
 }

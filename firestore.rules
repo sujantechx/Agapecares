@@ -1,4 +1,5 @@
-/// last updated: 2025-10-26
+// last updated: 2025-10-30 this before one rule work all create oder include booking
+
 
 rules_version = '2';
 service cloud.firestore {
@@ -351,46 +352,9 @@ service cloud.firestore {
     }
 
     // -----------------------
-    // bookings, payments, offers, admins, audit_logs, etc.
+    // payments, offers, admins, audit_logs, etc.
     // replicate admin/owner semantics similar to above.
     // -----------------------
-    match /bookings/{bookingId} {
-      allow create: if isSignedIn() && noServerFields() && (
-        request.resource.data.orderOwner == request.auth.uid
-        || request.resource.data.userId == request.auth.uid
-        || (request.auth.token.phone_number != null && (request.resource.data.orderOwner == request.auth.token.phone_number || request.resource.data.userId == request.auth.token.phone_number))
-      );
-
-      // Use resource.data (existing document) for reads.
-      allow get: if isSignedIn() && (
-        isAdmin()
-        || resource.data.orderOwner == request.auth.uid
-        || resource.data.userId == request.auth.uid
-        || (request.auth.token.phone_number != null && (resource.data.orderOwner == request.auth.token.phone_number || resource.data.userId == request.auth.token.phone_number))
-      );
-      // Restrict listing bookings at top-level to admins; users should list their
-      // bookings via a per-user subcollection if available.
-      allow list: if isSignedIn() && isAdmin();
-      // For updates, check ownership on the existing document (resource.data)
-      // and still require noServerFields() on the incoming data.
-      allow update: if isSignedIn() && (
-        isAdmin()
-        || (
-          (resource.data.orderOwner == request.auth.uid
-           || resource.data.userId == request.auth.uid
-           || (request.auth.token.phone_number != null && (resource.data.orderOwner == request.auth.token.phone_number || resource.data.userId == request.auth.token.phone_number))
-          )
-          && noServerFields()
-        )
-      );
-      allow delete: if isSignedIn() && isAdmin();
-    }
-
-    match /offers/{offerId} {
-      allow read: if true;
-      allow create, update, delete: if isSignedIn() && isAdmin();
-    }
-
     match /payments/{paymentId} {
       allow read: if isSignedIn() && (isAdmin() || (resource.data.orderOwner == request.auth.uid) || (resource.data.userId == request.auth.uid) || (request.auth.token.phone_number != null && (resource.data.userId == request.auth.token.phone_number || resource.data.orderOwner == request.auth.token.phone_number)));
       allow create: if isSignedIn() && noServerFields() && ('amount' in request.resource.data || 'totalAmount' in request.resource.data);

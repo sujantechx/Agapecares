@@ -1,45 +1,20 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+// This repository is deprecated: the top-level `bookings` collection has been
+// removed from the security rules and client flows. Keeping this file in the
+// codebase for reference, but all methods throw to prevent accidental usage.
+
 import 'package:agapecares/core/models/order_model.dart';
 
-
-/// BookingRepository stores booking/order documents in Firestore under top-level `bookings` collection.
 class BookingRepository {
-  final FirebaseFirestore _firestore;
-
-  BookingRepository({FirebaseFirestore? firestore}) : _firestore = firestore ?? FirebaseFirestore.instance;
-
-  /// Create a booking document in Firestore under top-level `bookings`. Returns the generated document id.
-  Future<String> createBooking(OrderModel order) async {
-    if (order.userId.isEmpty) {
-      throw Exception('Missing userId on order when creating booking');
-    }
-    final bookingsCol = _firestore.collection('bookings');
-    final bookingMap = {
-      'orderOwner': order.userId,
-      'userId': order.userId,
-      'orderId': order.id,
-      'orderNumber': order.orderNumber,
-      'items': order.items.map((i) => i.toMap()).toList(),
-      'addressSnapshot': order.addressSnapshot,
-      'subtotal': order.subtotal,
-      'discount': order.discount,
-      'tax': order.tax,
-      'totalAmount': order.total, // match security rules expected field
-      'orderStatus': order.orderStatus.name,
-      'paymentStatus': order.paymentStatus.name,
-      'scheduledAt': order.scheduledAt,
-      'createdAt': FieldValue.serverTimestamp(),
-      // do not set client timestamps or orderNumber here
-    };
-    final docRef = await bookingsCol.add(bookingMap);
-    try { await docRef.update({'remoteId': docRef.id}); } catch (_) {}
-    return docRef.id;
+  BookingRepository({dynamic firestore}) {
+    // Intentionally no-op. The constructor accepts an optional firestore
+    // parameter for compatibility but this repository should not be used.
   }
 
-  /// Fetch bookings for a user
+  Future<String> createBooking(OrderModel order) async {
+    throw Exception('BookingRepository.createBooking is disabled: the top-level `bookings` collection was removed. Persist orders under users/{uid}/orders or manage via trusted backend.');
+  }
+
   Future<List<OrderModel>> fetchBookingsForUser(String userId) async {
-    final snap = await _firestore.collection('bookings').where('orderOwner', isEqualTo: userId).orderBy('createdAt', descending: true).get();
-    return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+    throw Exception('BookingRepository.fetchBookingsForUser is disabled: the top-level `bookings` collection was removed.');
   }
 }
-

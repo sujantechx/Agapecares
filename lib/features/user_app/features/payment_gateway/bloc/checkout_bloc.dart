@@ -14,7 +14,6 @@ import '../model/payment_models.dart';
 import '../repository/razorpay_payment_repository.dart';
 import '../repository/cod_payment_repository.dart';
 import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
-import '../../data/repositories/booking_repository.dart';
 
 import 'checkout_event.dart';
 import 'checkout_state.dart';
@@ -26,7 +25,6 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
   final user_orders_repo.OrderRepository _orderRepo;
   final RazorpayPaymentRepository _razorpayRepo;
   final CodPaymentRepository _codRepo;
-  final BookingRepository _bookingRepo;
   final CartRepository _cartRepo;
   final Future<String?> Function() _getCurrentUserId;
   final dynamic _firestore;
@@ -36,14 +34,12 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
     required RazorpayPaymentRepository razorpayRepo,
     required CodPaymentRepository codRepo,
     required CartRepository cartRepo,
-    required BookingRepository bookingRepo,
     required Future<String?> Function() getCurrentUserId,
     dynamic firestore,
   })
       : _orderRepo = orderRepo,
         _razorpayRepo = razorpayRepo,
         _codRepo = codRepo,
-        _bookingRepo = bookingRepo,
         _cartRepo = cartRepo,
         _getCurrentUserId = getCurrentUserId,
         _firestore = firestore ?? FirebaseFirestore.instance,
@@ -250,11 +246,9 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
 
           // Clear cart and create booking. Ensure we pass the order that contains the remote id when available.
           await _cartRepo.clearCart();
-          try {
-            await _bookingRepo.createBooking(orderForPersist);
-          } catch (e) {
-            debugPrint('[CheckoutBloc] Failed to create booking after Razorpay: $e');
-          }
+          // `bookings` collection removed: do not create a top-level booking document.
+          // The order has already been persisted via `_orderRepo.uploadOrder` and
+          // payment stored under `payments` if applicable. No additional action needed here.
 
           emit(state.copyWith(isInProgress: false,
               successMessage: 'Payment successful and order processed.'));
@@ -321,11 +315,8 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
 
           // Clear cart and create booking
           await _cartRepo.clearCart();
-          try {
-            await _bookingRepo.createBooking(orderForPersistCod);
-          } catch (e) {
-            debugPrint('[CheckoutBloc] Failed to create booking after COD: $e');
-          }
+          // `bookings` collection removed: do not create a top-level booking document.
+          // Order and payment record already persisted above.
 
           emit(state.copyWith(
               isInProgress: false, successMessage: 'Order placed (COD).'));

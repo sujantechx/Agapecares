@@ -51,7 +51,7 @@ import 'package:agapecares/features/user_app/features/orders/logic/order_bloc.da
 // Import the user-app OrderRepository (interface + implementation) with a prefix
 import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
 import 'package:agapecares/features/user_app/features/data/repositories/offer_repository.dart';
-import 'package:agapecares/features/user_app/features/data/repositories/booking_repository.dart';
+
 import 'package:agapecares/features/user_app/features/payment_gateway/repository/razorpay_payment_repository.dart';
 import 'package:agapecares/features/user_app/features/payment_gateway/repository/cod_payment_repository.dart';
 
@@ -102,8 +102,7 @@ Future<List<RepositoryProvider>> init() async {
   // OfferRepository is a simple, in-memory/deterministic repository used by CartBloc
   sl.registerLazySingleton<OfferRepository>(() => OfferRepository());
 
-  // New: Booking and Payment repositories
-  sl.registerLazySingleton<BookingRepository>(() => BookingRepository(firestore: sl()));
+  // New: Payment repositories
   sl.registerLazySingleton<RazorpayPaymentRepository>(() => RazorpayPaymentRepository(backendCreateOrderUrl: 'https://example.com/create-order'));
   sl.registerLazySingleton<CodPaymentRepository>(() => CodPaymentRepository());
 
@@ -149,7 +148,6 @@ Future<List<RepositoryProvider>> init() async {
     // Expose SessionService to the widget tree so widgets can read cached user safely
     RepositoryProvider<SessionService>.value(value: sl()),
     // Expose booking/payment repositories
-    RepositoryProvider<BookingRepository>.value(value: sl()),
     RepositoryProvider<RazorpayPaymentRepository>.value(value: sl()),
     RepositoryProvider<CodPaymentRepository>.value(value: sl()),
   ];

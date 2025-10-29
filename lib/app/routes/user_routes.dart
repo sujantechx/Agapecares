@@ -21,7 +21,6 @@ import 'package:agapecares/features/user_app/features/presentation/pages/terms_o
 
 // Additional imports required so the Checkout route can create a local CheckoutBloc
 
-import 'package:agapecares/features/user_app/features/data/repositories/booking_repository.dart';
 import 'package:agapecares/features/user_app/features/payment_gateway/repository/razorpay_payment_repository.dart';
 import 'package:agapecares/features/user_app/features/payment_gateway/repository/cod_payment_repository.dart';
 import 'package:agapecares/features/user_app/features/cart/data/repositories/cart_repository.dart';
@@ -30,6 +29,8 @@ import 'package:agapecares/features/user_app/features/data/repositories/order_re
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agapecares/features/user_app/features/orders/presentation/pages/order_details_page.dart';
 import 'package:agapecares/core/models/order_model.dart';
+
+import '../../features/user_app/features/data/repositories/booking_repository.dart';
 
 final GlobalKey<NavigatorState> _userShellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'userShell');
 
@@ -103,7 +104,7 @@ final List<RouteBase> userRoutes = [
               razorpayRepo: ctx.read<RazorpayPaymentRepository>(),
               codRepo: ctx.read<CodPaymentRepository>(),
               cartRepo: ctx.read<CartRepository>(),
-              bookingRepo: ctx.read<BookingRepository>(),
+              // bookingRepo: ctx.read<BookingRepository>(),
               getCurrentUserId: () async => FirebaseAuth.instance.currentUser?.uid,
             ),
             child: CheckoutPage(extra: state.extra),

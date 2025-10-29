@@ -185,7 +185,7 @@ void main() {
       razorpayRepo: razor,
       codRepo: cod,
       cartRepo: cart,
-      bookingRepo: booking,
+      // bookingRepo: booking,
       getCurrentUserId: () async => 'uid_test',
       firestore: fakeFs,
     );
@@ -213,7 +213,7 @@ void main() {
       razorpayRepo: razor,
       codRepo: cod,
       cartRepo: cart,
-      bookingRepo: booking,
+      // bookingRepo: booking,
       getCurrentUserId: () async => 'uid_test',
       firestore: fakeFs,
     );
@@ -240,7 +240,7 @@ void main() {
       razorpayRepo: razor,
       codRepo: cod,
       cartRepo: cart,
-      bookingRepo: booking,
+      // bookingRepo: booking,
       getCurrentUserId: () async => 'uid_test',
       firestore: fakeFs,
     );

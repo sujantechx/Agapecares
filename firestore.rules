@@ -283,6 +283,11 @@ service cloud.firestore {
         || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
         // Allow workers to query top-level orders filtered by workerId==auth.uid
         || (isWorker() && resource.data.workerId == request.auth.uid)
+        // Allow owners to list their own orders when the query filters by orderOwner/userId
+        // (e.g. where('orderOwner', '==', request.auth.uid) ). This keeps top-level
+        // listing restricted while permitting a common client pattern.
+        || (resource.data.orderOwner == request.auth.uid)
+        || (resource.data.userId == request.auth.uid)
       );
 
       allow create: if isSignedIn() && noServerFields() && ('items' in request.resource.data) && ('totalAmount' in request.resource.data);

@@ -12,11 +12,12 @@ import 'package:agapecares/features/user_app/features/presentation/pages/profile
 import 'package:agapecares/app/routes/app_routes.dart';
 
 // Additional user pages
-import 'package:agapecares/features/user_app/features/presentation/pages/cleaning_services_page.dart';
 import 'package:agapecares/features/user_app/features/presentation/pages/service_detail_page.dart';
 import 'package:agapecares/core/models/service_model.dart';
 import 'package:agapecares/features/user_app/features/services/data/repositories/service_repository.dart';
 import 'package:agapecares/features/user_app/features/presentation/pages/checkout_page.dart';
+import 'package:agapecares/features/user_app/features/presentation/pages/about_us_page.dart';
+import 'package:agapecares/features/user_app/features/presentation/pages/terms_of_use_page.dart';
 
 // Additional imports required so the Checkout route can create a local CheckoutBloc
 
@@ -74,11 +75,20 @@ final List<RouteBase> userRoutes = [
         ),
       ),
       // Add cleaning services as a route inside the dashboard shell so it shows within the bottom-nav scaffold
+      // Informational pages
       GoRoute(
-        path: AppRoutes.cleaningServices,
+        path: AppRoutes.aboutUs,
         pageBuilder: (context, state) => CustomTransitionPage(
           key: state.pageKey,
-          child: const CleaningServicesPage(),
+          child: const AboutUsPage(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) => FadeTransition(opacity: animation, child: child),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.terms,
+        pageBuilder: (context, state) => CustomTransitionPage(
+          key: state.pageKey,
+          child: const TermsOfUsePage(),
           transitionsBuilder: (context, animation, secondaryAnimation, child) => FadeTransition(opacity: animation, child: child),
         ),
       ),

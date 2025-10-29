@@ -255,9 +255,26 @@ class _OrderListPageState extends State<OrderListPage> {
             if (orders.isEmpty) {
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                children: const [
-                  SizedBox(height: 120),
-                  Center(child: Text('No orders yet')),
+                children: [
+                  const SizedBox(height: 120),
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.inbox, size: 48, color: Colors.grey.shade400),
+                        const SizedBox(height: 8),
+                        const Text('No orders available', style: TextStyle(fontSize: 16)),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: () {
+                            _loadOrders();
+                            if (mounted) setState(() {});
+                          },
+                          child: const Text('Refresh'),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               );
             }
@@ -367,6 +384,8 @@ class _OrderListPageState extends State<OrderListPage> {
                           const SizedBox(height: 6),
                           // scheduled date (defensive)
                           Builder(builder: (ctx) {
+                            // Only show scheduled info for assigned orders
+                            if (o.orderStatus != OrderStatus.assigned) return const SizedBox.shrink();
                             DateTime? sched;
                             try {
                               final dynamic sval = o.scheduledAt;
@@ -444,7 +463,7 @@ class _OrderListPageState extends State<OrderListPage> {
 
     // Fallback: no OrderBloc -> keep existing FutureBuilder behavior but render as cards
     return Scaffold(
-      appBar: AppBar(title: const Text('My Orders')),
+      appBar: AppBar(title: Center(child: const Text('My Orders'))),
       body: RefreshIndicator(
         onRefresh: () async {
           _loadOrders();
@@ -473,9 +492,26 @@ class _OrderListPageState extends State<OrderListPage> {
             if (orders.isEmpty) {
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                children: const [
-                  SizedBox(height: 120),
-                  Center(child: Text('No orders yet')),
+                children: [
+                  const SizedBox(height: 120),
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.inbox, size: 48, color: Colors.grey.shade400),
+                        const SizedBox(height: 8),
+                        const Text('No orders available', style: TextStyle(fontSize: 16, color: Colors.black54)),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: () {
+                            _loadOrders();
+                            setState(() {});
+                          },
+                          child: const Text('Refresh'),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               );
             }
@@ -585,6 +621,8 @@ class _OrderListPageState extends State<OrderListPage> {
                           const SizedBox(height: 6),
                           // scheduled date (defensive)
                           Builder(builder: (ctx) {
+                            // Only show scheduled info for assigned orders
+                            if (o.orderStatus != OrderStatus.assigned) return const SizedBox.shrink();
                             DateTime? sched;
                             try {
                               final dynamic sval = o.scheduledAt;

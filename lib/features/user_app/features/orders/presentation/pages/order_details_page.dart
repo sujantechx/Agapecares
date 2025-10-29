@@ -681,7 +681,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
 
           // 3. Delivery & Items Card
           _buildSectionHeader('Service Details', icon: Icons.inventory_2_outlined),
-          _buildDeliveryItemsCard(order, scheduledDate, theme),
+          // Only show scheduled date in the delivery card when the order is assigned.
+          _buildDeliveryItemsCard(order, order.orderStatus == OrderStatus.assigned ? scheduledDate : null, theme),
 
           // 4. Assigned Worker Card
           if (order.workerId != null &&

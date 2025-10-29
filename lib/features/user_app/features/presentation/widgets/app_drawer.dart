@@ -41,7 +41,7 @@ class AppDrawer extends StatelessWidget {
           // _buildDrawerItem(context: context, icon: Icons.login, text: 'Login', onTap: () => GoRouter.of(context).go('/login')),
           // if (showWorkerMenu) _buildDrawerItem(context: context, icon: Icons.dashboard_outlined, text: 'Worker Dashboard', onTap: () => GoRouter.of(context).go(AppRoutes.workerHome)),
           // if (showWorkerMenu) _buildDrawerItem(context: context, icon: Icons.work_outline, text: 'Worker Orders', onTap: () => GoRouter.of(context).go(AppRoutes.workerOrders)),
-          _buildDrawerItem(context: context, icon: Icons.cleaning_services, text: 'Cleaning Services', onTap: () => GoRouter.of(context).push('/cleaning-services')),
+          _buildDrawerItem(context: context, icon: Icons.cleaning_services, text: 'Cleaning Services', onTap: () => GoRouter.of(context).push(AppRoutes.home)),
           // _buildDrawerItem(context: context, icon: Icons.settings_outlined, text: 'AC Services', onTap: () => GoRouter.of(context).push('/ac-services')),
           // _buildDrawerItem(context: context, icon: Icons.pest_control, text: 'Pest Control', onTap: () => GoRouter.of(context).push('/pest-control')),
           // _buildDrawerItem(context: context, icon: Icons.article_outlined, text: 'Our Blog', onTap: () => GoRouter.of(context).push('/blog')),
@@ -94,8 +94,8 @@ class AppDrawer extends StatelessWidget {
               });
             },
           ),
-          _buildDrawerItem(context: context, icon: Icons.description_outlined, text: 'Terms and Conditions', onTap: () => GoRouter.of(context).push('/terms')),
-          _buildDrawerItem(context: context, icon: Icons.info_outline, text: 'About Us', onTap: () => GoRouter.of(context).push('/about-us')),
+          _buildDrawerItem(context: context, icon: Icons.description_outlined, text: 'Terms and Conditions', onTap: () => GoRouter.of(context).push(AppRoutes.terms)),
+          _buildDrawerItem(context: context, icon: Icons.info_outline, text: 'About Us', onTap: () => GoRouter.of(context).push(AppRoutes.aboutUs)),
 
           // const Divider(),
           // Logout option for signed-in users

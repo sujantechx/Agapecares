@@ -28,7 +28,7 @@ class OrderRepositoryImpl implements OrderRepository {
         try {
           final orderDoc = await _firestore.collection('orders').doc(orderId).get();
           if (orderDoc.exists) {
-            final od = orderDoc.data() as Map<String, dynamic>?;
+            final od = orderDoc.data();
             resolvedUserId = od?['userId'] as String? ?? od?['orderOwner'] as String?;
           }
         } catch (_) {

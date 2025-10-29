@@ -23,7 +23,7 @@ class _AssignWorkerDialogState extends State<AssignWorkerDialog> {
   bool _loading = true;
   WorkerModel? _selected;
   Map<String, dynamic>? _selectedUserData;
-  DateTime? _selectedDateTime;
+  DateTime? _selectedDate;
   bool _assigning = false;
 
   @override
@@ -102,7 +102,7 @@ class _AssignWorkerDialogState extends State<AssignWorkerDialog> {
             final orderRepo = context.read<admin_order_repo.OrderRepository>();
             final workerName = _selectedUserData != null ? (_selectedUserData!['name'] as String?) : null;
             try {
-              final ts = _selectedDateTime != null ? Timestamp.fromDate(_selectedDateTime!) : null;
+              final ts = _selectedDate != null ? Timestamp.fromDate(DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, 9, 0)) : null; // fixed 09:00 start
               await orderRepo.assignWorker(orderId: widget.orderId, workerId: _selected!.uid, workerName: workerName, scheduledAt: ts);
               try { context.read<AdminOrderBloc>().add(admin_events.AssignWorkerEvent(orderId: widget.orderId, workerId: _selected!.uid, workerName: workerName, scheduledAt: ts)); } catch (_) {}
               if (mounted) {
@@ -147,26 +147,26 @@ class _AssignWorkerDialogState extends State<AssignWorkerDialog> {
   }
 
   Widget _buildSchedulePicker(BuildContext context) {
-    final display = _selectedDateTime == null ? 'No schedule (assign now)' : '${_selectedDateTime!.day}-${_selectedDateTime!.month}-${_selectedDateTime!.year} ${_selectedDateTime!.hour.toString().padLeft(2,'0')}:${_selectedDateTime!.minute.toString().padLeft(2,'0')}';
+    // Display only the selected date and show fixed work hours (09:00 - 18:00)
+    final display = _selectedDate == null ? 'No schedule (assign now)' : '${_selectedDate!.day}-${_selectedDate!.month}-${_selectedDate!.year} • Work hours: 09:00 - 18:00';
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('Schedule (optional)', style: TextStyle(fontWeight: FontWeight.bold)),
       const SizedBox(height: 6),
-      Row(children: [Expanded(child: Text(display)), const SizedBox(width: 8), OutlinedButton(onPressed: () => _pickDateTime(context), child: const Text('Pick'))]),
+      Row(children: [Expanded(child: Text(display)), const SizedBox(width: 8), OutlinedButton(onPressed: () => _pickDate(context), child: const Text('Pick date'))]),
     ]);
   }
 
-  Future<void> _pickDateTime(BuildContext context) async {
+  Future<void> _pickDate(BuildContext context) async {
     final now = DateTime.now();
     final date = await showDatePicker(context: context, initialDate: now, firstDate: now, lastDate: now.add(const Duration(days: 90)));
     if (date == null) return;
-    final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 9, minute: 0));
-    if (time == null) return;
-    if (time.hour < 9 || time.hour > 18) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please pick a time between 09:00 and 18:00')));
+    final scheduledDt = DateTime(date.year, date.month, date.day, 9, 0);
+    if (scheduledDt.isBefore(now)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selected schedule (09:00) is in the past. Please pick a future date.')));
       return;
     }
-    final dt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
-    setState(() { _selectedDateTime = dt; });
+    // Time is fixed to 09:00 (start of workday)
+    setState(() { _selectedDate = DateTime(date.year, date.month, date.day); });
   }
 
 }

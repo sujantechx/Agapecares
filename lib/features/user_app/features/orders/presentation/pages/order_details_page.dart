@@ -30,6 +30,12 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     return '${two(d.day)}-${two(d.month)}-${d.year} ${two(d.hour)}:${two(d.minute)}';
   }
 
+  String _formatDateOnly(DateTime dt) {
+    final d = dt.toLocal();
+    final two = (int n) => n.toString().padLeft(2, '0');
+    return '${two(d.day)}-${two(d.month)}-${d.year}';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -243,7 +249,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
             const SizedBox(height: 8),
             Text('Placed: ${_formatDateTime(createdDate)}', style: const TextStyle(color: Colors.black54)),
             if (scheduledDate != null) const SizedBox(height: 6),
-            if (scheduledDate != null) Text('Scheduled: ${_formatDateTime(scheduledDate)}', style: const TextStyle(color: Colors.black54)),
+            if (scheduledDate != null) Text('Scheduled: ${_formatDateOnly(scheduledDate)} • Work hours: 09:00 - 18:00', style: const TextStyle(color: Colors.black54)),
             if (order.appointmentId != null) const SizedBox(height: 6),
             if (order.appointmentId != null) Text('Appointment ID: ${order.appointmentId}', style: const TextStyle(color: Colors.black54)),
             const SizedBox(height: 16),

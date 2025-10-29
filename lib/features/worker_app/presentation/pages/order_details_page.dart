@@ -14,7 +14,9 @@ class OrderDetailsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheduled = order.scheduledAt.toDate();
-    final timeStr = DateFormat('dd MMM yyyy, hh:mm a').format(scheduled);
+    // Show date-only and fixed work hours 09:00 - 18:00 for workers
+    final dateStr = DateFormat('dd MMM yyyy').format(scheduled);
+    final timeStr = '$dateStr • Work hours: 09:00 - 18:00';
     final addrMap = order.addressSnapshot;
     final addr = (addrMap['address'] as String?) ?? (addrMap['line1'] as String?) ?? '';
     final customerName = (addrMap['name'] as String?) ?? '';
@@ -81,4 +83,3 @@ class OrderDetailsPage extends StatelessWidget {
     );
   }
 }
-

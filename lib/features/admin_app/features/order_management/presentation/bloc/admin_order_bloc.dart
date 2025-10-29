@@ -27,7 +27,7 @@ class AdminOrderBloc extends Bloc<AdminOrderEvent, AdminOrderState> {
 
     on<AssignWorkerEvent>((event, emit) async {
       try {
-        await repo.assignWorker(orderId: event.orderId, workerId: event.workerId, workerName: event.workerName);
+        await repo.assignWorker(orderId: event.orderId, workerId: event.workerId, workerName: event.workerName, scheduledAt: event.scheduledAt);
         add(LoadOrders());
       } catch (e) {
         emit(AdminOrderError(e.toString()));

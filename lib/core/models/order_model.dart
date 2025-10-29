@@ -52,6 +52,7 @@ class OrderModel extends Equatable {
   /// Optional rating specifically about the worker (1.0 - 5.0). This is
   /// secondary and may be omitted.
   final double? workerRating;
+  final String? appointmentId;
 
   const OrderModel({
     required this.id,
@@ -73,6 +74,7 @@ class OrderModel extends Equatable {
     required this.updatedAt,
     this.serviceRating,
     this.workerRating,
+    this.appointmentId,
   });
 
   /// Creates an `OrderModel` instance from a Firestore document snapshot.
@@ -181,6 +183,7 @@ class OrderModel extends Equatable {
       updatedAt: data['updatedAt'] as Timestamp? ?? Timestamp.now(),
       serviceRating: parsedServiceRating,
       workerRating: parsedWorkerRating,
+      appointmentId: data['appointmentId'] as String?,
     );
   }
 
@@ -205,6 +208,7 @@ class OrderModel extends Equatable {
       if (paymentRef != null) 'paymentRef': paymentRef,
       if (serviceRating != null) 'serviceRating': serviceRating,
       if (workerRating != null) 'workerRating': workerRating,
+      if (appointmentId != null) 'appointmentId': appointmentId,
     };
   }
 
@@ -229,6 +233,7 @@ class OrderModel extends Equatable {
     Timestamp? updatedAt,
     double? serviceRating,
     double? workerRating,
+    String? appointmentId,
   }) {
     return OrderModel(
       id: id ?? this.id,
@@ -250,9 +255,10 @@ class OrderModel extends Equatable {
       updatedAt: updatedAt ?? this.updatedAt,
       serviceRating: serviceRating ?? this.serviceRating,
       workerRating: workerRating ?? this.workerRating,
+      appointmentId: appointmentId ?? this.appointmentId,
     );
   }
 
   @override
-  List<Object?> get props => [id, orderNumber, userId, workerId, orderStatus, paymentStatus, total, serviceRating, workerRating];
+  List<Object?> get props => [id, orderNumber, userId, workerId, orderStatus, paymentStatus, total, serviceRating, workerRating, appointmentId];
 }

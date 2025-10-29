@@ -23,6 +23,7 @@ class _AssignWorkerDialogState extends State<AssignWorkerDialog> {
   bool _loading = true;
   WorkerModel? _selected;
   Map<String, dynamic>? _selectedUserData;
+  DateTime? _selectedDateTime;
   bool _assigning = false;
 
   @override
@@ -88,7 +89,7 @@ class _AssignWorkerDialogState extends State<AssignWorkerDialog> {
                             flex: 4,
                             child: _selected == null
                                 ? const Center(child: Text('Select a worker to view details'))
-                                : _buildSelectedDetails(),
+                                : Column(children: [Expanded(child: _buildSelectedDetails()), const SizedBox(height:8), _buildSchedulePicker(context)]),
                           ),
                         ],
                       ),
@@ -101,8 +102,9 @@ class _AssignWorkerDialogState extends State<AssignWorkerDialog> {
             final orderRepo = context.read<admin_order_repo.OrderRepository>();
             final workerName = _selectedUserData != null ? (_selectedUserData!['name'] as String?) : null;
             try {
-              await orderRepo.assignWorker(orderId: widget.orderId, workerId: _selected!.uid, workerName: workerName);
-              try { context.read<AdminOrderBloc>().add(admin_events.AssignWorkerEvent(orderId: widget.orderId, workerId: _selected!.uid, workerName: workerName)); } catch (_) {}
+              final ts = _selectedDateTime != null ? Timestamp.fromDate(_selectedDateTime!) : null;
+              await orderRepo.assignWorker(orderId: widget.orderId, workerId: _selected!.uid, workerName: workerName, scheduledAt: ts);
+              try { context.read<AdminOrderBloc>().add(admin_events.AssignWorkerEvent(orderId: widget.orderId, workerId: _selected!.uid, workerName: workerName, scheduledAt: ts)); } catch (_) {}
               if (mounted) {
                 Navigator.pop(context, true);
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Worker assigned successfully')));
@@ -143,4 +145,28 @@ class _AssignWorkerDialogState extends State<AssignWorkerDialog> {
       ],
     );
   }
+
+  Widget _buildSchedulePicker(BuildContext context) {
+    final display = _selectedDateTime == null ? 'No schedule (assign now)' : '${_selectedDateTime!.day}-${_selectedDateTime!.month}-${_selectedDateTime!.year} ${_selectedDateTime!.hour.toString().padLeft(2,'0')}:${_selectedDateTime!.minute.toString().padLeft(2,'0')}';
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('Schedule (optional)', style: TextStyle(fontWeight: FontWeight.bold)),
+      const SizedBox(height: 6),
+      Row(children: [Expanded(child: Text(display)), const SizedBox(width: 8), OutlinedButton(onPressed: () => _pickDateTime(context), child: const Text('Pick'))]),
+    ]);
+  }
+
+  Future<void> _pickDateTime(BuildContext context) async {
+    final now = DateTime.now();
+    final date = await showDatePicker(context: context, initialDate: now, firstDate: now, lastDate: now.add(const Duration(days: 90)));
+    if (date == null) return;
+    final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 9, minute: 0));
+    if (time == null) return;
+    if (time.hour < 9 || time.hour > 18) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please pick a time between 09:00 and 18:00')));
+      return;
+    }
+    final dt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    setState(() { _selectedDateTime = dt; });
+  }
+
 }

@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:agapecares/core/models/order_model.dart';
-import 'package:agapecares/core/models/cart_item_model.dart';
 import '../bloc/admin_order_bloc.dart';
 import '../bloc/admin_order_event.dart' as admin_events;
 import 'package:agapecares/features/admin_app/features/worker_management/presentation/widgets/assign_worker_dialog.dart';
@@ -114,6 +113,18 @@ class AdminOrderDetailPage extends StatelessWidget {
                     subtitle: Text(h['note']?.toString() ?? ''),
                     trailing: Text(h['at'] != null ? h['at'].toString() : ''),
                   )),
+
+            const Divider(),
+
+            // Scheduled / appointment info
+            const SizedBox(height: 8),
+            Text('Schedule', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(_formatTs(order.scheduledAt)),
+            if (order.appointmentId != null) ...[
+              const SizedBox(height: 6),
+              Text('Appointment ID: ${order.appointmentId}'),
+            ],
 
             const Divider(),
 

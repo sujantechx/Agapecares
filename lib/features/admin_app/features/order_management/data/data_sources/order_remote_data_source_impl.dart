@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:agapecares/core/models/order_model.dart';
 import 'order_remote_data_source.dart';
-import 'package:flutter/foundation.dart';
 
 class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
   final FirebaseFirestore _firestore;
@@ -148,17 +147,47 @@ class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
   }
 
   @override
-  Future<void> assignWorker({required String orderId, required String workerId, String? workerName}) async {
+  Future<void> assignWorker({required String orderId, required String workerId, String? workerName, Timestamp? scheduledAt}) async {
     try {
       final ref = await _findOrderDocRefById(orderId);
       if (ref == null) throw Exception('Order not found: $orderId');
-      await ref.update({
+
+      String? appointmentId;
+      String? userId;
+      try {
+        final parts = ref.path.split('/');
+        final idx = parts.indexOf('users');
+        if (idx != -1 && idx + 1 < parts.length) userId = parts[idx + 1];
+      } catch (_) {}
+
+      if (scheduledAt != null) {
+        try {
+          final apptRef = await _firestore.collection('appointments').add({
+            'orderId': orderId,
+            'userId': userId,
+            'workerId': workerId,
+            'scheduledAt': scheduledAt,
+            'status': 'scheduled',
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          appointmentId = apptRef.id;
+        } catch (_) {
+          // ignore appointment creation failure; continue with assignment
+        }
+      }
+
+      final update = <String, dynamic>{
         'workerId': workerId,
         if (workerName != null) 'workerName': workerName,
         'orderStatus': 'assigned',
         'acceptedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+        if (appointmentId != null) 'appointmentId': appointmentId,
+        if (scheduledAt != null) 'scheduledAt': scheduledAt,
+      }..removeWhere((k, v) => v == null);
+
+      await ref.update(update);
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         throw Exception('Permission denied assigning worker. Check Firestore rules.');

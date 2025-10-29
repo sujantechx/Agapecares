@@ -197,6 +197,18 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
       createdDate = DateTime.now();
     }
 
+    // Determine scheduled date if available (OrderModel.scheduledAt is usually a Timestamp)
+    DateTime? scheduledDate;
+    try {
+      final dynamic sval = order.scheduledAt;
+      if (sval is DateTime) scheduledDate = sval;
+      else if (sval is String) scheduledDate = DateTime.parse(sval);
+      else if (sval is int) scheduledDate = DateTime.fromMillisecondsSinceEpoch(sval);
+      else if (sval != null) scheduledDate = (sval as dynamic).toDate() as DateTime;
+    } catch (_) {
+      scheduledDate = null;
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Order Details'),
@@ -230,6 +242,10 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
             ),
             const SizedBox(height: 8),
             Text('Placed: ${_formatDateTime(createdDate)}', style: const TextStyle(color: Colors.black54)),
+            if (scheduledDate != null) const SizedBox(height: 6),
+            if (scheduledDate != null) Text('Scheduled: ${_formatDateTime(scheduledDate)}', style: const TextStyle(color: Colors.black54)),
+            if (order.appointmentId != null) const SizedBox(height: 6),
+            if (order.appointmentId != null) Text('Appointment ID: ${order.appointmentId}', style: const TextStyle(color: Colors.black54)),
             const SizedBox(height: 16),
 
             // Status and payment

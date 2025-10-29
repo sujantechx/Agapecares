@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AdminOrderEvent extends Equatable {
   @override
@@ -26,9 +27,10 @@ class AssignWorkerEvent extends AdminOrderEvent {
   final String orderId;
   final String workerId;
   final String? workerName;
-  AssignWorkerEvent({required this.orderId, required this.workerId, this.workerName});
+  final Timestamp? scheduledAt;
+  AssignWorkerEvent({required this.orderId, required this.workerId, this.workerName, this.scheduledAt});
   @override
-  List<Object?> get props => [orderId, workerId, workerName];
+  List<Object?> get props => [orderId, workerId, workerName, scheduledAt];
 }
 
 class DeleteOrderEvent extends AdminOrderEvent {

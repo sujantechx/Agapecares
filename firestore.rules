@@ -396,6 +396,60 @@ service cloud.firestore {
       allow read, create, update, delete: if isSignedIn() && isAdmin();
     }
 
+    // Appointments collection: stores scheduled appointments linked to orders
+    match /appointments/{appointmentId} {
+      // Creation should be performed by admins/trusted backend only.
+      allow create: if isSignedIn()
+        && isAdmin()
+        // payload keys allowed
+        && request.resource.data.keys().hasOnly(['orderId','userId','workerId','scheduledAt','status','notes','createdAt','updatedAt'])
+        // basic type checks
+        && (request.resource.data.orderId is string)
+        && (request.resource.data.workerId is string)
+        && (request.resource.data.scheduledAt is timestamp)
+        // scheduledAt must be in the future or present (no past appointments)
+        && (request.resource.data.scheduledAt >= request.time)
+         // createdAt may be omitted or set to server time
+         && ( !('createdAt' in request.resource.data) || request.resource.data.createdAt == request.time );
+
+      // Allow admins, the assigned worker, or the order owner to read an appointment
+      allow get: if isSignedIn() && (
+        isAdmin()
+        || (resource.data.userId == request.auth.uid)
+        || (resource.data.workerId == request.auth.uid)
+      );
+
+      // Allow listing for admins; workers may list their own appointments via a query
+      allow list: if isSignedIn() && (
+        isAdmin()
+        || isWorker()
+      );
+
+      // Allow limited updates: admins can do anything; assigned worker may update status/startAt/endAt
+      allow update: if isSignedIn() && (
+        isAdmin()
+        || (
+          isWorker()
+          && resource.data.workerId == request.auth.uid
+          // Restrict keys a worker may update on-their-appointment
+          && request.resource.data.keys().hasOnly(['status','startAt','endAt','notes','updatedAt'])
+          // Ensure status is one of the allowed values when provided
+          && (
+            !( 'status' in request.resource.data )
+            || (request.resource.data.status in ['scheduled','confirmed','rescheduled','cancelled','completed'])
+          )
+          // startAt/endAt must be timestamps when present
+          && ( !('startAt' in request.resource.data) || request.resource.data.startAt is timestamp )
+          && ( !('endAt' in request.resource.data) || request.resource.data.endAt is timestamp )
+          // updatedAt must be server timestamp or unchanged
+          && allowedServerTimestamp('updatedAt')
+        )
+      );
+
+      // Only admin may delete appointment documents
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
     // Deny by default
     match /{document=**} {
       allow read, write: if false;

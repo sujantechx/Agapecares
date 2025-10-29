@@ -10,7 +10,7 @@ class OrderRepositoryImpl implements OrderRepository {
   OrderRepositoryImpl({FirebaseFirestore? firestore}) : _firestore = firestore ?? FirebaseFirestore.instance;
 
   @override
-  Future<void> assignWorker({required String orderId, required String workerId, String? workerName}) async {
+  Future<void> assignWorker({required String orderId, required String workerId, String? workerName, Timestamp? scheduledAt}) async {
     if (orderId.trim().isEmpty) throw Exception('orderId required');
     final update = <String, dynamic>{
       'workerId': workerId,
@@ -19,6 +19,38 @@ class OrderRepositoryImpl implements OrderRepository {
       'orderStatus': 'assigned',
       'updatedAt': FieldValue.serverTimestamp(),
     };
+
+    String? appointmentId;
+    if (scheduledAt != null) {
+      try {
+        // Try to resolve the order's userId from top-level orders doc (or fallback to null)
+        String? resolvedUserId;
+        try {
+          final orderDoc = await _firestore.collection('orders').doc(orderId).get();
+          if (orderDoc.exists) {
+            final od = orderDoc.data() as Map<String, dynamic>?;
+            resolvedUserId = od?['userId'] as String? ?? od?['orderOwner'] as String?;
+          }
+        } catch (_) {
+          // ignore - resolvedUserId stays null
+        }
+
+        final apptRef = await _firestore.collection('appointments').add({
+          'orderId': orderId,
+          'userId': resolvedUserId,
+          'workerId': workerId,
+          'scheduledAt': scheduledAt,
+          'status': 'scheduled',
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        appointmentId = apptRef.id;
+        update['appointmentId'] = appointmentId;
+        update['scheduledAt'] = scheduledAt;
+      } catch (e) {
+        // ignore appointment creation failure; continue with worker assignment
+      }
+    }
 
     // Try top-level update first
     try {

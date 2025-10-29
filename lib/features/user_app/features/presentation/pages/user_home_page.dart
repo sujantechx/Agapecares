@@ -133,7 +133,7 @@ Widget _buildSectionTitle(String title) {
         style:  TextStyle(
           fontWeight: FontWeight.bold,
           fontSize: 16,
-          color: AppTheme.textColor,
+          // color: AppTheme.textColor,
         ),
       ),
     ),
@@ -176,7 +176,7 @@ Widget _buildTopServicesGrid(BuildContext context, List<ServiceModel> topService
                     child: Text(
                       service.name,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontWeight: FontWeight.w500),
+                      style: const TextStyle(fontWeight: FontWeight.w300, fontSize: 14),
                     ),
                   ),
                 ],

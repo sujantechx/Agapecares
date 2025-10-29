@@ -231,7 +231,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Profile'),
+        title: Center(child: const Text('My Profile')),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16.0),

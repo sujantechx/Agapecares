@@ -202,7 +202,7 @@ class _OrderListPageState extends State<OrderListPage> {
                         const SizedBox(height: 12),
                         Text('Could not load orders', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
-                        Text(msg, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
+                        Text(msg, textAlign: TextAlign.center, style: const TextStyle()),
                         const SizedBox(height: 16),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -333,7 +333,7 @@ class _OrderListPageState extends State<OrderListPage> {
                                       ],
                                     ),
                                     const SizedBox(height: 6),
-                                    Text('Placed: ${_formatDateTime(createdDate)}', style: const TextStyle(fontSize: 13, color: Colors.black54)),
+                                    Text('Placed: ${_formatDateTime(createdDate)}', style: const TextStyle(fontSize: 13)),
                                   ],
                                 ),
                               ),
@@ -360,10 +360,34 @@ class _OrderListPageState extends State<OrderListPage> {
                             ],
                           ),
                           const SizedBox(height: 12),
-                          // Short summary line for address / first item
+                          // Short summary: service type, address, scheduled date, and assigned worker
+                          Text('Service: ${o.items.isNotEmpty ? o.items.first.serviceName : 'Service'}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 6),
                           Text('To: ${(o.addressSnapshot['name'] ?? o.addressSnapshot['address'] ?? 'Address')}', style: const TextStyle(fontSize: 14)),
                           const SizedBox(height: 6),
-                          Text('Items: ${o.items.length} • Subtotal: ₹${o.subtotal.toStringAsFixed(2)}', style: const TextStyle(color: Colors.black54)),
+                          // scheduled date (defensive)
+                          Builder(builder: (ctx) {
+                            DateTime? sched;
+                            try {
+                              final dynamic sval = o.scheduledAt;
+                              if (sval is DateTime) sched = sval;
+                              else if (sval is String) sched = DateTime.parse(sval);
+                              else if (sval is int) sched = DateTime.fromMillisecondsSinceEpoch(sval);
+                              else if (sval != null) sched = (sval as dynamic).toDate() as DateTime;
+                            } catch (_) {
+                              sched = null;
+                            }
+                            if (sched != null) {
+                              final two = (int n) => n.toString().padLeft(2, '0');
+                              final s = '${two(sched.day)}-${two(sched.month)}-${sched.year}';
+                              return Text('Scheduled: $s • Work hours: 09:00 - 18:00', style: const TextStyle());
+                            }
+                            return const SizedBox.shrink();
+                          }),
+                          const SizedBox(height: 6),
+                          // Text('Assigned: ${o.workerId != null && o.workerId!.isNotEmpty ? o.workerId! : '—'}', style: const TextStyle()),
+                          // const SizedBox(height: 6),
+                          Text('Items: ${o.items.length} • Subtotal: ₹${o.subtotal.toStringAsFixed(2)}', style: const TextStyle()),
                           const SizedBox(height: 12),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
@@ -554,7 +578,32 @@ class _OrderListPageState extends State<OrderListPage> {
                             ],
                           ),
                           const SizedBox(height: 12),
+                          // Short summary: service type, address, scheduled date, and assigned worker
+                          Text('Service: ${o.items.isNotEmpty ? o.items.first.serviceName : 'Service'}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 6),
                           Text('To: ${(o.addressSnapshot['name'] ?? o.addressSnapshot['address'] ?? 'Address')}', style: const TextStyle(fontSize: 14)),
+                          const SizedBox(height: 6),
+                          // scheduled date (defensive)
+                          Builder(builder: (ctx) {
+                            DateTime? sched;
+                            try {
+                              final dynamic sval = o.scheduledAt;
+                              if (sval is DateTime) sched = sval;
+                              else if (sval is String) sched = DateTime.parse(sval);
+                              else if (sval is int) sched = DateTime.fromMillisecondsSinceEpoch(sval);
+                              else if (sval != null) sched = (sval as dynamic).toDate() as DateTime;
+                            } catch (_) {
+                              sched = null;
+                            }
+                            if (sched != null) {
+                              final two = (int n) => n.toString().padLeft(2, '0');
+                              final s = '${two(sched.day)}-${two(sched.month)}-${sched.year}';
+                              return Text('Scheduled: $s • Work hours: 09:00 - 18:00', style: const TextStyle(color: Colors.black54));
+                            }
+                            return const SizedBox.shrink();
+                          }),
+                          const SizedBox(height: 6),
+                          Text('Assigned: ${o.workerId != null && o.workerId!.isNotEmpty ? o.workerId! : '—'}', style: const TextStyle(color: Colors.black54)),
                           const SizedBox(height: 6),
                           Text('Items: ${o.items.length} • Subtotal: ₹${o.subtotal.toStringAsFixed(2)}', style: const TextStyle(color: Colors.black54)),
                           const SizedBox(height: 12),
@@ -563,6 +612,7 @@ class _OrderListPageState extends State<OrderListPage> {
                             children: [
                               TextButton(
                                 onPressed: () {
+                                  // Local 'Check' action: show confirmation and mark visually (no backend change)
                                   showDialog(
                                     context: context,
                                     builder: (ctx) => AlertDialog(
@@ -586,9 +636,11 @@ class _OrderListPageState extends State<OrderListPage> {
                               const SizedBox(width: 8),
                               ElevatedButton(
                                 onPressed: () async {
+                                  // Navigate to a full details page
                                   try {
                                     GoRouter.of(context).push('/orders/details', extra: o);
                                   } catch (_) {
+                                    // Fallback: push named route if available
                                     Navigator.of(context).push(MaterialPageRoute(builder: (c) => OrderDetailsPage(order: o)));
                                   }
                                 },
@@ -605,7 +657,7 @@ class _OrderListPageState extends State<OrderListPage> {
             );
           },
         ),
-      ));
+      ),
+    );
     }
   }
-

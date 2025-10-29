@@ -4,7 +4,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../../../../../../core/models/order_model.dart';
-import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
+import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart'
+as user_orders_repo;
 
 class OrderDetailsPage extends StatefulWidget {
   final OrderModel order;
@@ -24,6 +25,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   String? _workerName;
   String? _workerPhone;
 
+  // --- Date Formatting (Unchanged) ---
   String _formatDateTime(DateTime dt) {
     final d = dt.toLocal();
     final two = (int n) => n.toString().padLeft(2, '0');
@@ -39,28 +41,30 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   @override
   void initState() {
     super.initState();
-    // initialize selected rating from existing order rating (if present)
     _selectedRating = widget.order.serviceRating;
     _selectedWorkerRating = widget.order.workerRating;
     _order = widget.order;
-    // Load worker profile if workerId is present
-    if (_order.workerId != null && _order.workerId!.isNotEmpty) _loadWorkerProfile(_order.workerId!);
+    if (_order.workerId != null && _order.workerId!.isNotEmpty) {
+      _loadWorkerProfile(_order.workerId!);
+    }
   }
 
-  /// Try to fetch an existing rating document for this order and user so we
-  /// can prefill the review text and rating when editing. This uses a
-  /// collectionGroup query on 'ratings' which searches under both
-  /// services/*/ratings and workers/*/ratings.
+  // --- All Logic Methods (Unchanged) ---
+  // _prefillExistingReview, dispose, _submitRating,
+  // _buildStarRating, _buildWorkerStarRating, _loadWorkerProfile
+
   Future<void> _prefillExistingReview() async {
     try {
-      final cg = FirebaseFirestore.instance.collectionGroup('ratings')
+      final cg = FirebaseFirestore.instance
+          .collectionGroup('ratings')
           .where('orderId', isEqualTo: _order.id)
           .where('userId', isEqualTo: _order.userId)
           .limit(1);
       final snap = await cg.get();
       if (snap.docs.isNotEmpty) {
         final d = snap.docs.first.data();
-        final comment = (d['review'] as String?) ?? (d['comment'] as String?) ?? '';
+        final comment =
+            (d['review'] as String?) ?? (d['comment'] as String?) ?? '';
         final ratingVal = (d['rating'] as num?)?.toDouble();
         setState(() {
           _reviewController.text = comment;
@@ -73,7 +77,6 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
       }
     } catch (e) {
       debugPrint('[OrderDetailsPage] _prefillExistingReview failed: $e');
-      // best-effort – leave controller empty
     }
   }
 
@@ -88,25 +91,31 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     setState(() => _isSubmitting = true);
     try {
       final repo = context.read<user_orders_repo.OrderRepository>();
-      final success = await repo.submitRatingForOrder(order: _order, serviceRating: _selectedRating!, workerRating: _selectedWorkerRating, review: _reviewController.text.trim());
+      final success = await repo.submitRatingForOrder(
+          order: _order,
+          serviceRating: _selectedRating!,
+          workerRating: _selectedWorkerRating,
+          review: _reviewController.text.trim());
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Thanks! Your rating has been submitted.')));
-        // update local widget.order reference by setting state - rebuild with rating
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Thanks! Your rating has been submitted.')));
         setState(() {
-          // update local copy so UI reflects the submitted ratings
-          _order = _order.copyWith(serviceRating: _selectedRating, workerRating: _selectedWorkerRating);
+          _order = _order.copyWith(
+              serviceRating: _selectedRating,
+              workerRating: _selectedWorkerRating);
+          _isEditingRating = false; // Exit edit mode
         });
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to submit rating. Try again.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to submit rating. Try again.')));
       }
     } catch (e) {
       String msg = 'Error submitting rating. Please try again.';
-      // Detect Cloud Functions specific errors to give actionable guidance
       if (e is FirebaseFunctionsException) {
         if (e.code == 'not-found') {
-          msg = 'Rating service not available: backend function missing. Please deploy Cloud Functions.';
+          msg = 'Rating service not available. Please deploy Cloud Functions.';
         } else if (e.code == 'permission-denied') {
-          msg = 'Permission denied while submitting rating. Check Firestore rules and authentication.';
+          msg = 'Permission denied while submitting rating.';
         } else if (e.code == 'already-exists') {
           msg = 'This order already has a rating.';
         } else if (e.message != null && e.message!.isNotEmpty) {
@@ -124,12 +133,14 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   Widget _buildStarRating() {
     final current = _selectedRating ?? 0.0;
     return Row(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(5, (i) {
         final starIndex = i + 1;
         final filled = current >= starIndex;
         return IconButton(
-          icon: Icon(filled ? Icons.star : Icons.star_border, color: Colors.amber),
+          iconSize: 32,
+          icon: Icon(filled ? Icons.star : Icons.star_border,
+              color: Colors.amber),
           onPressed: () {
             setState(() => _selectedRating = starIndex.toDouble());
           },
@@ -141,12 +152,14 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   Widget _buildWorkerStarRating() {
     final current = _selectedWorkerRating ?? 0.0;
     return Row(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(5, (i) {
         final starIndex = i + 1;
         final filled = current >= starIndex;
         return IconButton(
-          icon: Icon(filled ? Icons.person : Icons.person_outline, color: Colors.amber),
+          iconSize: 32,
+          icon: Icon(filled ? Icons.person : Icons.person_outline,
+              color: Colors.amber),
           onPressed: () {
             setState(() => _selectedWorkerRating = starIndex.toDouble());
           },
@@ -157,24 +170,31 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
 
   Future<void> _loadWorkerProfile(String workerId) async {
     try {
-      // Prefer workers/{workerId} since public worker profiles are allowed in rules
-      final wdoc = await FirebaseFirestore.instance.collection('workers').doc(workerId).get();
+      final wdoc =
+      await FirebaseFirestore.instance.collection('workers').doc(workerId).get();
       if (wdoc.exists) {
         final wdata = wdoc.data() ?? {};
         setState(() {
-          _workerName = (wdata['name'] as String?) ?? (wdata['workerName'] as String?) ?? 'Worker';
-          _workerPhone = (wdata['phoneNumber'] as String?) ?? (wdata['phone'] as String?) ?? '';
+          _workerName = (wdata['name'] as String?) ??
+              (wdata['workerName'] as String?) ??
+              'Worker';
+          _workerPhone = (wdata['phoneNumber'] as String?) ??
+              (wdata['phone'] as String?) ??
+              '';
         });
         return;
       }
-
-      // Fallback to users/{workerId} if workers doc not present
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(workerId).get();
+      final userDoc =
+      await FirebaseFirestore.instance.collection('users').doc(workerId).get();
       if (userDoc.exists) {
         final data = userDoc.data() ?? {};
         setState(() {
-          _workerName = (data['name'] as String?) ?? (data['displayName'] as String?) ?? 'Worker';
-          _workerPhone = (data['phoneNumber'] as String?) ?? (data['phone'] as String?) ?? '';
+          _workerName = (data['name'] as String?) ??
+              (data['displayName'] as String?) ??
+              'Worker';
+          _workerPhone = (data['phoneNumber'] as String?) ??
+              (data['phone'] as String?) ??
+              '';
         });
       }
     } catch (e) {
@@ -182,9 +202,442 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     }
   }
 
+  // --- NEW: UI Helper Widgets ---
+
+  /// Builds a standard section header
+  Widget _buildSectionHeader(String title, {IconData? icon}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 24, 0, 12),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+          ],
+          Text(
+            title,
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Groups statuses for the timeline
+  OrderStatus _getCanonicalStatus(OrderStatus status) {
+    switch (status) {
+      case OrderStatus.on_my_way:
+      case OrderStatus.arrived:
+        return OrderStatus.assigned;
+      default:
+        return status;
+    }
+  }
+
+  /// Gets the current step index for the timeline
+  int _getStepIndex(OrderStatus status) {
+    final canonicalStatus = _getCanonicalStatus(status);
+    switch (canonicalStatus) {
+      case OrderStatus.pending:
+        return 0;
+      case OrderStatus.assigned:
+        return 1;
+      case OrderStatus.in_progress:
+        return 2;
+      case OrderStatus.completed:
+        return 3;
+      default:
+        if (status == OrderStatus.cancelled) return -1; // Cancelled
+        return 0;
+    }
+  }
+
+  /// **NEW:** Builds the order status timeline
+  Widget _buildStatusTimeline(OrderStatus currentStatus) {
+    final int currentStep = _getStepIndex(currentStatus);
+    if (currentStep == -1) {
+      // Special case for cancelled orders
+      return Card(
+        color: Colors.red[50],
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.cancel, color: Colors.red[700]),
+              const SizedBox(width: 12),
+              Text(
+                'Order Cancelled',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(color: Colors.red[700]),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final statuses = ['Pending', 'Assigned', 'In Progress', 'Completed'];
+    final icons = [
+      Icons.schedule,
+      Icons.person_pin,
+      Icons.construction,
+      Icons.check_circle
+    ];
+
+    // Build a list of widgets: step, divider, step, divider, ...
+    final List<Widget> children = [];
+    for (var i = 0; i < statuses.length; i++) {
+      final bool isActive = i == currentStep;
+      final bool isCompleted = i < currentStep;
+      final color = isCompleted || isActive
+          ? Theme.of(context).colorScheme.primary
+          : Colors.grey[400];
+
+      children.add(
+        Expanded(
+          child: Column(
+            children: [
+              Icon(icons[i], color: color),
+              const SizedBox(height: 4),
+              Text(
+                statuses[i],
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: color,
+                      fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // Add divider between steps
+      if (i < statuses.length - 1) {
+        children.add(
+          SizedBox(
+            width: 24,
+            child: Center(
+              child: Container(
+                height: 2,
+                color: i < currentStep ? Theme.of(context).colorScheme.primary : Colors.grey[300],
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20.0, horizontal: 8.0),
+        child: Row(children: children),
+      ),
+    );
+  }
+
+  /// **NEW:** Builds the main summary card
+  Widget _buildSummaryCard(
+      OrderModel order, DateTime createdDate, ThemeData theme) {
+    final orderId = order.orderNumber.isNotEmpty ? order.orderNumber : order.id;
+
+    return Card(
+      elevation: 2.0,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Order ID:',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: SelectableText(
+                        orderId,
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontFamily: 'monospace'),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: orderId));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Copied: $orderId')));
+                      },
+                      child: Icon(Icons.copy,
+                          size: 18, color: theme.colorScheme.primary),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Text(
+                      'Total: ',
+                      style: theme.textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      '₹${order.total.toStringAsFixed(2)}',
+                      style: theme.textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Text(
+                      'Placed: ${_formatDateTime(createdDate)}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: Icon(
+              order.paymentStatus == PaymentStatus.paid
+                  ? Icons.check_circle
+                  : Icons.pending,
+              color: order.paymentStatus == PaymentStatus.paid
+                  ? Colors.green
+                  : Colors.orange,
+            ),
+            title: const Text('Payment Status'),
+            trailing: Text(
+              order.paymentStatus.name.toUpperCase(),
+              style: theme.textTheme.bodyLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// **NEW:** Builds the delivery and items card
+  Widget _buildDeliveryItemsCard(
+      OrderModel order, DateTime? scheduledDate, ThemeData theme) {
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Service Address', style: theme.textTheme.titleMedium),
+                // const SizedBox(height: 8),
+                Text(
+                  order.addressSnapshot['name'] ?? '',
+                  style: theme.textTheme.bodyLarge
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                // const SizedBox(height: 4),
+                Text(
+                  order.addressSnapshot['address'] ??
+                      order.addressSnapshot['line1'] ??
+                      'Not provided',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 8),
+                if ((order.addressSnapshot['phone'] ??
+                    order.addressSnapshot['phoneNumber']) !=
+                    null)
+                  Text(
+                    'Phone: ${(order.addressSnapshot['phone'] ?? order.addressSnapshot['phoneNumber']).toString()}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                if (scheduledDate != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Scheduled: ${_formatDateOnly(scheduledDate)} (09:00 - 18:00)',
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: theme.colorScheme.primary),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text('Items', style: theme.textTheme.titleMedium),
+          ),
+          ...order.items.map((it) => ListTile(
+            title: Text(it.serviceName),
+            subtitle: Text('Qty: ${it.quantity}'),
+            trailing: Text(
+              '₹${(it.unitPrice * it.quantity).toStringAsFixed(2)}',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          )),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('Subtotal: ₹${order.subtotal.toStringAsFixed(2)}',
+                      style: theme.textTheme.bodySmall),
+                  if ((order.total - order.subtotal) > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                        'Fees/Taxes: ₹${(order.total - order.subtotal).toStringAsFixed(2)}',
+                        style: theme.textTheme.bodySmall),
+                  ],
+                  const SizedBox(height: 8),
+                  Text('Total: ₹${order.total.toStringAsFixed(2)}',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// **NEW:** Builds the worker card
+  Widget _buildWorkerCard(ThemeData theme) {
+    return Card(
+      child: ListTile(
+        leading: CircleAvatar(
+          child: Icon(Icons.person, color: theme.colorScheme.onPrimary),
+          backgroundColor: theme.colorScheme.primary,
+        ),
+        title: Text(_workerName ?? 'Worker'),
+        subtitle: Text(
+            (_workerPhone ?? '').isNotEmpty ? _workerPhone! : 'Phone not available'),
+        trailing: (_workerPhone ?? '').isNotEmpty
+            ? IconButton(
+          icon: const Icon(Icons.copy, size: 20),
+          tooltip: 'Copy phone',
+          onPressed: () {
+            final phoneToCopy = _workerPhone ?? '';
+            Clipboard.setData(ClipboardData(text: phoneToCopy));
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text('Copied: $phoneToCopy')));
+          },
+        )
+            : null,
+      ),
+    );
+  }
+
+  /// **NEW:** Builds the rating card
+  Widget _buildRatingCard(OrderModel order, ThemeData theme) {
+    // Case 1: Already rated, not in edit mode
+    if (order.serviceRating != null && !_isEditingRating) {
+      return Card(
+        child: ListTile(
+          leading: const Icon(Icons.star, color: Colors.amber),
+          title: const Text('Your Rating'),
+          subtitle: Text('Service: ${order.serviceRating!.toStringAsFixed(1)} stars'),
+          trailing: TextButton(
+            child: const Text('Edit'),
+            onPressed: () async {
+              setState(() {
+                _isEditingRating = true;
+                _selectedRating = order.serviceRating;
+                _selectedWorkerRating = order.workerRating;
+              });
+              await _prefillExistingReview();
+            },
+          ),
+        ),
+      );
+    }
+
+    // Case 2: Not rated yet, or in edit mode
+    return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              Text('Rate this service', style: theme.textTheme.titleMedium),
+              _buildStarRating(),
+              if (order.workerId != null) ...[
+                const SizedBox(height: 12),
+                Text('Rate the worker (optional)',
+                    style: theme.textTheme.titleMedium),
+                _buildWorkerStarRating(),
+              ],
+              const SizedBox(height: 16),
+              TextField(
+                controller: _reviewController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Write a short review (optional)',
+                  filled: true,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  if (_isEditingRating) ...[
+                    Expanded(
+                      child: TextButton(
+                        child: const Text('Cancel'),
+                        onPressed: () {
+                          setState(() {
+                            _isEditingRating = false;
+                            _selectedRating = order.serviceRating;
+                            _selectedWorkerRating = order.workerRating;
+                            _reviewController.text = '';
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isSubmitting || _selectedRating == null
+                          ? null
+                          : _submitRating,
+                      child: _isSubmitting
+                          ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Submit Rating'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ));
+  }
+
+  // --- Main Build Method (Refactored) ---
+
   @override
   Widget build(BuildContext context) {
     final order = _order;
+    final theme = Theme.of(context);
+
+    // --- Date Parsing (Unchanged) ---
     DateTime createdDate;
     try {
       final dynamic val = order.createdAt;
@@ -194,16 +647,12 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         createdDate = DateTime.parse(val);
       } else if (val is int) {
         createdDate = DateTime.fromMillisecondsSinceEpoch(val);
-      } else if (val != null) {
-        createdDate = (val as dynamic).toDate() as DateTime;
       } else {
-        createdDate = DateTime.now();
+        createdDate = (val as dynamic).toDate() as DateTime;
       }
     } catch (_) {
       createdDate = DateTime.now();
     }
-
-    // Determine scheduled date if available (OrderModel.scheduledAt is usually a Timestamp)
     DateTime? scheduledDate;
     try {
       final dynamic sval = order.scheduledAt;
@@ -214,237 +663,52 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     } catch (_) {
       scheduledDate = null;
     }
+    // --- End Date Parsing ---
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Order Details'),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text('Order • ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                Flexible(
-                  child: SelectableText(
-                    order.orderNumber.isNotEmpty ? order.orderNumber : order.id,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
-                    maxLines: 1,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.copy),
-                  tooltip: 'Copy order number',
-                  onPressed: () {
-                    final txt = order.orderNumber.isNotEmpty ? order.orderNumber : order.id;
-                    Clipboard.setData(ClipboardData(text: txt));
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Copied: $txt')));
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text('Placed: ${_formatDateTime(createdDate)}', style: const TextStyle(color: Colors.black54)),
-            if (scheduledDate != null) const SizedBox(height: 6),
-            if (scheduledDate != null) Text('Scheduled: ${_formatDateOnly(scheduledDate)} • Work hours: 09:00 - 18:00', style: const TextStyle(color: Colors.black54)),
-            if (order.appointmentId != null) const SizedBox(height: 6),
-            if (order.appointmentId != null) Text('Appointment ID: ${order.appointmentId}', style: const TextStyle(color: Colors.black54)),
-            const SizedBox(height: 16),
+      body: ListView(
+        padding: const EdgeInsets.all(12.0),
+        children: [
+          // 1. Order Summary Card
+          _buildSummaryCard(order, createdDate, theme),
 
-            // Status and payment
-            Row(
-              children: [
-                Chip(label: Text(order.orderStatus.name.replaceAll('_', ' ').toUpperCase(), style: const TextStyle(color: Colors.white))),
-                const SizedBox(width: 8),
-                Chip(label: Text(order.paymentStatus.name.toUpperCase(), style: const TextStyle(color: Colors.white))),
-                const Spacer(),
-                Text('Total: ₹${order.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              ],
-            ),
+          // 2. Order Status Timeline
+          _buildSectionHeader('Order Status'),
+          _buildStatusTimeline(order.orderStatus),
 
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 8),
+          // 3. Delivery & Items Card
+          _buildSectionHeader('Service Details', icon: Icons.inventory_2_outlined),
+          _buildDeliveryItemsCard(order, scheduledDate, theme),
 
-            // Address
-            Text('Delivery address', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(order.addressSnapshot['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Text(order.addressSnapshot['address'] ?? order.addressSnapshot['line1'] ?? 'Not provided'),
-            const SizedBox(height: 8),
-            if ((order.addressSnapshot['phone'] ?? order.addressSnapshot['phoneNumber']) != null)
-              Text('Phone: ${(order.addressSnapshot['phone'] ?? order.addressSnapshot['phoneNumber']).toString()}'),
-
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 8),
-
-            // Items
-            Text('Items', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            ...order.items.map((it) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6.0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: Text('${it.serviceName}', style: const TextStyle(fontSize: 15))),
-                      Text('× ${it.quantity}', style: const TextStyle(color: Colors.black54)),
-                      const SizedBox(width: 12),
-                      Text('₹${(it.unitPrice * it.quantity).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                )),
-
-            const SizedBox(height: 12),
-            const Divider(),
-            const SizedBox(height: 8),
-
-            // Price summary
-            Align(
-              alignment: Alignment.centerRight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text('Subtotal: ₹${order.subtotal.toStringAsFixed(2)}'),
-                  const SizedBox(height: 6),
-                  if ((order.total - order.subtotal) > 0)
-                    Text('Fees/Taxes: ₹${(order.total - order.subtotal).toStringAsFixed(2)}'),
-                  const SizedBox(height: 8),
-                  Text('Total: ₹${order.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Assigned worker contact (show when an assigned worker exists and order is assigned/ongoing/completed)
-            if (order.workerId != null && (order.orderStatus == OrderStatus.assigned || order.orderStatus == OrderStatus.on_my_way || order.orderStatus == OrderStatus.arrived || order.orderStatus == OrderStatus.in_progress || order.orderStatus == OrderStatus.completed)) ...[
-              const Divider(),
-              const SizedBox(height: 12),
-              Text('Assigned worker', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Text(_workerName ?? 'Worker', style: const TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              if ((_workerPhone ?? '').isNotEmpty)
-                Row(
-                  children: [
-                    Text('Phone: ${_workerPhone!}', style: const TextStyle(color: Colors.black54)),
-                    const SizedBox(width: 12),
-                    IconButton(
-                      icon: const Icon(Icons.copy, size: 18),
-                      tooltip: 'Copy phone',
-                      onPressed: () {
-                        final phoneToCopy = _workerPhone ?? '';
-                        Clipboard.setData(ClipboardData(text: phoneToCopy));
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Copied: $phoneToCopy')));
-                      },
-                    ),
-                  ],
-                ),
-              const SizedBox(height: 12),
-            ],
-
-            // Rating section: show when order is completed
-            if (order.orderStatus == OrderStatus.completed) ...[
-               const Divider(),
-               const SizedBox(height: 12),
-               Text('Rate your service', style: Theme.of(context).textTheme.titleMedium),
-               const SizedBox(height: 8),
-               // If a rating exists and we're not in edit mode: show rating summary + Edit button
-               if (order.serviceRating != null && !_isEditingRating) ...[
-                 Row(
-                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                   children: [
-                     Expanded(
-                       child: Row(
-                         children: [
-                           Text('Service rating: ', style: const TextStyle(fontWeight: FontWeight.w600)),
-                           Text(order.serviceRating!.toStringAsFixed(1), style: const TextStyle(color: Colors.black54)),
-                           const SizedBox(width: 8),
-                           Row(children: List.generate(order.serviceRating!.round(), (i) => const Icon(Icons.star, color: Colors.amber, size: 20))),
-                         ],
-                       ),
-                     ),
-                     TextButton.icon(
-                       onPressed: () async {
-                         // Enter edit mode and prefill existing review/rating if any
-                         setState(() { _isEditingRating = true; _selectedRating = order.serviceRating; _selectedWorkerRating = order.workerRating; });
-                         await _prefillExistingReview();
-                       },
-                        icon: const Icon(Icons.edit, size: 18),
-                        label: const Text('Edit'),
-                      ),
-                   ],
-                 ),
-                 const SizedBox(height: 12),
-               ] else ...[
-                 // Editing mode or no prior rating: show inputs
-                 // Primary: service rating (most important)
-                 _buildStarRating(),
-                 const SizedBox(height: 8),
-                 // Optional: worker rating (secondary)
-                 if (order.workerId != null) ...[
-                   const Text('Rate the worker (optional)', style: TextStyle(fontWeight: FontWeight.w600)),
-                   _buildWorkerStarRating(),
-                   const SizedBox(height: 8),
-                 ],
-                 TextField(
-                   controller: _reviewController,
-                   maxLines: 3,
-                   decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Write a short review (optional)'),
-                 ),
-                 const SizedBox(height: 8),
-                 Row(
-                   children: [
-                     Expanded(
-                       child: OutlinedButton(
-                         onPressed: _isSubmitting || _selectedRating == null ? null : () async {
-                           await _submitRating();
-                           // Exit edit mode on success
-                           if (mounted) setState(() => _isEditingRating = false);
-                         },
-                         child: _isSubmitting ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Submit rating'),
-                       ),
-                     ),
-                     const SizedBox(width: 12),
-                     Expanded(
-                       child: ElevatedButton(
-                         onPressed: () {
-                           if (_isEditingRating) {
-                             // Cancel editing and restore displayed values
-                             setState(() {
-                               _isEditingRating = false;
-                               _selectedRating = order.serviceRating;
-                               _selectedWorkerRating = order.workerRating;
-                               _reviewController.text = '';
-                             });
-                           } else {
-                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contacting support...')));
-                           }
-                         },
-                         child: Text(_isEditingRating ? 'Cancel' : 'Contact support'),
-                       ),
-                     ),
-                   ],
-                 ),
-                 const SizedBox(height: 12),
-               ],
-             ],
-
-            const SizedBox(height: 8),
-
-            // Metadata
-            Text('Order ID: ${order.id}', style: const TextStyle(color: Colors.black54)),
-            const SizedBox(height: 6),
-            Text('User: ${order.userId}', style: const TextStyle(color: Colors.black54)),
-
-            const SizedBox(height: 24),
+          // 4. Assigned Worker Card
+          if (order.workerId != null &&
+              (order.orderStatus == OrderStatus.assigned ||
+                  order.orderStatus == OrderStatus.on_my_way ||
+                  order.orderStatus == OrderStatus.arrived ||
+                  order.orderStatus == OrderStatus.in_progress ||
+                  order.orderStatus == OrderStatus.completed)) ...[
+            _buildSectionHeader('Assigned Worker', icon: Icons.person_outline),
+            _buildWorkerCard(theme),
           ],
-        ),
+
+          // 5. Rating Card
+          if (order.orderStatus == OrderStatus.completed) ...[
+            _buildSectionHeader('Feedback', icon: Icons.reviews_outlined),
+            _buildRatingCard(order, theme),
+          ],
+
+          // 6. Metadata (for debug)
+          const SizedBox(height: 24),
+          Text(
+            'Order ID: ${order.id}\nUser: ${order.userId}',
+            style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[500]),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+        ],
       ),
     );
   }

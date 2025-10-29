@@ -45,18 +45,25 @@ service cloud.firestore {
       // Allow if the field is not being written, or the client is explicitly setting it to
       // the server timestamp (request.time), or the client is leaving the existing value
       // unchanged during an update. This permits updates that don't modify createdAt/updatedAt.
+      // Guard resource access in case this is a create and `resource` is null.
+      // For creates (resource == null) accept either omission or a timestamp value
+      // (many clients may set a local timestamp); for updates require equality to
+      // request.time or unchanged value to avoid client overwrites.
       return !(fieldName in request.resource.data)
              || request.resource.data[fieldName] == request.time
-             || (resource.data[fieldName] == request.resource.data[fieldName]);
+             || (resource != null && resource.data[fieldName] == request.resource.data[fieldName])
+             || (resource == null && (request.resource.data[fieldName] is timestamp));
     }
 
     function noServerFields() {
       // For server-managed fields, allow the request when the client is not including
       // them, or when they are left unchanged (equal to the existing resource value).
+      // Permit clients to set certain server fields on create (when resource == null),
+      // e.g. `orderNumber` is often created client-side after reserving a counter.
       return (
-        ( !('orderNumber' in request.resource.data) || request.resource.data.orderNumber == resource.data.orderNumber )
-        && ( !('assignmentHistory' in request.resource.data) || request.resource.data.assignmentHistory == resource.data.assignmentHistory )
-        && ( !('paymentRef' in request.resource.data) || request.resource.data.paymentRef == resource.data.paymentRef )
+        ( !('orderNumber' in request.resource.data) || resource == null || request.resource.data.orderNumber == resource.data.orderNumber )
+        && ( !('assignmentHistory' in request.resource.data) || resource == null || request.resource.data.assignmentHistory == resource.data.assignmentHistory )
+        && ( !('paymentRef' in request.resource.data) || resource == null || request.resource.data.paymentRef == resource.data.paymentRef )
         && allowedServerTimestamp('createdAt')
         && allowedServerTimestamp('updatedAt')
       );

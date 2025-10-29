@@ -29,6 +29,7 @@ class WorkerTasksBloc extends Bloc<WorkerTasksEvent, WorkerTasksState> {
     on<LoadWorkerOrders>(_onLoad);
     on<RefreshWorkerOrders>(_onRefresh);
     on<UpdateOrderStatus>(_onUpdateStatus);
+    on<UpdatePaymentStatus>(_onUpdatePayment);
     // Internal event to receive stream updates
     on<_WorkerOrdersUpdated>(_onStreamUpdated);
   }
@@ -75,6 +76,18 @@ class WorkerTasksBloc extends Bloc<WorkerTasksEvent, WorkerTasksState> {
       await orderRepository.updateOrder(updated);
       emit(WorkerTasksUpdateSuccess());
       // No need to manually reload — stream will emit the updated list when backend writes are committed.
+    } catch (e) {
+      emit(WorkerTasksUpdateFailure(e.toString()));
+    }
+  }
+
+  // Handler to update the payment status of an order
+  Future<void> _onUpdatePayment(UpdatePaymentStatus event, Emitter<WorkerTasksState> emit) async {
+    emit(WorkerTasksUpdating());
+    try {
+      final updated = event.order.copyWith(paymentStatus: event.newStatus);
+      await orderRepository.updateOrder(updated);
+      emit(WorkerTasksUpdateSuccess());
     } catch (e) {
       emit(WorkerTasksUpdateFailure(e.toString()));
     }

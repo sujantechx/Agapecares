@@ -32,3 +32,13 @@ class UpdateOrderStatus extends WorkerTasksEvent {
   List<Object?> get props => [order, newStatus];
 }
 
+/// Ask the worker bloc to update an order's payment status.
+class UpdatePaymentStatus extends WorkerTasksEvent {
+  final OrderModel order;
+  final PaymentStatus newStatus;
+
+  const UpdatePaymentStatus({required this.order, required this.newStatus});
+
+  @override
+  List<Object?> get props => [order, newStatus];
+}

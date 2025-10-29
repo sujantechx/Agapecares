@@ -1,3 +1,4 @@
+// filepath: lib/features/worker_app/presentation/pages/worker_home_page.dart
 import 'package:flutter/material.dart';
 import 'package:agapecares/core/models/user_model.dart';
 
@@ -14,7 +15,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'package:agapecares/app/routes/app_routes.dart';
 
+// Import the new drawer
+import 'package:agapecares/features/worker_app/presentation/widgets/worker_drawer.dart';
+
 import '../../../../core/models/service_model.dart';
+
+// New import for JobCard
+import '../widgets/job_card.dart';
 
 class WorkerHomePage extends StatefulWidget {
   const WorkerHomePage({Key? key}) : super(key: key);
@@ -27,7 +34,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
   UserModel? _profile;
   bool _loading = true;
   int _assignedCount = 0;
-  int _incomingCount = 0;
+  int _incomingCount = 0; // This is your "pending" count
   int _completedCount = 0;
 
   // Services list (populated by _subscribeServices). Keep for future UI — suppress unused-field lint for now.
@@ -43,6 +50,9 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
 
   // Track per-job update in-flight states so we can show per-card loading indicators
   final Set<String> _updatingJobIds = <String>{};
+
+  // Availability toggle state
+  bool _isAvailable = true;
 
   @override
   void initState() {
@@ -65,7 +75,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
         if (sUser != null && sUser.role == UserRole.worker && sUser.uid.isNotEmpty) {
           resolvedWorkerId = sUser.uid;
         }
-        if (sUser != null && sUser.phoneNumber != null && sUser.phoneNumber!.isNotEmpty) resolvedPhone = sUser.phoneNumber;
+        if (sUser != null && sUser.phoneNumber != null && sUser.phoneNumber!.isNotEmpty) resolvedPhone = sUser.phoneNumber!;
       } catch (_) {}
 
       final fbUser = FirebaseAuth.instance.currentUser;
@@ -345,8 +355,9 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
 
       // Ensure repoJobs (JobModel) are included if repository returned items not present in combined set
       for (final j in repoJobs) {
-        if (j.id != null && j.id!.isNotEmpty && !combined.containsKey(j.id)) {
-          combined[j.id!] = {
+        // JobModel.id is non-nullable; check emptiness only
+        if (j.id.isNotEmpty && !combined.containsKey(j.id)) {
+          combined[j.id] = {
             'status': j.status,
             'remoteId': j.id,
             '__source_doc_id': j.id,
@@ -356,8 +367,8 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
 
       // Normalize statuses and compute counts
       int completed = 0;
-      int incoming = 0;
-      int assigned = 0;
+      int incoming = 0; // This is "Pending"
+      int assigned = 0; // This is "Active/In-Progress"
 
       for (final entry in combined.values) {
         String raw = '';
@@ -370,12 +381,15 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
         }
         final status = raw.trim().toLowerCase();
 
+        // --- THIS IS THE CALCULATION LOGIC ---
         if (status.contains('complete')) {
           completed++;
         } else if (status.contains('pending') || status.contains('incoming') || status == 'awaiting') {
+          // "incoming" count IS the "pending" count
           incoming++;
         } else {
           // anything else treat as assigned/active
+          // (e.g., 'accepted', 'on_my_way', 'arrived', 'in_progress', 'paused')
           assigned++;
         }
       }
@@ -481,6 +495,9 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
         ],
       ),
 
+      // --- ADDED DRAWER ---
+      drawer: const WorkerDrawer(),
+
       // Add FloatingActionButton (create service)
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -499,216 +516,198 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Header: Greeting + status + availability toggle
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      CircleAvatar(
-                        radius: 34,
-                        child: Text(
-                          // compute initials safely without force-unwrapping
-                          (() {
-                            final name = _profile?.name ?? '';
-                            if (name.isNotEmpty) {
-                              return name.split(' ').where((e) => e.isNotEmpty).map((e) => e[0]).join();
-                            }
-                            return 'W';
-                          })(),
-                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      Row(
                         children: [
-                          Text(
-                            _profile?.name ?? 'Worker',
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          CircleAvatar(
+                            radius: 28,
+                            child: Text(
+                              (() {
+                                final name = _profile?.name ?? '';
+                                if (name.isNotEmpty) {
+                                  return name.split(' ').where((e) => e.isNotEmpty).map((e) => e[0]).join();
+                                }
+                                return 'W';
+                              })(),
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
                           ),
-                          const SizedBox(height: 4),
-                          // compute email display safely to avoid analyzer null-coalescing warnings
-                          Text((() {
-                            final e = _profile?.email;
-                            if (e != null && e.isNotEmpty) return e;
-                            return 'No email available';
-                          })()),
-                          const SizedBox(height: 2),
-                          Text(_profile?.phoneNumber ?? ''),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Good ${_greeting()}, ${_profile?.name ?? 'Worker'}!', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(_isAvailable ? Icons.circle : Icons.circle, color: _isAvailable ? Colors.green : Colors.red, size: 12),
+                                  const SizedBox(width: 6),
+                                  Text(_isAvailable ? '🟢 Online' : '🔴 Offline', style: const TextStyle(fontSize: 12)),
+                                ],
+                              ),
+                            ],
+                          ),
                         ],
-                      )
+                      ),
+
+                      // Availability Toggle
+                      Column(
+                        children: [
+                          const Text('Available for new jobs', style: TextStyle(fontSize: 12)),
+                          Switch(
+                            value: _isAvailable,
+                            onChanged: (v) {
+                              setState(() => _isAvailable = v);
+                              // TODO: persist availability to backend (low-risk, deferred)
+                            },
+                          ),
+                        ],
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  /// assigned, incoming, completed counts
-                  InkWell(
-                    onTap: () {
-                      try {
-                        GoRouter.of(context).go(AppRoutes.workerTasks);
-                      } catch (_) {
-                        Navigator.of(context).pushNamed(AppRoutes.workerTasks);
-                      }
-                    },
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Assigned', style: TextStyle(fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 6),
-                                Text('$_assignedCount', style: const TextStyle(fontSize: 18)),
-                              ],
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Incoming', style: TextStyle(fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 6),
-                                Text('$_incomingCount', style: const TextStyle(fontSize: 18)),
-                              ],
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Completed', style: TextStyle(fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 6),
-                                Text('$_completedCount', style: const TextStyle(fontSize: 18)),
-                              ],
-                            ),
-                          ],
+
+                  const SizedBox(height: 16),
+
+                  // Quick Actions
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _startNextJob,
+                          icon: const Icon(Icons.play_arrow),
+                          label: const Text('Start Next Job'),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: _viewRoute,
+                        icon: const Icon(Icons.map),
+                        label: const Text('View Route'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: _callAdmin,
+                        icon: const Icon(Icons.call),
+                        label: const Text('Call Admin'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
 
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      try {
-                        GoRouter.of(context).go(AppRoutes.workerOrders);
-                      } catch (_) {
-                        Navigator.of(context).pushNamed(AppRoutes.workerOrders);
-                      }
-                    },
-                    icon: const Icon(Icons.list_alt),
-                    label: const Text('View Orders'),
-                  ),
-                  const SizedBox(height: 12),
-                  /// New sections: Services and Assigned Work preview
+                  const SizedBox(height: 16),
 
-                  const Text('Your Work', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  // Today's Jobs header
+                  const Text("Today's Jobs", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
+
+                  // Job list (preview). Highlight current/next job
                   _assignedOrdersPreview.isEmpty
-                      ? const Text('No assigned work')
+                      ? const Text('No jobs for today')
                       : Expanded(
                           child: ListView.separated(
                             itemCount: _assignedOrdersPreview.length,
                             separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, i) {
-                              final j = _assignedOrdersPreview[i];
-                              // JobModel guarantees non-null scheduledAt, status and id
-                              final scheduled = j.scheduledAt;
-                              final isCompleted = j.status.toLowerCase() == 'completed';
-                              final isUpdating = _updatingJobIds.contains(j.id);
-                              return Card(
-                                margin: const EdgeInsets.symmetric(vertical: 2),
-                                child: ListTile(
-                                  title: Text(j.serviceName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                  subtitle: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text('${j.address ?? ''}'),
-                                      const SizedBox(height: 4),
-                                      Text('${scheduled.year}-${scheduled.month.toString().padLeft(2,'0')}-${scheduled.day.toString().padLeft(2,'0')} ${scheduled.hour.toString().padLeft(2,'0')}:${scheduled.minute.toString().padLeft(2,'0')}', style: const TextStyle(fontSize: 12)),
-                                      const SizedBox(height: 4),
-                                      Text('${j.customerName} • ${j.customerPhone}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                                    ],
-                                  ),
-                                  trailing: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(j.status.toUpperCase().replaceAll('_', ' '), style: const TextStyle(fontSize: 12)),
-                                      const SizedBox(height: 6),
-                                      if (!isCompleted)
-                                        (isUpdating
-                                            ? const SizedBox(width: 64, height: 32, child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))))
-                                            : ElevatedButton(
-                                                onPressed: () async {
-                                                  // Confirm before marking complete
-                                                  final ok = await showDialog<bool>(
-                                                    context: context,
-                                                    builder: (ctx) => AlertDialog(
-                                                       title: const Text('Mark as completed?'),
-                                                       content: const Text('Do you want to mark this job as completed?'),
-                                                       actions: [
-                                                         TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-                                                         TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Yes')),
-                                                       ],
-                                                     ),
-                                                  ) ?? false; // coalesce to non-null bool to avoid nullable checks
-                                                  if (ok) {
-                                                    await _changeJobStatus(j.id, 'completed');
-                                                  }
-                                                },
-                                                child: const Text('Complete'),
-                                              ))
-                                      else
-                                        const SizedBox.shrink()
-                                    ],
-                                  ),
-                                  onTap: () {
-                                    try {
-                                      GoRouter.of(context).go(AppRoutes.workerOrderDetail.replaceFirst(':id', j.id));
-                                    } catch (_) {
-                                      Navigator.of(context).pushNamed(AppRoutes.workerOrderDetail.replaceFirst(':id', j.id));
-                                    }
-                                  },
-                                ));
-                              },
-                            ),
+                            itemBuilder: (context, index) {
+                              final job = _assignedOrdersPreview[index];
+                              final isNext = index == 0; // treat first item as current/next prominently
+                              return JobCard(
+                                job: job,
+                                isProminent: isNext,
+                                onTap: () {
+                                  try {
+                                    GoRouter.of(context).go(AppRoutes.workerOrderDetail.replaceFirst(':id', job.id));
+                                  } catch (_) {
+                                    Navigator.of(context).pushNamed(AppRoutes.workerOrderDetail.replaceFirst(':id', job.id));
+                                  }
+                                },
+                                onStatusTap: (newStatus) async {
+                                  // Confirm when marking completed
+                                  if (newStatus == 'completed') {
+                                    final ok = await showDialog<bool>(
+                                          context: context,
+                                          builder: (ctx) => AlertDialog(
+                                            title: const Text('Mark as completed?'),
+                                            content: const Text('Do you want to mark this job as completed?'),
+                                            actions: [
+                                              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+                                              TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Yes')),
+                                            ],
+                                          ),
+                                        ) ??
+                                        false;
+                                    if (!ok) return;
+                                  }
+                                  await _changeJobStatus(job.id, newStatus);
+                                },
+                                isUpdating: _updatingJobIds.contains(job.id),
+                              );
+                            },
                           ),
+                        ),
 
                   const SizedBox(height: 12),
-                  const Text('Completed Work', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Builder(builder: (context) {
-                    final completed = _assignedOrdersPreview.where((o) => o.status.toLowerCase() == 'completed').toList();
-                    if (completed.isEmpty) return const Text('No completed work yet');
-                    return SizedBox(
-                      height: 160,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: completed.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder: (context, i) {
-                          final j = completed[i];
-                          return Card(
-                            child: Container(
-                              width: 220,
-                              padding: const EdgeInsets.all(8),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(j.serviceName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 6),
-                                  Text(j.customerName, style: const TextStyle(fontSize: 12)),
-                                  const SizedBox(height: 6),
-                                  Text(j.address ?? '', maxLines: 3, overflow: TextOverflow.ellipsis),
-                                  const Spacer(),
-                                  Align(
-                                    alignment: Alignment.bottomRight,
-                                    child: Text('Completed', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
-                                  )
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+
+                  // Small footer counts summary
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          Column(
+                            children: [
+                              const Text('Assigned', style: TextStyle(fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 6),
+                              Text('$_assignedCount', style: const TextStyle(fontSize: 18)),
+                            ],
+                          ),
+                          Column(
+                            children: [
+                              const Text('Incoming', style: TextStyle(fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 6),
+                              Text('$_incomingCount', style: const TextStyle(fontSize: 18)),
+                            ],
+                          ),
+                          Column(
+                            children: [
+                              const Text('Completed', style: TextStyle(fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 6),
+                              Text('$_completedCount', style: const TextStyle(fontSize: 18)),
+                            ],
+                          ),
+                        ],
                       ),
-                    );
-                  }),
+                    ),
+                  ),
                 ],
-               ),),
-      );
-  }}
+              ),
+            ),
+    );
+  }
+
+  String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Morning';
+    if (hour < 17) return 'Afternoon';
+    return 'Evening';
+  }
+
+  void _startNextJob() {
+    // TODO: implement start next job logic
+    debugPrint('[WorkerHomePage] Start Next Job tapped');
+  }
+
+  void _viewRoute() {
+    // TODO: implement view route logic
+    debugPrint('[WorkerHomePage] View Route tapped');
+  }
+
+  void _callAdmin() {
+    // TODO: implement call admin logic
+    debugPrint('[WorkerHomePage] Call Admin tapped');
+  }
+}
+

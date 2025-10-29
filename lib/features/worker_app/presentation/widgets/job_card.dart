@@ -1,172 +1,153 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:agapecares/core/models/job_model.dart';
+import 'package:intl/intl.dart';
 
-
-typedef StatusCallback = Future<void> Function(String newStatus);
-
+/// A compact, reusable job card used on the worker dashboard.
+///
+/// - color-coded by status
+/// - shows service name, time, short address, customer name/phone
+/// - large status action button which calls [onStatusTap] with the next logical status
 class JobCard extends StatelessWidget {
   final JobModel job;
-  final StatusCallback? onChangeStatus;
+  final bool isProminent;
+  final VoidCallback? onTap;
+  final Future<void> Function(String newStatus)? onStatusTap;
+  final bool isUpdating;
 
-  const JobCard({Key? key, required this.job, this.onChangeStatus}) : super(key: key);
+  const JobCard({
+    super.key,
+    required this.job,
+    this.isProminent = false,
+    this.onTap,
+    this.onStatusTap,
+    this.isUpdating = false,
+  });
 
-  Widget _buildStatusChip(String status) {
-    Color color;
-    switch (status) {
-      case 'assigned':
-      case 'accepted':
-        color = Colors.orange;
-        break;
-      case 'on_way':
-      case 'on_my_way':
-        color = Colors.blue;
-        break;
-      case 'arrived':
-        color = Colors.green;
-        break;
-      case 'in_progress':
-        color = Colors.teal;
-        break;
-      case 'paused':
-        color = Colors.grey;
-        break;
-      case 'completed':
-        color = Colors.greenAccent;
-        break;
-      default:
-        color = Colors.black45;
+  String _formatTime(DateTime dt) {
+    try {
+      return DateFormat('yyyy-MM-dd HH:mm').format(dt);
+    } catch (_) {
+      return dt.toString();
     }
-    // Use withAlpha instead of withOpacity to avoid deprecation warning
-    final bg = color.withAlpha((0.12 * 255).round());
-    return Chip(label: Text(status.replaceAll('_', ' ').toUpperCase()), backgroundColor: bg);
+  }
+
+  Color _statusColor(String status, BuildContext context) {
+    final s = status.toLowerCase();
+    if (s.contains('cancel')) return Colors.grey.shade400;
+    if (s.contains('complete')) return Colors.green.shade600;
+    if (s.contains('started') || s.contains('in_progress') || s.contains('on_my_way') || s.contains('arrived')) return Colors.deepOrange.shade400;
+    // default assigned
+    return Colors.blue.shade600;
+  }
+
+  String _nextActionLabel(String status) {
+    final s = status.toLowerCase();
+    if (s.contains('cancel')) return 'Cancelled';
+    if (s.contains('complete')) return 'Completed';
+    if (s.contains('on_my_way')) return 'Arrived';
+    if (s.contains('arrived')) return 'Start';
+    if (s.contains('started') || s.contains('in_progress')) return 'Complete';
+    // default from assigned
+    return 'On My Way';
+  }
+
+  String _nextActionStatus(String status) {
+    final s = status.toLowerCase();
+    if (s.contains('cancel')) return 'cancelled';
+    if (s.contains('complete')) return 'completed';
+    if (s.contains('on_my_way')) return 'arrived';
+    if (s.contains('arrived')) return 'started';
+    if (s.contains('started') || s.contains('in_progress')) return 'completed';
+    return 'on_my_way';
   }
 
   @override
   Widget build(BuildContext context) {
-    final dateStr = DateFormat.yMMMEd().add_jm().format(job.scheduledAt.toLocal());
+    final color = _statusColor(job.status, context);
+    final nextLabel = _nextActionLabel(job.status);
+    final nextStatus = _nextActionStatus(job.status);
+
     return Card(
+      elevation: isProminent ? 6 : 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
-        onTap: () {
-          try {
-            Navigator.of(context).pushNamed('/worker/orders/${job.id}');
-          } catch (_) {}
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border(left: BorderSide(color: color, width: 6)),
+          ),
+          child: Row(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // Left: time/avatar
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  CircleAvatar(
+                    backgroundColor: color,
+                    child: Text((job.serviceName.isNotEmpty ? job.serviceName[0] : 'S').toUpperCase()),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 12),
+
+              // Middle: details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(job.serviceName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        const SizedBox(height: 4),
-                        Text(job.address, style: const TextStyle(color: Colors.black54)),
-                        const SizedBox(height: 6),
-                        Text('Customer: ${job.customerName} • ${job.customerPhone}', style: const TextStyle(fontSize: 12)),
+                        Expanded(child: Text(job.serviceName, style: TextStyle(fontSize: isProminent ? 16 : 14, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 8),
+                        Text(job.status.toUpperCase().replaceAll('_', ' '), style: TextStyle(color: color, fontWeight: FontWeight.bold)),
                       ],
                     ),
-                  ),
-                  _buildStatusChip(job.status),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.schedule, size: 16, color: Colors.black45),
-                  const SizedBox(width: 6),
-                  Text(dateStr, style: const TextStyle(fontSize: 12)),
-                  const Spacer(),
-                  if (job.isCod)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: Colors.amber.withAlpha((0.12 * 255).round())),
-                      child: const Text('COD', style: TextStyle(color: Colors.amber)),
+                    const SizedBox(height: 6),
+                    Text(_formatTime(job.scheduledAt), style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(child: Text(job.address, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12))),
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () {
+                            // copy address or open map should be handled by parent via onTap which opens detail; keep simple here
+                            if (onTap != null) onTap!();
+                          },
+                          child: const Icon(Icons.map, size: 18, color: Colors.blueGrey),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 6),
+                    Text('${job.customerName} • ${job.customerPhone}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                  ],
+                ),
+              ),
+
+              // Right: action button
+              Column(
+                children: [
+                  isProminent
+                      ? const SizedBox.shrink()
+                      : const SizedBox(height: 4),
+                  isUpdating
+                      ? SizedBox(width: 80, height: 36, child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))))
+                      : ElevatedButton(
+                          style: ElevatedButton.styleFrom(backgroundColor: color),
+                          onPressed: () async {
+                            if (onStatusTap != null) await onStatusTap!(nextStatus);
+                          },
+                          child: Text(nextLabel),
+                        ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: job.inclusions.map((i) => Chip(label: Text(i, style: const TextStyle(fontSize: 12)))).toList(),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: _buildActionButtons(context),
               )
             ],
           ),
         ),
       ),
     );
-  }
-
-  List<Widget> _buildActionButtons(BuildContext context) {
-    final List<Widget> buttons = [];
-
-    void addButton(String label, String status, {Color? color}) {
-      buttons.add(TextButton(
-        onPressed: onChangeStatus == null
-            ? null
-            : () async {
-                try {
-                  await onChangeStatus!(status);
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to set status: $e')));
-                }
-              },
-        child: Text(label),
-        style: TextButton.styleFrom(foregroundColor: color),
-      ));
-    }
-
-    // Available transitions
-    switch (job.status) {
-      case 'pending':
-        // send 'accepted' to match rules
-        addButton('Accept', 'accepted', color: Colors.orange);
-        break;
-      case 'assigned':
-      case 'accepted':
-        // use 'on_my_way' to match rules
-        addButton('On My Way', 'on_my_way', color: Colors.blue);
-        addButton('Arrived', 'arrived', color: Colors.green);
-        break;
-      case 'on_way':
-      case 'on_my_way':
-        addButton('Arrived', 'arrived', color: Colors.green);
-        break;
-      case 'arrived':
-        addButton('Start Job', 'in_progress', color: Colors.teal);
-        addButton('Pause', 'paused', color: Colors.grey);
-        break;
-      case 'in_progress':
-        addButton('Pause', 'paused', color: Colors.grey);
-        addButton('Complete', 'completed', color: Colors.green);
-        break;
-      case 'paused':
-        addButton('Resume', 'in_progress', color: Colors.teal);
-        addButton('Complete', 'completed', color: Colors.green);
-        break;
-      default:
-        // no actions for completed
-        break;
-    }
-
-    // Always allow calling or messaging - placeholder
-    buttons.add(IconButton(
-      icon: const Icon(Icons.call, color: Colors.blue),
-      onPressed: () {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Call feature not implemented')));
-      },
-    ));
-
-    return buttons;
   }
 }

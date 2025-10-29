@@ -43,14 +43,10 @@ class AuthRepository {
     // Use a 2-second buffer just to be safe
     final isNewUser = (lastSignIn - creation).abs() < 2000;
 
-    // This logic now ONLY applies to EXISTING users trying to log in
-    if (isEmailLogin && !firebaseUser.emailVerified && !isNewUser) {
-      print('AuthRepository: Detected login from existing, unverified email user. Signing out.');
-      _userController.add(null); // Emit null (Unauthenticated)
-      await _firebaseAuth.signOut().catchError((_) {});
-      return;
-    }
-    // --- END FIX ---
+    // NOTE: Changed behavior: Do NOT block sign-in for email/password users whose
+    // email is not verified. The previous logic signed out such users. We now allow
+    // existing email/password users to remain signed in regardless of emailVerified.
+    // (Keeping the isEmailLogin/isNewUser checks only for possible future use.)
 
     // If it's a new user, Google user, or verified email user, proceed...
     UserModel? userModel;
@@ -152,31 +148,16 @@ class AuthRepository {
 
       final firebaseUser = userCredential.user;
 
-      // 2. Check for verification
-      if (firebaseUser == null || !firebaseUser.emailVerified) {
-
-        // 3. Send another verification email
-        try {
-          if (firebaseUser != null) {
-            await firebaseUser.sendEmailVerification();
-          }
-        } catch (_) {}
-
-        // 4. Throw the exception.
-        // The _onFirebaseUserChanged listener will see this unverified user
-        // and emit `null`, handling the sign-out logic automatically.
+      // NOTE: Changed behavior: Do NOT require email verification to allow sign-in.
+      // Only ensure that a user object was returned (i.e. email/password matched).
+      if (firebaseUser == null) {
         throw FirebaseAuthException(
-          code: 'email-not-verified',
-          message: 'Please verify your email before logging in.',
-        );
+            code: 'user-not-found', message: 'Failed to sign in user.');
       }
 
-      // 5. If verified, ensure profile exists.
-      // The _onFirebaseUserChanged listener will emit the Authenticated state.
+      // Ensure profile exists (create from pending if necessary).
       try {
-        if (firebaseUser != null) {
-          await createProfileFromPending(firebaseUser);
-        }
+        await createProfileFromPending(firebaseUser);
       } catch (_) {}
 
     } catch (e) {

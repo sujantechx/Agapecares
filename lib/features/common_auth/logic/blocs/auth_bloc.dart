@@ -107,18 +107,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   Future<void> _onLoginWithEmailRequested(AuthLoginWithEmailRequested event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
     try {
-      // The repository now handles the verification check
+      // Note: Repository no longer enforces email verification on sign-in.
+      // Sign-in succeeds if the email/password match and Firebase returns a user.
       await _authRepository.signInWithEmail(email: event.email, password: event.password);
       // Success is handled by the _onAuthStatusChanged listener
     } on FirebaseAuthException catch (e) {
-      // This catches 'email-not-verified' as well as 'wrong-password', etc.
-      if (e.code == 'email-not-verified') {
-        // Emit a special state so the UI can show the "Resend" dialog
-        emit(AuthEmailVerificationSent(email: event.email));
-      } else {
-        // Emit a general failure for other errors
-        emit(AuthFailure(_friendlyErrorMessage(e)));
-      }
+      // Emit a general failure for authentication errors
+      emit(AuthFailure(_friendlyErrorMessage(e)));
     } catch (e) {
       emit(AuthFailure(_friendlyErrorMessage(e)));
     }

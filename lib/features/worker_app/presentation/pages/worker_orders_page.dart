@@ -41,8 +41,9 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> with TickerProvider
 
   late final TabController _tabController;
 
-  // Realtime subscription for per-worker mirror
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _assignedSub;
+  // Realtime subscriptions
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _assignedSub; // collectionGroup
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _mirrorSub;   // workers/{workerId}/orders
   String? _workerId;
 
   @override
@@ -62,6 +63,7 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> with TickerProvider
   void dispose() {
     _tabController.dispose();
     _assignedSub?.cancel();
+    _mirrorSub?.cancel();
     super.dispose();
   }
 
@@ -153,73 +155,111 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> with TickerProvider
   // --- THIS IS THE UPDATED/FIXED FUNCTION ---
   //
   void _subscribeAssignedOrders(String workerId) {
-    // This subscription logic is now fixed to use collectionGroup
+    // Cancel previous
     _assignedSub?.cancel();
+    _mirrorSub?.cancel();
+
+    // 1) Subscribe to worker mirror (most permissive under rules)
     try {
-      _assignedSub = FirebaseFirestore.instance
-          .collectionGroup('orders') // <--- FIXED: Query the collection group
-          .where('workerId', isEqualTo: workerId) // <--- FIXED: Filter for this worker
+      _mirrorSub = FirebaseFirestore.instance
+          .collection('workers')
+          .doc(workerId)
+          .collection('orders')
           .orderBy('scheduledAt', descending: false)
           .snapshots()
           .listen((snap) {
         try {
-          final List<JobModel> list = snap.docs.map((d) {
-            try {
-              final data = d.data();
-              final jobMap = <String, dynamic>{};
-              jobMap['id'] = d.id;
-              if (data['items'] is List && (data['items'] as List).isNotEmpty) {
-                final first = (data['items'] as List).first as Map<String, dynamic>;
-                jobMap['serviceName'] = first['serviceName'] ?? first['optionName'] ?? data['serviceName'];
-                jobMap['inclusions'] = (data['items'] as List).map((it) {
-                  try {
-                    final m = Map<String, dynamic>.from(it as Map);
-                    return m['optionName']?.toString() ?? m['serviceName']?.toString() ?? '';
-                  } catch (_) {
-                    return '';
-                  }
-                }).where((s) => s.isNotEmpty).toList();
-              } else {
-                jobMap['serviceName'] = data['serviceName'] ?? '';
-                jobMap['inclusions'] = data['inclusions'] ?? [];
-              }
-
-              if (data['addressSnapshot'] is Map && (data['addressSnapshot'] as Map).containsKey('address')) {
-                jobMap['address'] = (data['addressSnapshot'] as Map)['address'] ?? data['address'] ?? '';
-              } else {
-                jobMap['address'] = data['address'] ?? '';
-              }
-
-              jobMap['customerName'] = data['userName'] ?? data['customerName'] ?? '';
-              jobMap['customerPhone'] = data['userPhone'] ?? data['customerPhone'] ?? '';
-              jobMap['scheduledAt'] = data['scheduledAt'] ?? data['scheduled_at'] ?? data['scheduledAtAt'];
-              jobMap['scheduledEnd'] = data['scheduledEnd'] ?? data['scheduled_end'] ?? data['scheduledAtEnd'];
-              jobMap['status'] = data['status'] ?? data['orderStatus'] ?? 'assigned';
-              jobMap['isCod'] = data['paymentStatus'] == 'cod' || (data['isCod'] ?? data['is_cod'] ?? false);
-              jobMap['specialInstructions'] = data['specialInstructions'] ?? data['special_instructions'] ?? '';
-              jobMap['rating'] = data['rating'] ?? null;
-
-              return JobModel.fromMap(jobMap, id: d.id);
-            } catch (e) {
-              debugPrint('[WorkerOrdersPage] _subscribeAssignedOrders parse error for ${d.id}: $e');
-              rethrow;
-            }
-          }).toList();
-
-          debugPrint('[WorkerOrdersPage] _subscribeAssignedOrders (collectionGroup) snapshot count=${list.length}');
-          if (mounted) setState(() => _jobs = list);
-
+          final list = snap.docs.map(_mapDocToJobModel).whereType<JobModel>().toList();
+          _mergeListsAndSet(listSourceMirror: list);
         } catch (e) {
-          debugPrint('[WorkerOrdersPage] _subscribeAssignedOrders handler error: $e');
+          debugPrint('[WorkerOrdersPage] mirror subscription parse error: $e');
         }
       }, onError: (e) {
-        // This is important! You will get a PERMISSION_DENIED error
-        // if your Firestore rules do not allow this collectionGroup query.
-        debugPrint('[WorkerOrdersPage] _assignedSub error (check Firestore rules for collectionGroup "orders"): $e');
+        debugPrint('[WorkerOrdersPage] mirror subscription error: $e');
       });
     } catch (e) {
-      debugPrint('[WorkerOrdersPage] _subscribeAssignedOrders error: $e');
+      debugPrint('[WorkerOrdersPage] mirror subscribe failed: $e');
     }
+
+    // 2) Subscribe to collectionGroup for completeness (may require indexes/rules)
+    try {
+      _assignedSub = FirebaseFirestore.instance
+          .collectionGroup('orders')
+          .where('workerId', isEqualTo: workerId)
+          .orderBy('scheduledAt', descending: false)
+          .snapshots()
+          .listen((snap) {
+        try {
+          final list = snap.docs.map(_mapDocToJobModel).whereType<JobModel>().toList();
+          _mergeListsAndSet(listSourceCg: list);
+        } catch (e) {
+          debugPrint('[WorkerOrdersPage] collectionGroup subscription parse error: $e');
+        }
+      }, onError: (e) {
+        debugPrint('[WorkerOrdersPage] collectionGroup subscription error (check rules/index): $e');
+      });
+    } catch (e) {
+      debugPrint('[WorkerOrdersPage] collectionGroup subscribe failed: $e');
+    }
+  }
+
+  JobModel? _mapDocToJobModel(QueryDocumentSnapshot<Map<String, dynamic>> d) {
+    try {
+      final data = d.data();
+      final jobMap = <String, dynamic>{'id': d.id};
+      if (data['items'] is List && (data['items'] as List).isNotEmpty) {
+        final first = (data['items'] as List).first as Map<String, dynamic>;
+        jobMap['serviceName'] = first['serviceName'] ?? first['optionName'] ?? data['serviceName'];
+        jobMap['inclusions'] = (data['items'] as List).map((it) {
+          try {
+            final m = Map<String, dynamic>.from(it as Map);
+            return m['optionName']?.toString() ?? m['serviceName']?.toString() ?? '';
+          } catch (_) {
+            return '';
+          }
+        }).where((s) => s.isNotEmpty).toList();
+      } else {
+        jobMap['serviceName'] = data['serviceName'] ?? '';
+        jobMap['inclusions'] = data['inclusions'] ?? [];
+      }
+      if (data['addressSnapshot'] is Map && (data['addressSnapshot'] as Map).containsKey('address')) {
+        jobMap['address'] = (data['addressSnapshot'] as Map)['address'] ?? data['address'] ?? '';
+      } else {
+        jobMap['address'] = data['address'] ?? '';
+      }
+      jobMap['customerName'] = data['userName'] ?? data['customerName'] ?? '';
+      jobMap['customerPhone'] = data['userPhone'] ?? data['customerPhone'] ?? '';
+      jobMap['scheduledAt'] = data['scheduledAt'] ?? data['scheduled_at'] ?? data['scheduledAtAt'];
+      jobMap['scheduledEnd'] = data['scheduledEnd'] ?? data['scheduled_end'] ?? data['scheduledAtEnd'];
+      jobMap['status'] = data['status'] ?? data['orderStatus'] ?? 'assigned';
+      jobMap['isCod'] = data['paymentStatus'] == 'cod' || (data['isCod'] ?? data['is_cod'] ?? false);
+      jobMap['specialInstructions'] = data['specialInstructions'] ?? data['special_instructions'] ?? '';
+      jobMap['rating'] = data['rating'] ?? null;
+      return JobModel.fromMap(jobMap, id: d.id);
+    } catch (e) {
+      debugPrint('[WorkerOrdersPage] _mapDocToJobModel parse error for ${d.id}: $e');
+      return null;
+    }
+  }
+
+  // merge helper: combine mirror and collectionGroup lists, preferring mirror fields when duplicates
+  List<JobModel> _latestMirror = [];
+  List<JobModel> _latestCg = [];
+  void _mergeListsAndSet({List<JobModel>? listSourceMirror, List<JobModel>? listSourceCg}) {
+    if (listSourceMirror != null) _latestMirror = listSourceMirror;
+    if (listSourceCg != null) _latestCg = listSourceCg;
+
+    // De-duplicate by id, prefer mirror entry
+    final Map<String, JobModel> byId = {};
+    for (final j in _latestCg) {
+      byId[j.id] = j;
+    }
+    for (final j in _latestMirror) {
+      byId[j.id] = j;
+    }
+    final merged = byId.values.toList()
+      ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+    if (mounted) setState(() => _jobs = merged);
   }
 
   // New helper: write status history in Firestore (best-effort)
@@ -561,3 +601,4 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> with TickerProvider
     );
   }
 }
+

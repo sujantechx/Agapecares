@@ -56,7 +56,7 @@ class JobCard extends StatelessWidget {
     if (s.contains('cancel')) return 'cancelled';
     if (s.contains('complete')) return 'completed';
     if (s.contains('on_my_way')) return 'arrived';
-    if (s.contains('arrived')) return 'started';
+    if (s.contains('arrived')) return 'in_progress';
     if (s.contains('started') || s.contains('in_progress')) return 'completed';
     return 'on_my_way';
   }

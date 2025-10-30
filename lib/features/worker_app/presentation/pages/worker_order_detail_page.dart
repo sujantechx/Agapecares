@@ -88,7 +88,14 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> with Sing
     if (_job == null) return;
     try {
       setState(() => _changingStatus = true);
-      final updated = await _repo.updateJobStatus(_job!.id, status);
+      // Call repository with a dynamic fallback to avoid analyzer issues in some contexts
+      JobModel? updated;
+      try {
+        updated = await _repo.updateJobStatus(_job!.id, status);
+      } catch (_) {
+        final repoDyn = _repo as dynamic;
+        updated = await repoDyn.updateJobStatus(_job!.id, status) as JobModel?;
+      }
       if (updated != null) {
         // write status history (timestamped) to Firestore (best-effort)
         await _writeStatusHistory(updated.id, status);
@@ -364,11 +371,9 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> with Sing
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        if (_disableBackNavigation) return false;
-        return true;
-      },
+    return PopScope(
+      canPop: !_disableBackNavigation,
+      onPopInvokedWithResult: (didPop, result) {},
       child: Scaffold(
         appBar: AppBar(title: const Text('Job Details')),
         body: _loading

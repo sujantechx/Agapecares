@@ -121,45 +121,43 @@ service cloud.firestore {
         );
 
         allow list: if isSignedIn() && (
-          // Allow listing only for admins or the owner of this user's orders.
-          // Clients should query the per-user subcollection `users/{uid}/orders` when
-          // listing a user's orders. Avoid inspecting request.query here because
-          // the rules engine in this environment does not support request.query.where().
           (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
           || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
           || isOwner(userId)
-          // Allow workers to list orders that are assigned to them by letting the
-          // rules engine verify that each returned document has workerId == auth.uid.
           || (isWorker() && resource.data.workerId == request.auth.uid)
         );
 
-        // Allow the owner to perform normal updates but forbid changing
-        // `workerId` or `status`. Permit owners to add rating-related fields
-        // (e.g. `rated`, `serviceRated`, `workerRated`, `rating`, `ratingAt`) as
-        // long as the payload does not touch protected fields.
+        // Allow the owner to perform normal updates (without changing workerId/status), and allow assigned workers to perform a minimal, safe status-only update.
         allow update: if isSignedIn() && (
-           // Admins can update any order
            (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
            || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
            || (
              isOwner(userId)
              && !( 'workerId' in request.resource.data )
              && !( 'status' in request.resource.data )
-             // Disallow clients from overwriting server-managed identifiers/timestamps
-             // but allow adding rating flags/fields.
              && !( 'orderNumber' in request.resource.data )
              && !( 'assignmentHistory' in request.resource.data )
              && !( 'paymentRef' in request.resource.data )
              && !( 'createdAt' in request.resource.data )
              && !( 'updatedAt' in request.resource.data )
            )
-           // Narrow explicit branch: allow the existing order owner to submit rating fields
-           // even when other update checks fail. This only permits a tightly-scoped set
-           // of keys to be written and requires the existing document to belong to the caller.
            || (
+             // Assigned worker may update status-only with strict field constraints
+             isWorker()
+             && resource.data.workerId == request.auth.uid
+             && (
+               request.resource.data.keys().hasOnly(['status','orderStatus','workerId','updatedAt'])
+               || request.resource.data.keys().hasOnly(['status','orderStatus','updatedAt'])
+             )
+             && ( !('workerId' in request.resource.data) || request.resource.data.workerId == resource.data.workerId )
+             && request.resource.data.status in ['accepted','on_my_way','arrived','in_progress','paused','completed']
+             && resource.data.status != 'completed'
+             && allowedServerTimestamp('updatedAt')
+           )
+           || (
+             // Owner may submit rating fields
              isSignedIn()
              && isOwner(userId)
-             // Validate rating payloads using helper to ensure types and ranges.
              && isValidOrderRatingPayload()
            )
         );
@@ -168,6 +166,18 @@ service cloud.firestore {
           (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
           || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
         );
+
+        // Status history for user's order
+        match /statusHistory/{historyId} {
+          allow create: if isSignedIn() && (
+            isOwner(userId)
+            || isAdmin()
+            || (isWorker() && get(/databases/$(database)/documents/users/$(userId)/orders/$(orderId)).data.workerId == request.auth.uid)
+          );
+          allow read: if isSignedIn() && (
+            isOwner(userId) || isAdmin() || (isWorker() && get(/databases/$(database)/documents/users/$(userId)/orders/$(orderId)).data.workerId == request.auth.uid)
+          );
+        }
       }
 
       // users/{uid}/payments subcollection
@@ -349,6 +359,28 @@ service cloud.firestore {
         (request.auth.token != null && (request.auth.token.admin == true || request.auth.token.role == 'admin'))
         || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
+
+      // Status history under top-level orders
+      match /statusHistory/{historyId} {
+        allow create: if isSignedIn() && (
+          isAdmin()
+          || (get(/databases/$(database)/documents/orders/$(orderId)).data.orderOwner == request.auth.uid)
+          || (get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid)
+          || (isWorker() && get(/databases/$(database)/documents/orders/$(orderId)).data.workerId == request.auth.uid)
+        );
+        allow read: if isSignedIn() && (
+          isAdmin()
+          || (get(/databases/$(database)/documents/orders/$(orderId)).data.orderOwner == request.auth.uid)
+          || (get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid)
+          || (isWorker() && get(/databases/$(database)/documents/orders/$(orderId)).data.workerId == request.auth.uid)
+        );
+      }
+    }
+
+    // Worker mirror status history rules
+    match /workers/{workerId}/orders/{orderId}/statusHistory/{historyId} {
+      allow create: if isSignedIn() && (isAdmin() || request.auth.uid == workerId);
+      allow read: if isSignedIn() && (isAdmin() || request.auth.uid == workerId);
     }
 
     // -----------------------

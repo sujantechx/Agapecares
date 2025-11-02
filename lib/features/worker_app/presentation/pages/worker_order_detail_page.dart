@@ -245,48 +245,29 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> with Sing
     }
   }
 
-  // OTP verification before completing a job (best-effort via cloud function 'verifyJobOtp')
-  Future<bool> _verifyOtpFlow() async {
+  // Mark COD as paid and update job locally
+  Future<bool> _markAsPaid() async {
     if (_job == null) return false;
-    final otp = await showDialog<String?>(
-      context: context,
-      builder: (ctx) {
-        final controller = TextEditingController();
-        return AlertDialog(
-          title: const Text('Enter OTP from customer'),
-          content: TextField(controller: controller, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'OTP')),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(null), child: const Text('Cancel')),
-            TextButton(onPressed: () => Navigator.of(ctx).pop(controller.text.trim()), child: const Text('Verify')),
-          ],
-        );
-      },
-    );
-
-    if (otp == null || otp.isEmpty) return false;
     try {
-      final functions = FirebaseFunctions.instance;
-      final callable = functions.httpsCallable('verifyJobOtp');
-      final res = await callable.call({'orderId': _job!.id, 'otp': otp});
-      final ok = (res.data is Map && (res.data['ok'] == true || res.data['verified'] == true)) || res.data == true;
-      if (!ok) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('OTP verification failed')));
+      setState(() => _changingStatus = true);
+      // Best-effort paymentRef: record who marked paid and timestamp
+      final paymentRef = {'markedBy': 'worker', 'markedAt': FieldValue.serverTimestamp()};
+      final updated = await _repo.updatePaymentStatus(_job!.id, 'paid', paymentRef: paymentRef);
+      if (updated != null) {
+        setState(() {
+          _job = updated;
+        });
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment marked as paid')));
+        return true;
       }
-      return ok;
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to mark payment as paid')));
+      return false;
     } catch (e) {
-      debugPrint('[WorkerOrderDetailPage] verifyJobOtp function failed or unavailable: $e');
-      // Fallback: ask user to confirm without OTP
-      if (!mounted) return false;
-      final confirm = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('OTP unavailable'),
-              content: const Text('OTP verification service is unavailable. Do you want to mark job as completed without OTP?'),
-              actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')), TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Yes'))],
-            ),
-          ) ??
-          false;
-      return confirm;
+      debugPrint('[WorkerOrderDetailPage] _markAsPaid error: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to mark as paid: $e')));
+      return false;
+    } finally {
+      if (mounted) setState(() => _changingStatus = false);
     }
   }
 
@@ -304,26 +285,48 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> with Sing
           onPressed: _changingStatus
               ? null
               : () async {
+                  // Special handling: if completing and payment is COD/unpaid, prompt to mark paid
+                  if (to == 'completed' && (_job!.paymentStatus == 'cod' || (_job!.paymentStatus?.toLowerCase() == 'pending'))) {
+                    final choice = await showDialog<String?>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Payment status'),
+                        content: const Text('This order is COD and not marked as paid. Do you want to mark it paid before completing?'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.of(ctx).pop('cancel'), child: const Text('Cancel')),
+                          TextButton(onPressed: () => Navigator.of(ctx).pop('continue'), child: const Text('Complete without marking')),
+                          TextButton(onPressed: () => Navigator.of(ctx).pop('mark'), child: const Text('Mark paid & complete')),
+                        ],
+                      ),
+                    );
+                    if (choice == 'cancel' || choice == null) return;
+                    if (choice == 'mark') {
+                      final ok = await _markAsPaid();
+                      if (!ok) return; // if marking failed, stop
+                      // proceed to OTP/confirmation below and then complete
+                    }
+                    // if 'continue', proceed without marking
+                  }
+
                   // If completing, maybe verify OTP first
-                  if (requiresOtp) {
-                    final ok = await _verifyOtpFlow();
-                    if (!ok) return;
-                  }
-                  if (requireConfirmation) {
-                    final ok = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Confirm'),
-                            content: Text('Are you sure you want to mark this job as $label?'),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-                              TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Yes')),
-                            ],
-                          ),
-                        ) ??
-                        false;
-                    if (!ok) return;
-                  }
+                  // Removed OTP verification: use a single confirmation dialog instead
+                  // (OTP creation/verification is intentionally disabled for worker flow)
+
+                   if (requireConfirmation) {
+                     final ok = await showDialog<bool>(
+                           context: context,
+                           builder: (ctx) => AlertDialog(
+                             title: const Text('Confirm'),
+                             content: Text('Are you sure you want to mark this job as $label?'),
+                             actions: [
+                               TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+                               TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Yes')),
+                             ],
+                           ),
+                         ) ??
+                         false;
+                     if (!ok) return;
+                   }
                   await _changeStatus(to);
                   if (allowPhotoAfter) {
                     // prompt to upload photo as proof
@@ -393,6 +396,10 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> with Sing
                             decoration: BoxDecoration(color: _colorWithOpacity(_statusColor, 0.08), borderRadius: BorderRadius.circular(12), border: Border.all(color: _colorWithOpacity(_statusColor, 0.2))),
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               Text(_job!.serviceName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                              if (_job!.orderNumber != null && _job!.orderNumber!.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text('#${_job!.orderNumber}', style: const TextStyle(fontSize: 14, color: Colors.black54)),
+                              ],
                               const SizedBox(height: 8),
                               Row(children: [
                                 const Icon(Icons.person_outline, size: 16),
@@ -434,6 +441,60 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> with Sing
                               const Text('Job Instructions', style: TextStyle(fontWeight: FontWeight.bold)),
                               const SizedBox(height: 6),
                               Text(_job!.specialInstructions ?? 'No special instructions'),
+                              const SizedBox(height: 12),
+                              // Payment details card (worker view)
+                              const SizedBox(height: 12),
+                              const Text('Payment', style: TextStyle(fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 6),
+                              Card(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12.0),
+                                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                                      Text('Status', style: TextStyle(fontWeight: FontWeight.w600)),
+                                      Text((_job!.paymentStatus ?? 'unknown').toUpperCase(), style: TextStyle(color: (_job!.paymentStatus == 'paid') ? Colors.green : Colors.orange, fontWeight: FontWeight.bold)),
+                                    ]),
+                                    const SizedBox(height: 8),
+                                    // Always show amount and method/payment id when available
+                                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                                      Text('Amount', style: TextStyle(fontWeight: FontWeight.w600)),
+                                      Text(_job!.total != null ? '\u20B9${_job!.total!.toStringAsFixed(2)}' : '—'),
+                                    ]),
+                                    const SizedBox(height: 6),
+                                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                                      Text('Method', style: TextStyle(fontWeight: FontWeight.w600)),
+                                      Text(_job!.paymentRef != null ? (_job!.paymentRef!['method'] ?? 'COD') : (_job!.isCod ? 'COD' : 'Unknown')),
+                                    ]),
+                                    const SizedBox(height: 6),
+                                    if (_job!.paymentRef != null && _job!.paymentRef!['id'] != null) ...[
+                                      Text('Payment id: ${_job!.paymentRef!['id']}'),
+                                      const SizedBox(height: 8),
+                                    ],
+                                    const SizedBox(height: 8),
+                                    // Show 'Mark as paid' only if not already paid
+                                    if ((_job!.paymentStatus ?? '').toLowerCase() != 'paid') ...[
+                                      Row(children: [
+                                        Expanded(
+                                          child: ElevatedButton(
+                                            onPressed: _changingStatus ? null : () async {
+                                              // mark paid and refresh
+                                              final ok = await _markAsPaid();
+                                              if (ok) {
+                                                // refresh details from repo
+                                                await _loadJob();
+                                              }
+                                            },
+                                            child: const Text('Mark as paid'),
+                                          ),
+                                        ),
+                                      ])
+                                    ] else ...[
+                                      Text('This order is paid', style: TextStyle(color: Colors.green.shade700)),
+                                    ]
+                                  ]),
+                                ),
+                              ),
                               const SizedBox(height: 12),
                               const Text('Inclusions', style: TextStyle(fontWeight: FontWeight.bold)),
                               const SizedBox(height: 6),

@@ -163,6 +163,19 @@ class WorkerJobRepository {
 
           jobMap['customerName'] = data['userName'] ?? data['customerName'] ?? '';
           jobMap['customerPhone'] = data['userPhone'] ?? data['customerPhone'] ?? '';
+          // Ensure orderNumber is available for worker UI (try several possible field names)
+          jobMap['orderNumber'] = data['orderNumber'] ?? data['orderNo'] ?? data['remoteId'] ?? data['orderId'] ?? '';
+          // Include payment status/ref if present
+          jobMap['paymentStatus'] = data['paymentStatus'] ?? data['payment_state'] ?? (data['isCod'] == true ? 'cod' : null);
+          jobMap['paymentRef'] = data['paymentRef'] ?? data['payment_details'] ?? null;
+          // Include total/amount if present
+          jobMap['total'] = (data['total'] is num)
+              ? (data['total'] as num).toDouble()
+              : (data['totalAmount'] is num)
+                  ? (data['totalAmount'] as num).toDouble()
+                  : (data['total_amount'] is num)
+                      ? (data['total_amount'] as num).toDouble()
+                      : (data['totalAmount'] != null ? double.tryParse(data['totalAmount'].toString()) : null);
 
           // If name/phone/address are empty, try fetching from user document
           if ((jobMap['customerName'] == null || (jobMap['customerName'] as String).isEmpty || jobMap['customerPhone'] == null || (jobMap['customerPhone'] as String).isEmpty || (jobMap['address'] == null || (jobMap['address'] as String).isEmpty)) && data['userId'] != null) {
@@ -238,6 +251,8 @@ class WorkerJobRepository {
           final Map<String, dynamic> data = Map<String, dynamic>.from(raw);
           final jobMap = Map<String, dynamic>.from(data);
           jobMap['id'] = d.id;
+          // Normalize orderNumber into jobMap for display
+          jobMap['orderNumber'] = jobMap['orderNumber'] ?? data['orderNumber'] ?? data['orderNo'] ?? data['remoteId'] ?? data['orderId'] ?? '';
 
           // Ensure address is resolved into jobMap
           final extracted = _extractAddressFromData(data);
@@ -309,6 +324,15 @@ class WorkerJobRepository {
           final extracted = _extractAddressFromData(data);
           jobMap['address'] = (jobMap['address'] as String?)?.isNotEmpty == true ? jobMap['address'] : (extracted.isNotEmpty ? extracted : (data['address'] ?? ''));
 
+          // total mapping
+          jobMap['total'] = (data['total'] is num)
+              ? (data['total'] as num).toDouble()
+              : (data['totalAmount'] is num)
+                  ? (data['totalAmount'] as num).toDouble()
+                  : (data['total_amount'] is num)
+                      ? (data['total_amount'] as num).toDouble()
+                      : (data['totalAmount'] != null ? double.tryParse(data['totalAmount'].toString()) : null);
+
           try {
             out.add(JobModel.fromMap(jobMap, id: d.id));
           } catch (e) {
@@ -336,6 +360,15 @@ class WorkerJobRepository {
         // Ensure address resolved
         final extracted = _extractAddressFromData(jobMap);
         jobMap['address'] = (jobMap['address'] as String?)?.isNotEmpty == true ? jobMap['address'] : (extracted.isNotEmpty ? extracted : (map['address'] ?? ''));
+        jobMap['orderNumber'] = jobMap['orderNumber'] ?? map['orderNumber'] ?? map['orderNo'] ?? map['remoteId'] ?? map['orderId'] ?? '';
+        // total mapping
+        jobMap['total'] = (map['total'] is num)
+            ? (map['total'] as num).toDouble()
+            : (map['totalAmount'] is num)
+                ? (map['totalAmount'] as num).toDouble()
+                : (map['total_amount'] is num)
+                    ? (map['total_amount'] as num).toDouble()
+                    : (map['totalAmount'] != null ? double.tryParse(map['totalAmount'].toString()) : null);
         return JobModel.fromMap(jobMap, id: top.id);
       }
       // Try per-worker mirror under current worker
@@ -345,8 +378,18 @@ class WorkerJobRepository {
         if (d.exists) {
           final jobMap = Map<String, dynamic>.from(d.data() ?? {});
           jobMap['id'] = d.id;
+          jobMap['paymentStatus'] = jobMap['paymentStatus'] ?? jobMap['payment_state'] ?? (jobMap['isCod'] == true ? 'cod' : null);
+          jobMap['paymentRef'] = jobMap['paymentRef'] ?? jobMap['payment_details'] ?? null;
+          jobMap['total'] = (jobMap['total'] is num)
+              ? (jobMap['total'] as num).toDouble()
+              : (jobMap['totalAmount'] is num)
+                  ? (jobMap['totalAmount'] as num).toDouble()
+                  : (jobMap['total_amount'] is num)
+                      ? (jobMap['total_amount'] as num).toDouble()
+                      : (jobMap['totalAmount'] != null ? double.tryParse(jobMap['totalAmount'].toString()) : null);
           final extracted = _extractAddressFromData(jobMap);
           jobMap['address'] = (jobMap['address'] as String?)?.isNotEmpty == true ? jobMap['address'] : (extracted.isNotEmpty ? extracted : (jobMap['address'] ?? ''));
+          jobMap['orderNumber'] = jobMap['orderNumber'] ?? jobMap['orderNo'] ?? jobMap['remoteId'] ?? jobMap['orderId'] ?? '';
           return JobModel.fromMap(jobMap, id: d.id);
         }
       }
@@ -369,6 +412,7 @@ class WorkerJobRepository {
             jobMap['id'] = doc.id;
             final extracted = _extractAddressFromData(jobMap);
             jobMap['address'] = (jobMap['address'] as String?)?.isNotEmpty == true ? jobMap['address'] : (extracted.isNotEmpty ? extracted : (jobMap['address'] ?? ''));
+            jobMap['orderNumber'] = jobMap['orderNumber'] ?? jobMap['orderNo'] ?? jobMap['remoteId'] ?? jobMap['orderId'] ?? '';
             return JobModel.fromMap(jobMap, id: doc.id);
           }
         }
@@ -624,7 +668,10 @@ class WorkerJobRepository {
       try {
         debugPrint('[WorkerJobRepository] attempting workerUpdateOrderStatus cloud function for order=$id status=$status');
         final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('workerUpdateOrderStatus');
-        final result = await callable.call(<String, dynamic>{'orderId': id, 'status': status});
+        final payload = <String, dynamic>{'orderId': id, 'status': status};
+        // Ensure payload is serializable
+        final safePayload = payload.map((k, v) => MapEntry(k, v));
+        final result = await callable.call(safePayload);
         debugPrint('[WorkerJobRepository] workerUpdateOrderStatus result=${result.data}');
         if (result.data != null && result.data['success'] == true) {
           return await getJobById(id);
@@ -696,5 +743,150 @@ class WorkerJobRepository {
         debugPrint('[WorkerJobRepository] setAvailability failed: $e');
       }
     }
+  }
+
+  /// Update the payment status for an order (e.g., mark a COD order as 'paid').
+  /// Tries to update the per-worker mirror first, then top-level orders, then falls back to a Cloud Function.
+  Future<JobModel?> updatePaymentStatus(String orderId, String newPaymentStatus, {Map<String, dynamic>? paymentRef}) async {
+    try {
+      final wid = await _resolveWorkerId();
+
+      // Helper to convert ref -> JobModel
+      Future<JobModel?> _jobFromRef(DocumentReference ref) async {
+        try {
+          final snap = await ref.get();
+          if (!snap.exists) return null;
+          final raw = snap.data();
+          if (raw is! Map) return null;
+          final Map<String, dynamic> map = Map<String, dynamic>.from(raw);
+          map['id'] = snap.id;
+          return JobModel.fromMap(map, id: snap.id);
+        } catch (e) {
+          debugPrint('[WorkerJobRepository] _jobFromRef error for ${ref.path}: $e');
+          return null;
+        }
+      }
+
+      // Try per-worker mirror
+      if (wid != null && wid.isNotEmpty) {
+        try {
+          final workerRef = _firestore.collection('workers').doc(wid).collection('orders').doc(orderId);
+          final snap = await workerRef.get();
+          if (snap.exists) {
+            final upd = <String, dynamic>{'paymentStatus': newPaymentStatus, 'updatedAt': FieldValue.serverTimestamp()};
+            if (paymentRef != null) upd['paymentRef'] = paymentRef;
+            await workerRef.update(upd);
+            // Also try top-level update (best-effort)
+            try {
+              final topRef = _firestore.collection('orders').doc(orderId);
+              final topSnap = await topRef.get();
+              if (topSnap.exists) {
+                await topRef.update(upd);
+              }
+            } catch (_) {}
+            return await _jobFromRef(workerRef);
+          }
+        } catch (e) {
+          debugPrint('[WorkerJobRepository] per-worker payment update failed: $e');
+        }
+      }
+
+      // Try top-level orders doc
+      try {
+        final topRef = _firestore.collection('orders').doc(orderId);
+        final topSnap = await topRef.get();
+        if (topSnap.exists) {
+          final upd = <String, dynamic>{'paymentStatus': newPaymentStatus, 'updatedAt': FieldValue.serverTimestamp()};
+          if (paymentRef != null) upd['paymentRef'] = paymentRef;
+          await topRef.update(upd);
+          return await _jobFromRef(topRef);
+        }
+      } catch (e) {
+        debugPrint('[WorkerJobRepository] top-level payment update failed: $e');
+      }
+
+      // Try collectionGroup fallback to update users/{uid}/orders/{id}
+      try {
+        final q = await _firestore.collectionGroup('orders').where('orderId', isEqualTo: orderId).limit(3).get();
+        if (q.docs.isEmpty) {
+          final q2 = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: orderId).limit(3).get();
+          if (q2.docs.isNotEmpty) {
+            final ref = q2.docs.first.reference;
+            final upd = <String, dynamic>{'paymentStatus': newPaymentStatus, 'updatedAt': FieldValue.serverTimestamp()};
+            if (paymentRef != null) upd['paymentRef'] = paymentRef;
+            await ref.update(upd);
+            return await _jobFromRef(ref);
+          }
+        } else {
+          final ref = q.docs.first.reference;
+          final upd = <String, dynamic>{'paymentStatus': newPaymentStatus, 'updatedAt': FieldValue.serverTimestamp()};
+          if (paymentRef != null) upd['paymentRef'] = paymentRef;
+          await ref.update(upd);
+          return await _jobFromRef(ref);
+        }
+      } catch (e) {
+        debugPrint('[WorkerJobRepository] collectionGroup payment update failed: $e');
+      }
+
+      // Fallback: call Cloud Function to perform the update server-side
+      try {
+        final callable = FirebaseFunctions.instance.httpsCallable('workerUpdatePaymentStatus');
+        final payload = {'orderId': orderId, 'paymentStatus': newPaymentStatus, 'paymentRef': _sanitizeForCallable(paymentRef)};
+        final res = await callable.call(payload);
+        if (res.data != null && (res.data['success'] == true || res.data == true)) {
+          return await getJobById(orderId);
+        }
+      } catch (e) {
+        debugPrint('[WorkerJobRepository] workerUpdatePaymentStatus cloud function failed: $e');
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint('[WorkerJobRepository] updatePaymentStatus error: $e');
+      return null;
+    }
+  }
+
+  /// Helper to make a copy of a Map<String, dynamic> safe to send to Cloud Functions.
+  /// Replaces FieldValue.serverTimestamp() with an ISO timestamp string and
+  /// removes any non-serializable values (like FieldValue instances).
+  Map<String, dynamic>? _sanitizeForCallable(Map<String, dynamic>? m) {
+    if (m == null) return null;
+    final out = <String, dynamic>{};
+    for (final entry in m.entries) {
+      final k = entry.key;
+      final v = entry.value;
+      try {
+        if (v == null) {
+          out[k] = null;
+        } else if (v is String || v is num || v is bool) {
+          out[k] = v;
+        } else if (v is DateTime) {
+          out[k] = v.toIso8601String();
+        } else if (v is Map) {
+          out[k] = _sanitizeForCallable(Map<String, dynamic>.from(v as Map));
+        } else if (v is List) {
+          out[k] = v.map((e) {
+            if (e == null) return null;
+            if (e is String || e is num || e is bool) return e;
+            if (e is DateTime) return e.toIso8601String();
+            if (e is Map) return _sanitizeForCallable(Map<String, dynamic>.from(e as Map));
+            return e.toString();
+          }).toList();
+        } else if (v is FieldValue) {
+          // replace serverTimestamp with current ISO string for the callable payload
+          // (callables can't accept FieldValue). Use client's timestamp as fallback.
+          out[k] = DateTime.now().toIso8601String();
+        } else {
+          // Fall back to string representation
+          out[k] = v.toString();
+        }
+      } catch (_) {
+        try {
+          out[k] = v.toString();
+        } catch (_) {}
+      }
+    }
+    return out;
   }
 }

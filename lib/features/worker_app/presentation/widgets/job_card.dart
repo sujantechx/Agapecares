@@ -100,9 +100,26 @@ class JobCard extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Expanded(child: Text(job.serviceName, style: TextStyle(fontSize: isProminent ? 16 : 14, fontWeight: FontWeight.bold))),
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(job.serviceName, style: TextStyle(fontSize: isProminent ? 16 : 14, fontWeight: FontWeight.bold)),
+                            if (job.orderNumber != null && job.orderNumber!.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text('#${job.orderNumber}', style: TextStyle(fontSize: 12, color: Colors.black45)),
+                            ]
+                          ]),
+                        ),
                         SizedBox(width: 8),
-                        Text(job.status.toUpperCase().replaceAll('_', ' '), style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(job.status.toUpperCase().replaceAll('_', ' '), style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+                            if (job.total != null) ...[
+                              const SizedBox(height: 4),
+                              Text('Total: ${job.total!.toStringAsFixed(2)}', style: TextStyle(fontSize: 12, color: Colors.black87)),
+                            ]
+                          ],
+                        ),
                       ],
                     ),
                     const SizedBox(height: 6),

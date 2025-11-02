@@ -16,7 +16,11 @@ class JobModel extends Equatable {
   final double? rating;
   final String status; // e.g. 'pending','assigned','on_way','arrived','in_progress','paused','completed'
   final bool isCod;
+  final String? paymentStatus; // e.g. 'pending','paid','cod'
+  final Map<String, dynamic>? paymentRef; // optional payment reference details
+  final double? total;
   final List<String> inclusions;
+  final String? orderNumber;
 
   const JobModel({
     required this.id,
@@ -30,7 +34,11 @@ class JobModel extends Equatable {
     this.rating,
     required this.status,
     this.isCod = false,
+    this.paymentStatus,
+    this.paymentRef,
+    this.total,
     this.inclusions = const [],
+    this.orderNumber,
   });
 
   factory JobModel.fromMap(Map<String, dynamic>? map, {String? id}) {
@@ -44,10 +52,20 @@ class JobModel extends Equatable {
       scheduledAt: _parseTimestamp(m['scheduledAt'] ?? m['scheduled_at']) ?? DateTime.now(),
       status: m['status'] as String? ?? 'pending',
       isCod: m['isCod'] as bool? ?? (m['is_cod'] as bool? ?? false),
+      paymentStatus: m['paymentStatus'] as String? ?? m['payment_state'] as String?,
+      paymentRef: m['paymentRef'] is Map ? Map<String, dynamic>.from(m['paymentRef'] as Map) : null,
+      total: (m['total'] is num)
+          ? (m['total'] as num).toDouble()
+          : (m['totalAmount'] is num)
+              ? (m['totalAmount'] as num).toDouble()
+              : (m['total_amount'] is num)
+                  ? (m['total_amount'] as num).toDouble()
+                  : (m['totalAmount'] != null ? double.tryParse(m['totalAmount'].toString()) : null),
       scheduledEnd: _parseTimestamp(m['scheduledEnd'] ?? m['scheduled_end']),
       specialInstructions: m['specialInstructions'] as String? ?? m['special_instructions'] as String?,
       rating: (m['rating'] is num) ? (m['rating'] as num).toDouble() : (m['rating'] != null ? double.tryParse(m['rating'].toString()) : null),
       inclusions: (m['inclusions'] is List) ? List<String>.from(m['inclusions'].map((e) => e?.toString() ?? '')) : const [],
+      orderNumber: m['orderNumber'] as String? ?? m['remoteId'] as String?,
     );
   }
 
@@ -63,7 +81,11 @@ class JobModel extends Equatable {
         'scheduledEnd': scheduledEnd != null ? Timestamp.fromDate(scheduledEnd!) : null,
         'status': status,
         'isCod': isCod,
+        if (paymentStatus != null) 'paymentStatus': paymentStatus,
+        if (paymentRef != null) 'paymentRef': paymentRef,
+        'total': total,
         'inclusions': inclusions,
+        if (orderNumber != null) 'orderNumber': orderNumber,
         'specialInstructions': specialInstructions,
         'rating': rating,
       };
@@ -95,7 +117,11 @@ class JobModel extends Equatable {
     double? rating,
     String? status,
     bool? isCod,
+    String? paymentStatus,
+    Map<String, dynamic>? paymentRef,
+    double? total,
     List<String>? inclusions,
+    String? orderNumber,
   }) {
     return JobModel(
       id: id ?? this.id,
@@ -109,10 +135,14 @@ class JobModel extends Equatable {
       rating: rating ?? this.rating,
       status: status ?? this.status,
       isCod: isCod ?? this.isCod,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      paymentRef: paymentRef ?? this.paymentRef,
+      total: total ?? this.total,
       inclusions: inclusions ?? this.inclusions,
+      orderNumber: orderNumber ?? this.orderNumber,
     );
   }
 
   @override
-  List<Object?> get props => [id, serviceName, address, customerName, customerPhone, scheduledAt, status, isCod, inclusions];
+  List<Object?> get props => [id, serviceName, address, customerName, customerPhone, scheduledAt, status, isCod, inclusions, paymentStatus, paymentRef, total, orderNumber];
 }

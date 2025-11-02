@@ -100,7 +100,8 @@ class OrderModel extends Equatable {
     final taxVal = (data['tax'] ?? 0) as num?;
 
     // Support different order number field names
-    final orderNum = (data['orderNumber'] ?? data['orderNo'] ?? '') as String;
+    // Try several possible fields that may contain a human-friendly order number
+    final orderNum = (data['orderNumber'] ?? data['orderNo'] ?? data['remoteId'] ?? data['orderId'] ?? '') as String;
 
     // Support multiple status field names
     final rawOrderStatus = (data['orderStatus'] ?? data['status']) as String? ?? '';
@@ -175,6 +176,62 @@ class OrderModel extends Equatable {
       }
     }
 
+    // Robustly ensure addressSnapshot contains an 'address' key when possible.
+    Map<String, dynamic> addressSnapshot = {};
+    try {
+      if (data['addressSnapshot'] is Map) {
+        addressSnapshot = Map<String, dynamic>.from(data['addressSnapshot'] as Map);
+      }
+      // If addressSnapshot lacks a readable address, try common top-level fields
+      final addressKeys = ['address', 'line1', 'line_1', 'formatted', 'formattedAddress', 'formatted_address', 'fullAddress', 'street', 'streetAddress', 'displayAddress'];
+      bool hasReadable = addressSnapshot.keys.any((k) => addressKeys.contains(k) && (addressSnapshot[k] is String && (addressSnapshot[k] as String).trim().isNotEmpty));
+      if (!hasReadable) {
+        for (final k in addressKeys) {
+          final v = data[k];
+          if (v is String && v.trim().isNotEmpty) {
+            addressSnapshot['address'] = v.trim();
+            hasReadable = true;
+            break;
+          }
+        }
+      }
+      // Try nested 'location' or 'geo' in top-level data
+      if (!hasReadable && data['location'] is Map) {
+        final loc = Map<String, dynamic>.from(data['location'] as Map);
+        final lf = loc['address'] ?? loc['formatted_address'] ?? loc['formatted'];
+        if (lf is String && lf.trim().isNotEmpty) {
+          addressSnapshot['address'] = lf.trim();
+          hasReadable = true;
+        }
+      }
+      // If still not found, try user's saved addresses if provided on the doc
+      if (!hasReadable && data['userAddresses'] is List && (data['userAddresses'] as List).isNotEmpty) {
+        final first = (data['userAddresses'] as List).first;
+        if (first is Map) {
+          final m = Map<String, dynamic>.from(first);
+          for (final k in ['address', 'line1', 'formatted', 'formattedAddress', 'displayAddress', 'streetAddress']) {
+            final vv = m[k];
+            if (vv is String && vv.trim().isNotEmpty) {
+              addressSnapshot['address'] = vv.trim();
+              hasReadable = true;
+              break;
+            }
+          }
+          if (!hasReadable) {
+            final parts = <String>[];
+            if (m['line1'] is String && (m['line1'] as String).trim().isNotEmpty) parts.add((m['line1'] as String).trim());
+            if (m['city'] is String && (m['city'] as String).trim().isNotEmpty) parts.add((m['city'] as String).trim());
+            if (m['state'] is String && (m['state'] as String).trim().isNotEmpty) parts.add((m['state'] as String).trim());
+            if (m['postalCode'] is String && (m['postalCode'] as String).trim().isNotEmpty) parts.add((m['postalCode'] as String).trim());
+            if (parts.isNotEmpty) {
+              addressSnapshot['address'] = parts.join(', ');
+              hasReadable = true;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
     return OrderModel(
       id: doc.id,
       orderNumber: orderNum,
@@ -185,7 +242,7 @@ class OrderModel extends Equatable {
       workerName: data['workerName'] as String?,
       workerPhone: data['workerPhone'] as String?,
       items: items,
-      addressSnapshot: Map<String, dynamic>.from(data['addressSnapshot'] ?? {}),
+      addressSnapshot: addressSnapshot,
       subtotal: subtotalVal?.toDouble() ?? 0.0,
       discount: discountVal?.toDouble() ?? 0.0,
       tax: taxVal?.toDouble() ?? 0.0,

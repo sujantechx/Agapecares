@@ -14,15 +14,39 @@ class OrderListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheduled = order.scheduledAt.toDate();
     final timeStr = DateFormat('dd MMM yyyy, hh:mm a').format(scheduled);
-    final addr = (order.addressSnapshot['address'] as String?) ?? (order.addressSnapshot['line1'] as String?) ?? 'Address';
-    final customerName = (order.addressSnapshot['name'] as String?) ?? order.userId;
-    final customerPhone = (order.addressSnapshot['phone'] as String?) ?? order.addressSnapshot['phoneNumber'] as String? ?? '';
+
+    // Robust extraction: check many common snapshot keys then fall back to top-level fields
+    String extractAddress(Map<String, dynamic>? snap, Map<String, dynamic> top) {
+      if (snap != null) {
+        final keys = ['address', 'line1', 'line_1', 'formatted', 'formattedAddress', 'formatted_address', 'fullAddress', 'street', 'streetAddress', 'displayAddress'];
+        for (final k in keys) {
+          final v = snap[k];
+          if (v is String && v.trim().isNotEmpty) return v.trim();
+        }
+      }
+      final topKeys = ['address', 'line1', 'formattedAddress', 'formatted_address', 'fullAddress', 'addressLine', 'streetAddress', 'displayAddress'];
+      for (final k in topKeys) {
+        final v = top[k];
+        if (v is String && v.trim().isNotEmpty) return v.trim();
+      }
+      return 'Address';
+    }
+
+    final addr = extractAddress(order.addressSnapshot, {});
+    final customerName = (order.addressSnapshot['name'] as String?) ?? order.userName ?? order.userId;
+    final customerPhone = (order.addressSnapshot['phone'] as String?) ?? (order.addressSnapshot['phoneNumber'] as String?) ?? order.userPhone ?? '';
 
     final isCod = order.paymentStatus == PaymentStatus.pending && (order.paymentRef == null || order.paymentRef!.isEmpty);
 
     return ListTile(
       onTap: onTap,
-      title: Text(order.items.isNotEmpty ? order.items.first.serviceName : 'Service'),
+      title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(order.items.isNotEmpty ? order.items.first.serviceName : 'Service'),
+        if (order.orderNumber.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text('#${order.orderNumber}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+        ]
+      ]),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -49,4 +73,3 @@ class OrderListTile extends StatelessWidget {
     );
   }
 }
-

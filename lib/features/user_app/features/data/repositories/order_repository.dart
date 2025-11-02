@@ -948,15 +948,81 @@ class OrderRepositoryImpl implements OrderRepository {
       workersMap[wid] = await _fetchWorkerNamePhone(wid);
     }));
 
+    // Fetch user addresses for orders that lack addressSnapshot or a readable address
+    final Map<String, List<dynamic>?> userAddressesMap = {};
+    try {
+      final needAddressUserIds = orders
+          .where((o) => o.addressSnapshot.isEmpty || (o.addressSnapshot['address'] == null || (o.addressSnapshot['address'] as String).trim().isEmpty))
+          .map((o) => o.userId)
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      await Future.wait(needAddressUserIds.map((uid) async {
+        try {
+          final udoc = await _firestore.collection('users').doc(uid).get();
+          if (udoc.exists) {
+            final ud = udoc.data();
+            if (ud != null && ud['addresses'] is List) {
+              userAddressesMap[uid] = (ud['addresses'] as List);
+            } else {
+              userAddressesMap[uid] = null;
+            }
+          } else {
+            userAddressesMap[uid] = null;
+          }
+        } catch (e) {
+          debugPrint('[OrderRepository] failed to fetch addresses for user=$uid: $e');
+          userAddressesMap[uid] = null;
+        }
+      }));
+    } catch (_) {}
+
+    // Helper to extract a simple readable address string from a dynamic address entry
+    String? extractAddressFromEntry(dynamic entry) {
+      try {
+        if (entry == null) return null;
+        if (entry is String && entry.trim().isNotEmpty) return entry.trim();
+        if (entry is Map) {
+          final m = Map<String, dynamic>.from(entry);
+          final keys = ['address', 'line1', 'formatted', 'formattedAddress', 'displayAddress', 'streetAddress'];
+          for (final k in keys) {
+            final v = m[k];
+            if (v is String && v.trim().isNotEmpty) return v.trim();
+          }
+          final parts = <String>[];
+          if (m['line1'] is String && (m['line1'] as String).trim().isNotEmpty) parts.add((m['line1'] as String).trim());
+          if (m['city'] is String && (m['city'] as String).trim().isNotEmpty) parts.add((m['city'] as String).trim());
+          if (m['state'] is String && (m['state'] as String).trim().isNotEmpty) parts.add((m['state'] as String).trim());
+          if (m['postalCode'] is String && (m['postalCode'] as String).trim().isNotEmpty) parts.add((m['postalCode'] as String).trim());
+          if (parts.isNotEmpty) return parts.join(', ');
+        }
+      } catch (_) {}
+      return null;
+    }
+
     // Apply
     return orders.map((o) {
       final u = usersMap[o.userId];
       final w = (o.workerId != null && o.workerId!.isNotEmpty) ? workersMap[o.workerId!] : null;
+
+      // Determine addressSnapshot to set: prefer existing, then user addresses if available
+      Map<String, dynamic>? finalAddressSnapshot = o.addressSnapshot.isNotEmpty ? Map<String, dynamic>.from(o.addressSnapshot) : null;
+      if ((finalAddressSnapshot == null || finalAddressSnapshot['address'] == null || (finalAddressSnapshot['address'] as String).trim().isEmpty) && userAddressesMap.containsKey(o.userId) && userAddressesMap[o.userId] != null) {
+        final uaList = userAddressesMap[o.userId]!;
+        if (uaList.isNotEmpty) {
+          final first = uaList.first;
+          final extracted = extractAddressFromEntry(first);
+          if (extracted != null && extracted.isNotEmpty) {
+            finalAddressSnapshot = {'address': extracted};
+          }
+        }
+      }
+
       return o.copyWith(
         userName: u?['name'],
         userPhone: u?['phone'],
         workerName: w?['name'],
         workerPhone: w?['phone'],
+        addressSnapshot: finalAddressSnapshot ?? o.addressSnapshot,
       );
     }).toList();
   }

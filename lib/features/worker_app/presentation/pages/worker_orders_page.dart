@@ -372,70 +372,40 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> with TickerProvider
     }
   }
 
-  // OTP verification flow (best-effort via cloud function 'verifyJobOtp')
-  Future<bool> _verifyOtpFlow(String orderId) async {
-    final otp = await showDialog<String?>(
-      context: context,
-      builder: (ctx) {
-        final controller = TextEditingController();
-        return AlertDialog(
-          title: const Text('Enter OTP from customer'),
-          content: TextField(controller: controller, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'OTP')),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(null), child: const Text('Cancel')),
-            TextButton(onPressed: () => Navigator.of(ctx).pop(controller.text.trim()), child: const Text('Verify')),
-          ],
-        );
-      },
-    );
-
-    if (otp == null || otp.isEmpty) return false;
-    try {
-      final functions = FirebaseFunctions.instance;
-      final callable = functions.httpsCallable('verifyJobOtp');
-      final res = await callable.call({'orderId': orderId, 'otp': otp});
-      final ok = (res.data is Map && (res.data['ok'] == true || res.data['verified'] == true)) || res.data == true;
-      if (!ok) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('OTP verification failed')));
-      }
-      return ok;
-    } catch (e) {
-      debugPrint('[WorkerOrdersPage] verifyJobOtp function failed or unavailable: $e');
-      if (!mounted) return false;
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('OTP unavailable'),
-          content: const Text('OTP verification service is unavailable. Do you want to mark job as completed without OTP?'),
-          actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')), TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Yes'))],
-        ),
-      ) ??
-          false;
-      return confirm;
-    }
-  }
-
   Future<void> _updateStatus(JobModel job, String newStatus) async {
     try {
       setState(() => _updatingJobIds.add(job.id));
 
-      // If completing, require OTP verification + confirmation dialog
-      if (newStatus.toLowerCase() == 'completed' || newStatus.toLowerCase() == 'completed') {
-        final ok = await _verifyOtpFlow(job.id);
-        if (!ok) return; // Must return here if OTP fails
-        final confirm = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Confirm Completion'),
-            content: const Text('Are you sure you want to mark this job as Completed?'),
-            actions: [
-              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-              TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Yes')),
-            ],
-          ),
-        ) ??
-            false;
-        if (!confirm) return; // Must return here if user cancels
+      // Show a single confirmation dialog for any status change (OTP removed)
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Confirm'),
+          content: Text('Are you sure you want to mark this job as ${newStatus.replaceAll('_', ' ')}?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Yes')),
+          ],
+        ),
+      ) ?? false;
+      if (!confirmed) return;
+
+      // If the worker is completing the job, and the order is COD/unpaid, try to mark it paid first (best-effort).
+      if (newStatus.toLowerCase() == 'completed' || newStatus.toLowerCase() == 'complete') {
+        try {
+          final ps = (job.paymentStatus ?? '').toLowerCase();
+          if (ps == 'cod' || ps == 'pending' || ps.isEmpty) {
+            final paid = await _repo.updatePaymentStatus(job.id, 'paid', paymentRef: {'markedBy': 'worker', 'markedAt': FieldValue.serverTimestamp()});
+            if (paid == null) {
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to mark COD as paid, aborting completion')));
+              return;
+            }
+            // update local job reference with latest paymentStatus
+            job = paid;
+          }
+        } catch (e) {
+          debugPrint('[WorkerOrdersPage] pre-mark-as-paid failed for ${job.id}: $e');
+        }
       }
 
       // Immediate backend sync via repository
@@ -613,7 +583,13 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> with TickerProvider
                 return ListTile(
                   tileColor: Colors.grey.shade50,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  title: Text(j.serviceName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(j.serviceName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    if (j.orderNumber != null && j.orderNumber!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text('#${j.orderNumber}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                    ]
+                  ]),
                   subtitle: Text('${DateFormat.yMMMMd().format(j.scheduledAt)} • ${j.customerName}'),
                   trailing: Text(j.status.toUpperCase(), style: TextStyle(color: _statusColor(j.status), fontWeight: FontWeight.bold)),
                   onTap: () {

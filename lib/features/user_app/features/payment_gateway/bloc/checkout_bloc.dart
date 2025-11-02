@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../../core/models/cart_item_model.dart';
 import '../../../../../core/models/order_model.dart';
 import 'package:agapecares/features/user_app/features/data/repositories/order_repository.dart' as user_orders_repo;
+import 'package:agapecares/features/user_app/features/data/repositories/booking_repository.dart';
 
 import '../model/payment_models.dart';
 import '../repository/razorpay_payment_repository.dart';
@@ -28,6 +29,7 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
   final CartRepository _cartRepo;
   final Future<String?> Function() _getCurrentUserId;
   final dynamic _firestore;
+  final BookingRepository? _bookingRepo;
 
   CheckoutBloc({
     required user_orders_repo.OrderRepository orderRepo,
@@ -35,6 +37,7 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
     required CodPaymentRepository codRepo,
     required CartRepository cartRepo,
     required Future<String?> Function() getCurrentUserId,
+    BookingRepository? bookingRepo,
     dynamic firestore,
   })
       : _orderRepo = orderRepo,
@@ -43,6 +46,7 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
         _cartRepo = cartRepo,
         _getCurrentUserId = getCurrentUserId,
         _firestore = firestore ?? FirebaseFirestore.instance,
+        _bookingRepo = bookingRepo,
         super(const CheckoutState()) {
     on<CheckoutSubmitted>(_onCheckoutSubmitted);
   }
@@ -195,7 +199,9 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
           // Create remote order using the repository. Capture the created document id
           String? createdOrderId;
           try {
+            debugPrint('[CheckoutBloc] about to call _orderRepo.uploadOrder for razorpay paidOrder');
             createdOrderId = await _orderRepo.uploadOrder(paidOrder);
+            debugPrint('[CheckoutBloc] _orderRepo.uploadOrder returned id=$createdOrderId');
           } catch (e) {
             debugPrint('[CheckoutBloc] uploadOrder failed after Razorpay: $e');
           }
@@ -246,6 +252,13 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
 
           // Clear cart and create booking. Ensure we pass the order that contains the remote id when available.
           await _cartRepo.clearCart();
+          if (_bookingRepo != null) {
+            try {
+              await _bookingRepo!.createBooking(orderForPersist);
+            } catch (e) {
+              debugPrint('[CheckoutBloc] createBooking (razorpay) failed or is disabled: $e');
+            }
+          }
           // `bookings` collection removed: do not create a top-level booking document.
           // The order has already been persisted via `_orderRepo.uploadOrder` and
           // payment stored under `payments` if applicable. No additional action needed here.
@@ -265,7 +278,9 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
           // Create the remote order and then persist a COD payment record
           String? createdOrderId;
           try {
+            debugPrint('[CheckoutBloc] about to call _orderRepo.uploadOrder for COD order');
             createdOrderId = await _orderRepo.uploadOrder(order);
+            debugPrint('[CheckoutBloc] _orderRepo.uploadOrder returned id=$createdOrderId');
           } catch (e) {
             debugPrint('[CheckoutBloc] uploadOrder failed (COD): $e');
           }
@@ -315,6 +330,13 @@ class CheckoutBloc extends Bloc<CheckoutEvent, CheckoutState> {
 
           // Clear cart and create booking
           await _cartRepo.clearCart();
+          if (_bookingRepo != null) {
+            try {
+              await _bookingRepo!.createBooking(orderForPersistCod);
+            } catch (e) {
+              debugPrint('[CheckoutBloc] createBooking (cod) failed or is disabled: $e');
+            }
+          }
           // `bookings` collection removed: do not create a top-level booking document.
           // Order and payment record already persisted above.
 

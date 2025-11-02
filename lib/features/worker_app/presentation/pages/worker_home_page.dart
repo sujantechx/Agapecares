@@ -210,6 +210,9 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
             }
             jobMap['customerName'] = data['userName'] ?? data['customerName'] ?? '';
             jobMap['customerPhone'] = data['userPhone'] ?? data['customerPhone'] ?? '';
+            // Include payment info
+            jobMap['paymentStatus'] = data['paymentStatus'] ?? data['payment_state'] ?? (data['isCod'] == true ? 'cod' : null);
+            jobMap['paymentRef'] = data['paymentRef'] ?? data['payment_details'] ?? null;
             jobMap['scheduledAt'] = data['scheduledAt'] ?? data['scheduled_at'] ?? data['scheduledAtAt'];
             jobMap['status'] = data['status'] ?? data['orderStatus'] ?? 'assigned';
             jobMap['isCod'] = data['paymentStatus'] == 'cod' || (data['isCod'] ?? data['is_cod'] ?? false);

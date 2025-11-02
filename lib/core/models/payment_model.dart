@@ -29,7 +29,7 @@ class PaymentModel extends Equatable {
   final PaymentMethod method;
 
   /// The current status of the transaction.
-  final PaymentTransactionStatus status;
+  final PaymentTransactionStatus paymentStatus;
 
   /// The transaction ID provided by the payment gateway (e.g., Razorpay Payment ID).
   final String? gatewayTransactionId;
@@ -47,7 +47,7 @@ class PaymentModel extends Equatable {
     required this.amount,
     required this.currency,
     required this.method,
-    required this.status,
+    required this.paymentStatus,
     this.gatewayTransactionId,
     this.gatewayResponse,
     required this.createdAt,
@@ -66,7 +66,7 @@ class PaymentModel extends Equatable {
             (e) => e.name == data['method'],
         orElse: () => PaymentMethod.cod,
       ),
-      status: PaymentTransactionStatus.values.firstWhere(
+      paymentStatus: PaymentTransactionStatus.values.firstWhere(
             (e) => e.name == data['status'],
         orElse: () => PaymentTransactionStatus.pending,
       ),
@@ -84,7 +84,7 @@ class PaymentModel extends Equatable {
       'amount': amount,
       'currency': currency,
       'method': method.name,
-      'status': status.name,
+      'paymentStatus': paymentStatus.name,
       'gatewayTransactionId': gatewayTransactionId,
       'gatewayResponse': gatewayResponse,
       'createdAt': createdAt,
@@ -92,5 +92,5 @@ class PaymentModel extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, orderId, userId, status, gatewayTransactionId];
+  List<Object?> get props => [id, orderId, userId, paymentStatus, gatewayTransactionId];
 }

@@ -728,30 +728,12 @@ class WorkerJobRepository {
       rethrow;
     }
   }
-
-  /// Set worker availability on the worker's user document
-  Future<void> setAvailability(bool online, {String? workerId}) async {
-    final wid = workerId ?? await _resolveWorkerId();
-    if (wid == null) return;
-    try {
-      await _firestore.collection('users').doc(wid).update({'isOnline': online});
-    } catch (e) {
-      // If field doesn't exist, try set with merge
-      try {
-        await _firestore.collection('users').doc(wid).set({'isOnline': online}, SetOptions(merge: true));
-      } catch (_) {
-        debugPrint('[WorkerJobRepository] setAvailability failed: $e');
-      }
-    }
-  }
-
   /// Update the payment status for an order (e.g., mark a COD order as 'paid').
   /// Tries to update the per-worker mirror first, then top-level orders, then falls back to a Cloud Function.
   Future<JobModel?> updatePaymentStatus(String orderId, String newPaymentStatus, {Map<String, dynamic>? paymentRef}) async {
     try {
       final wid = await _resolveWorkerId();
 
-      // Helper to convert ref -> JobModel
       Future<JobModel?> _jobFromRef(DocumentReference ref) async {
         try {
           final snap = await ref.get();
@@ -767,68 +749,256 @@ class WorkerJobRepository {
         }
       }
 
-      // Try per-worker mirror
+      // Build update payload for Firestore (allow FieldValue for server timestamp)
+      final Map<String, dynamic> updPayload = {
+        'paymentStatus': newPaymentStatus,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (paymentRef != null) updPayload['paymentRef'] = paymentRef;
+      if (newPaymentStatus.toLowerCase() == 'paid') {
+        updPayload['paidAt'] = FieldValue.serverTimestamp();
+      }
+
+      // Helper to update payments collection (best-effort)
+      Future<void> _updatePaymentsDocIfExists(WriteBatch batch, {DocumentReference? singleRef}) async {
+        try {
+          final payRef = _firestore.collection('payments').doc(orderId);
+          final paySnap = await payRef.get();
+          if (paySnap.exists) {
+            // If using batch, queue update, otherwise update singleRef will be null
+            if (batch != null) {
+              batch.update(payRef, {
+                'status': newPaymentStatus,
+                'paymentRef': paymentRef ?? FieldValue.delete(),
+                'updatedAt': FieldValue.serverTimestamp(),
+                if (newPaymentStatus.toLowerCase() == 'paid') 'paidAt': FieldValue.serverTimestamp(),
+              });
+            } else if (singleRef == null) {
+              await payRef.update({
+                'status': newPaymentStatus,
+                'paymentRef': paymentRef ?? FieldValue.delete(),
+                'updatedAt': FieldValue.serverTimestamp(),
+                if (newPaymentStatus.toLowerCase() == 'paid') 'paidAt': FieldValue.serverTimestamp(),
+              });
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 1) Try per-worker mirror
       if (wid != null && wid.isNotEmpty) {
         try {
           final workerRef = _firestore.collection('workers').doc(wid).collection('orders').doc(orderId);
           final snap = await workerRef.get();
           if (snap.exists) {
-            final upd = <String, dynamic>{'paymentStatus': newPaymentStatus, 'updatedAt': FieldValue.serverTimestamp()};
-            if (paymentRef != null) upd['paymentRef'] = paymentRef;
-            await workerRef.update(upd);
-            // Also try top-level update (best-effort)
+            // Attempt atomic batch update across worker mirror, top-level and payments doc (if present)
             try {
+              final batch = _firestore.batch();
+              batch.update(workerRef, updPayload);
+
               final topRef = _firestore.collection('orders').doc(orderId);
               final topSnap = await topRef.get();
               if (topSnap.exists) {
-                await topRef.update(upd);
+                batch.update(topRef, updPayload);
               }
-            } catch (_) {}
-            return await _jobFromRef(workerRef);
+
+              // Try to update users/{uid}/orders/{orderId} if owner's id available
+              try {
+                final topData = topSnap.data();
+                final ownerId = (topData is Map) ? (topData?['userId'] ?? topData?['orderOwner']) : null;
+                if (ownerId is String && ownerId.isNotEmpty) {
+                  final userOrderRef = _firestore.collection('users').doc(ownerId).collection('orders').doc(orderId);
+                  final userSnap = await userOrderRef.get();
+                  if (userSnap.exists) batch.update(userOrderRef, updPayload);
+                }
+              } catch (_) {}
+
+              // Update payments doc if exists
+              try {
+                final payRef = _firestore.collection('payments').doc(orderId);
+                final paySnap = await payRef.get();
+                if (paySnap.exists) {
+                  batch.update(payRef, {
+                    'status': newPaymentStatus,
+                    if (paymentRef != null) 'paymentRef': paymentRef,
+                    'updatedAt': FieldValue.serverTimestamp(),
+                    if (newPaymentStatus.toLowerCase() == 'paid') 'paidAt': FieldValue.serverTimestamp(),
+                  });
+                }
+              } catch (_) {}
+
+              await batch.commit();
+              return await _jobFromRef(workerRef);
+            } catch (batchErr) {
+              debugPrint('[WorkerJobRepository] batch payment update failed, falling back to single updates: $batchErr');
+              // Fallback: single updates
+              try {
+                await workerRef.update(updPayload);
+              } catch (_) {}
+              try {
+                final topRef = _firestore.collection('orders').doc(orderId);
+                final topSnap = await topRef.get();
+                if (topSnap.exists) await topRef.update(updPayload);
+              } catch (_) {}
+              try {
+                final topSnap = await _firestore.collection('orders').doc(orderId).get();
+                final topData = topSnap.data();
+                final ownerId = (topData is Map) ? (topData?['userId'] ?? topData?['orderOwner']) : null;
+                if (ownerId is String && ownerId.isNotEmpty) {
+                  final userOrderRef = _firestore.collection('users').doc(ownerId).collection('orders').doc(orderId);
+                  final us = await userOrderRef.get();
+                  if (us.exists) await userOrderRef.update(updPayload);
+                }
+              } catch (_) {}
+              try {
+                final payRef = _firestore.collection('payments').doc(orderId);
+                final paySnap = await payRef.get();
+                if (paySnap.exists) {
+                  await payRef.update({
+                    'status': newPaymentStatus,
+                    if (paymentRef != null) 'paymentRef': paymentRef,
+                    'updatedAt': FieldValue.serverTimestamp(),
+                    if (newPaymentStatus.toLowerCase() == 'paid') 'paidAt': FieldValue.serverTimestamp(),
+                  });
+                }
+              } catch (_) {}
+              return await _jobFromRef(workerRef);
+            }
           }
         } catch (e) {
           debugPrint('[WorkerJobRepository] per-worker payment update failed: $e');
         }
       }
 
-      // Try top-level orders doc
+      // 2) Try top-level orders/{orderId}
       try {
         final topRef = _firestore.collection('orders').doc(orderId);
         final topSnap = await topRef.get();
         if (topSnap.exists) {
-          final upd = <String, dynamic>{'paymentStatus': newPaymentStatus, 'updatedAt': FieldValue.serverTimestamp()};
-          if (paymentRef != null) upd['paymentRef'] = paymentRef;
-          await topRef.update(upd);
-          return await _jobFromRef(topRef);
+          // Attempt batch to update top-level, user's subcollection and payments doc
+          try {
+            final batch = _firestore.batch();
+            batch.update(topRef, updPayload);
+
+            final topData = topSnap.data();
+            final ownerId = (topData is Map) ? (topData?['userId'] ?? topData?['orderOwner']) : null;
+            if (ownerId is String && ownerId.isNotEmpty) {
+              final userOrderRef = _firestore.collection('users').doc(ownerId).collection('orders').doc(orderId);
+              final us = await userOrderRef.get();
+              if (us.exists) batch.update(userOrderRef, updPayload);
+            }
+
+            final payRef = _firestore.collection('payments').doc(orderId);
+            final paySnap = await payRef.get();
+            if (paySnap.exists) {
+              batch.update(payRef, {
+                'status': newPaymentStatus,
+                if (paymentRef != null) 'paymentRef': paymentRef,
+                'updatedAt': FieldValue.serverTimestamp(),
+                if (newPaymentStatus.toLowerCase() == 'paid') 'paidAt': FieldValue.serverTimestamp(),
+              });
+            }
+
+            await batch.commit();
+            return await _jobFromRef(topRef);
+          } catch (batchErr) {
+            debugPrint('[WorkerJobRepository] top-level batch failed, falling back to single updates: $batchErr');
+            try {
+              await topRef.update(updPayload);
+            } catch (_) {}
+            try {
+              final topData = topSnap.data();
+              final ownerId = (topData is Map) ? (topData?['userId'] ?? topData?['orderOwner']) : null;
+              if (ownerId is String && ownerId.isNotEmpty) {
+                final userOrderRef = _firestore.collection('users').doc(ownerId).collection('orders').doc(orderId);
+                final us = await userOrderRef.get();
+                if (us.exists) await userOrderRef.update(updPayload);
+              }
+            } catch (_) {}
+            try {
+              final payRef = _firestore.collection('payments').doc(orderId);
+              final paySnap = await payRef.get();
+              if (paySnap.exists) {
+                await payRef.update({
+                  'status': newPaymentStatus,
+                  if (paymentRef != null) 'paymentRef': paymentRef,
+                  'updatedAt': FieldValue.serverTimestamp(),
+                  if (newPaymentStatus.toLowerCase() == 'paid') 'paidAt': FieldValue.serverTimestamp(),
+                });
+              }
+            } catch (_) {}
+            return await _jobFromRef(topRef);
+          }
         }
       } catch (e) {
         debugPrint('[WorkerJobRepository] top-level payment update failed: $e');
       }
 
-      // Try collectionGroup fallback to update users/{uid}/orders/{id}
+      // 3) Try collectionGroup fallback to update users/{uid}/orders/{id} or other subcollections
       try {
-        final q = await _firestore.collectionGroup('orders').where('orderId', isEqualTo: orderId).limit(3).get();
-        if (q.docs.isEmpty) {
-          final q2 = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: orderId).limit(3).get();
-          if (q2.docs.isNotEmpty) {
-            final ref = q2.docs.first.reference;
-            final upd = <String, dynamic>{'paymentStatus': newPaymentStatus, 'updatedAt': FieldValue.serverTimestamp()};
-            if (paymentRef != null) upd['paymentRef'] = paymentRef;
-            await ref.update(upd);
+        QuerySnapshot? q;
+        try {
+          q = await _firestore.collectionGroup('orders').where('orderId', isEqualTo: orderId).limit(3).get();
+        } catch (_) {
+          q = null;
+        }
+        if (q == null || q.docs.isEmpty) {
+          try {
+            q = await _firestore.collectionGroup('orders').where('remoteId', isEqualTo: orderId).limit(3).get();
+          } catch (_) {
+            q = null;
+          }
+        }
+        if (q != null && q.docs.isNotEmpty) {
+          final ref = q.docs.first.reference;
+          try {
+            // Update the found subcollection doc and try to keep top-level & payments in sync
+            final batch = _firestore.batch();
+            batch.update(ref, updPayload);
+
+            final topRef = _firestore.collection('orders').doc(orderId);
+            final topSnap = await topRef.get();
+            if (topSnap.exists) batch.update(topRef, updPayload);
+
+            final payRef = _firestore.collection('payments').doc(orderId);
+            final paySnap = await payRef.get();
+            if (paySnap.exists) {
+              batch.update(payRef, {
+                'status': newPaymentStatus,
+                if (paymentRef != null) 'paymentRef': paymentRef,
+                'updatedAt': FieldValue.serverTimestamp(),
+                if (newPaymentStatus.toLowerCase() == 'paid') 'paidAt': FieldValue.serverTimestamp(),
+              });
+            }
+
+            await batch.commit();
+            return await _jobFromRef(ref);
+          } catch (batchErr) {
+            debugPrint('[WorkerJobRepository] collectionGroup batch failed, falling back to single update: $batchErr');
+            try {
+              await ref.update(updPayload);
+              final topRef = _firestore.collection('orders').doc(orderId);
+              final topSnap = await topRef.get();
+              if (topSnap.exists) await topRef.update(updPayload);
+              final payRef = _firestore.collection('payments').doc(orderId);
+              final paySnap = await payRef.get();
+              if (paySnap.exists) {
+                await payRef.update({
+                  'status': newPaymentStatus,
+                  if (paymentRef != null) 'paymentRef': paymentRef,
+                  'updatedAt': FieldValue.serverTimestamp(),
+                  if (newPaymentStatus.toLowerCase() == 'paid') 'paidAt': FieldValue.serverTimestamp(),
+                });
+              }
+            } catch (_) {}
             return await _jobFromRef(ref);
           }
-        } else {
-          final ref = q.docs.first.reference;
-          final upd = <String, dynamic>{'paymentStatus': newPaymentStatus, 'updatedAt': FieldValue.serverTimestamp()};
-          if (paymentRef != null) upd['paymentRef'] = paymentRef;
-          await ref.update(upd);
-          return await _jobFromRef(ref);
         }
       } catch (e) {
         debugPrint('[WorkerJobRepository] collectionGroup payment update failed: $e');
       }
 
-      // Fallback: call Cloud Function to perform the update server-side
+      // 4) Fallback to Cloud Function (trusted server-side)
       try {
         final callable = FirebaseFunctions.instance.httpsCallable('workerUpdatePaymentStatus');
         final payload = {'orderId': orderId, 'paymentStatus': newPaymentStatus, 'paymentRef': _sanitizeForCallable(paymentRef)};
@@ -846,6 +1016,25 @@ class WorkerJobRepository {
       return null;
     }
   }
+
+
+  /// Set worker availability on the worker's user document
+  Future<void> setAvailability(bool online, {String? workerId}) async {
+    final wid = workerId ?? await _resolveWorkerId();
+    if (wid == null) return;
+    try {
+      await _firestore.collection('users').doc(wid).update({'isOnline': online});
+    } catch (e) {
+      // If field doesn't exist, try set with merge
+      try {
+        await _firestore.collection('users').doc(wid).set({'isOnline': online}, SetOptions(merge: true));
+      } catch (_) {
+        debugPrint('[WorkerJobRepository] setAvailability failed: $e');
+      }
+    }
+  }
+
+
 
   /// Helper to make a copy of a Map<String, dynamic> safe to send to Cloud Functions.
   /// Replaces FieldValue.serverTimestamp() with an ISO timestamp string and

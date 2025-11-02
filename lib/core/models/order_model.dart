@@ -16,8 +16,16 @@ class OrderModel extends Equatable {
   final String orderNumber;
   /// The UID of the customer who placed the order.
   final String userId;
+  /// The customer's display name snapshot at order time (optional).
+  final String? userName;
+  /// The customer's phone snapshot at order time (optional).
+  final String? userPhone;
   /// The UID of the worker assigned to the order. Null if unassigned.
   final String? workerId;
+  /// The worker's display name snapshot at assignment time (optional).
+  final String? workerName;
+  /// The worker's phone snapshot at assignment time (optional).
+  final String? workerPhone;
 
   /// A list of items included in the order.
   final List<CartItemModel> items;
@@ -58,7 +66,11 @@ class OrderModel extends Equatable {
     required this.id,
     required this.orderNumber,
     required this.userId,
+    this.userName,
+    this.userPhone,
     this.workerId,
+    this.workerName,
+    this.workerPhone,
     required this.items,
     required this.addressSnapshot,
     required this.subtotal,
@@ -167,7 +179,11 @@ class OrderModel extends Equatable {
       id: doc.id,
       orderNumber: orderNum,
       userId: data['userId'] as String? ?? data['orderOwner'] as String? ?? '',
+      userName: data['userName'] as String?,
+      userPhone: data['userPhone'] as String?,
       workerId: data['workerId'] as String?,
+      workerName: data['workerName'] as String?,
+      workerPhone: data['workerPhone'] as String?,
       items: items,
       addressSnapshot: Map<String, dynamic>.from(data['addressSnapshot'] ?? {}),
       subtotal: subtotalVal?.toDouble() ?? 0.0,
@@ -192,7 +208,11 @@ class OrderModel extends Equatable {
     return {
       'orderNumber': orderNumber,
       'userId': userId,
+      if (userName != null) 'userName': userName,
+      if (userPhone != null) 'userPhone': userPhone,
       'workerId': workerId,
+      if (workerName != null) 'workerName': workerName,
+      if (workerPhone != null) 'workerPhone': workerPhone,
       'items': items.map((item) => item.toMap()).toList(),
       'addressSnapshot': addressSnapshot,
       'subtotal': subtotal,
@@ -217,7 +237,11 @@ class OrderModel extends Equatable {
     String? id,
     String? orderNumber,
     String? userId,
+    String? userName,
+    String? userPhone,
     String? workerId,
+    String? workerName,
+    String? workerPhone,
     List<CartItemModel>? items,
     Map<String, dynamic>? addressSnapshot,
     double? subtotal,
@@ -239,7 +263,11 @@ class OrderModel extends Equatable {
       id: id ?? this.id,
       orderNumber: orderNumber ?? this.orderNumber,
       userId: userId ?? this.userId,
+      userName: userName ?? this.userName,
+      userPhone: userPhone ?? this.userPhone,
       workerId: workerId ?? this.workerId,
+      workerName: workerName ?? this.workerName,
+      workerPhone: workerPhone ?? this.workerPhone,
       items: items ?? this.items,
       addressSnapshot: addressSnapshot ?? this.addressSnapshot,
       subtotal: subtotal ?? this.subtotal,
@@ -260,5 +288,20 @@ class OrderModel extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, orderNumber, userId, workerId, orderStatus, paymentStatus, total, serviceRating, workerRating, appointmentId];
+  List<Object?> get props => [
+    id,
+    orderNumber,
+    userId,
+    userName,
+    userPhone,
+    workerId,
+    workerName,
+    workerPhone,
+    orderStatus,
+    paymentStatus,
+    total,
+    serviceRating,
+    workerRating,
+    appointmentId,
+  ];
 }

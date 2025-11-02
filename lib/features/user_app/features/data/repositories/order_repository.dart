@@ -79,6 +79,13 @@ class OrderRepositoryImpl implements OrderRepository {
       return;
     }
 
+    // Pre-fetch name/phone snapshots to embed in order documents
+    final userInfo = await _fetchUserNamePhone(order.userId);
+    Map<String, String?> workerInfo = const {'name': null, 'phone': null};
+    if (order.workerId != null && order.workerId!.isNotEmpty) {
+      workerInfo = await _fetchWorkerNamePhone(order.workerId!);
+    }
+
     // Prefer writing into the user's private subcollection so clients can
     // always read their own orders even when top-level `orders` reads are
     // restricted by security rules. After creating the per-user doc we'll
@@ -88,6 +95,13 @@ class OrderRepositoryImpl implements OrderRepository {
       final payload = <String, dynamic>{
         'orderOwner': userId,
         'userId': order.userId,
+        'userName': order.userName ?? userInfo['name'],
+        'userPhone': order.userPhone ?? userInfo['phone'],
+        'workerId': order.workerId,
+        if (order.workerId != null && order.workerId!.isNotEmpty) ...{
+          'workerName': order.workerName ?? workerInfo['name'],
+          'workerPhone': order.workerPhone ?? workerInfo['phone'],
+        },
         'items': order.items.map((i) => i.toMap()).toList(),
         'addressSnapshot': order.addressSnapshot,
         'subtotal': order.subtotal,
@@ -133,6 +147,13 @@ class OrderRepositoryImpl implements OrderRepository {
     // pass the `userId` parameter but the order already contains it.
     final userOrdersCol = _firestore.collection('users').doc(order.userId).collection('orders');
     final data = order.toFirestore();
+    // Embed name/phone snapshots if missing
+    data['userName'] ??= userInfo['name'];
+    data['userPhone'] ??= userInfo['phone'];
+    if ((order.workerId ?? '').isNotEmpty) {
+      data['workerName'] ??= workerInfo['name'];
+      data['workerPhone'] ??= workerInfo['phone'];
+    }
     // Keep orderNumber in the payload - do not remove it so the human-friendly
     // orderNumber is stored in Firestore documents.
     data['totalAmount'] = data['total'] ?? order.total;
@@ -210,6 +231,23 @@ class OrderRepositoryImpl implements OrderRepository {
     cleanedData['orderOwner'] = userId;
     cleanedData['status'] = localOrder.orderStatus.name;
 
+    // Enrich with name/phone snapshots if missing
+    try {
+      if (cleanedData['userName'] == null || cleanedData['userPhone'] == null) {
+        final u = await _fetchUserNamePhone(userId);
+        cleanedData['userName'] ??= u['name'];
+        cleanedData['userPhone'] ??= u['phone'];
+      }
+      final wid = localOrder.workerId;
+      if (wid != null && wid.isNotEmpty && (cleanedData['workerName'] == null || cleanedData['workerPhone'] == null)) {
+        final w = await _fetchWorkerNamePhone(wid);
+        cleanedData['workerName'] ??= w['name'];
+        cleanedData['workerPhone'] ??= w['phone'];
+      }
+    } catch (e) {
+      debugPrint('[OrderRepository] uploadOrder enrichment failed: $e');
+    }
+
     // First, write to the user's subcollection so the user can always read it.
     try {
       final userOrderCol = _firestore.collection('users').doc(userId).collection('orders');
@@ -265,6 +303,23 @@ class OrderRepositoryImpl implements OrderRepository {
       cleanedData['updatedAt'] = FieldValue.serverTimestamp();
       cleanedData['orderOwner'] = order.userId;
 
+      // Enrich with name/phone snapshots if missing
+      try {
+        if (cleanedData['userName'] == null || cleanedData['userPhone'] == null) {
+          final u = await _fetchUserNamePhone(order.userId);
+          cleanedData['userName'] ??= u['name'];
+          cleanedData['userPhone'] ??= u['phone'];
+        }
+        final wid = order.workerId;
+        if (wid != null && wid.isNotEmpty && (cleanedData['workerName'] == null || cleanedData['workerPhone'] == null)) {
+          final w = await _fetchWorkerNamePhone(wid);
+          cleanedData['workerName'] ??= w['name'];
+          cleanedData['workerPhone'] ??= w['phone'];
+        }
+      } catch (e) {
+        debugPrint('[OrderRepository] updateOrder enrichment failed: $e');
+      }
+
       await ref.set(cleanedData, SetOptions(merge: true));
 
       // Also attempt to update the mirror in the user's subcollection so the
@@ -293,56 +348,65 @@ class OrderRepositoryImpl implements OrderRepository {
 
   @override
   Future<List<OrderModel>> fetchOrdersForUser(String userId) async {
+    List<OrderModel> orders = [];
     // 1. First, attempt to fetch from the user's private subcollection.
-    // This is often more secure and efficient.
     try {
-      final userOrdersSnap = await _firestore.collection('users').doc(userId).collection('orders').orderBy('createdAt', descending: true).get();
+      final userOrdersSnap = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('orders')
+          .orderBy('createdAt', descending: true)
+          .get();
       if (userOrdersSnap.docs.isNotEmpty) {
         debugPrint('[OrderRepository] fetched ${userOrdersSnap.docs.length} orders from users/{uid}/orders for user=$userId');
-        return userOrdersSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+        orders = userOrdersSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
       } else {
         debugPrint('[OrderRepository] users/{uid}/orders returned 0 docs for user=$userId');
       }
     } catch (e) {
       debugPrint('[OrderRepository] Failed to fetch from users/{uid}/orders: $e');
-      // If the user's private subcollection read fails it is usually a fatal
-      // condition for client-side reads (bad rules or auth). Surface the
-      // exception so the UI can show it instead of silently falling back.
       rethrow;
     }
 
     // 2. If the subcollection is empty or fails, query the top-level collection.
-    try {
-      final snapshot = await _firestore.collection('orders').where('orderOwner', isEqualTo: userId).orderBy('createdAt', descending: true).get();
-      debugPrint('[OrderRepository] fetched ${snapshot.docs.length} orders from top-level orders for user=$userId');
-      return snapshot.docs.map((doc) => OrderModel.fromFirestore(doc)).toList();
-    } catch (e) {
-      final errString = e.toString();
-      if (errString.contains('permission-denied') || errString.contains('PERMISSION_DENIED')) {
-        debugPrint('[OrderRepository] PERMISSION_DENIED on top-level fetch for user=$userId');
-        // If the user's subcollection returned 0 docs and top-level is denied
-        // it likely means rules prevent clients from reading the top-level
-        // orders collection. Instead of silently returning an empty list we
-        // throw so callers can display a helpful error and next steps.
-        throw Exception('Permission denied reading top-level orders. Ensure Firestore rules allow reads on orders when filtering by orderOwner or use users/{uid}/orders for user reads.');
-      } else {
-        debugPrint('[OrderRepository] Top-level fetchOrdersForUser failed for user=$userId: $e');
+    if (orders.isEmpty) {
+      try {
+        final snapshot = await _firestore
+            .collection('orders')
+            .where('orderOwner', isEqualTo: userId)
+            .orderBy('createdAt', descending: true)
+            .get();
+        debugPrint('[OrderRepository] fetched ${snapshot.docs.length} orders from top-level orders for user=$userId');
+        orders = snapshot.docs.map((doc) => OrderModel.fromFirestore(doc)).toList();
+      } catch (e) {
+        final errString = e.toString();
+        if (errString.contains('permission-denied') || errString.contains('PERMISSION_DENIED')) {
+          debugPrint('[OrderRepository] PERMISSION_DENIED on top-level fetch for user=$userId');
+          throw Exception('Permission denied reading top-level orders. Ensure Firestore rules allow reads on orders when filtering by orderOwner or use users/{uid}/orders for user reads.');
+        } else {
+          debugPrint('[OrderRepository] Top-level fetchOrdersForUser failed for user=$userId: $e');
+        }
       }
     }
 
-    return []; // Return empty list if both attempts yield no documents (no orders)
+    // Enrich names/phones for legacy docs missing snapshots
+    if (orders.isNotEmpty) {
+      orders = await _populateOrderDetailsForOrders(orders);
+    }
+    return orders;
   }
 
   @override
   Future<List<OrderModel>> fetchOrdersForWorker(String workerId) async {
+    List<OrderModel> orders = [];
     try {
-      // 1) Preferred: Read from the per-worker mirror which is allowed by security rules for workers.
+      // 1) Preferred: per-worker mirror
       final workerCol = _firestore.collection('workers').doc(workerId).collection('orders');
       try {
         final snap = await workerCol.orderBy('scheduledAt', descending: false).get();
         if (snap.docs.isNotEmpty) {
           debugPrint('[OrderRepository] fetched ${snap.docs.length} orders from workers/{workerId}/orders for worker=$workerId');
-          return snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+          orders = snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
         } else {
           debugPrint('[OrderRepository] workers/{workerId}/orders returned 0 docs for worker=$workerId');
         }
@@ -350,34 +414,45 @@ class OrderRepositoryImpl implements OrderRepository {
         debugPrint('[OrderRepository] workers/{workerId}/orders read failed (may be fine if mirror not configured): $e');
       }
 
-      // 2) Fallback: Query all `orders` documents (including those under users/{uid}/orders)
-      // using a collectionGroup query to find orders where `workerId` matches.
-      try {
-        final cgQuery = _firestore.collectionGroup('orders').where('workerId', isEqualTo: workerId).orderBy('scheduledAt', descending: false);
-        final snap = await cgQuery.get();
-        if (snap.docs.isNotEmpty) {
-          debugPrint('[OrderRepository] fetched ${snap.docs.length} orders from collectionGroup(users/*/orders) for worker=$workerId');
-          // Map and return distinct orders by remoteId/doc id
-          final mapped = snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
-          return mapped;
+      // 2) Fallback: collectionGroup
+      if (orders.isEmpty) {
+        try {
+          final cgQuery = _firestore
+              .collectionGroup('orders')
+              .where('workerId', isEqualTo: workerId)
+              .orderBy('scheduledAt', descending: false);
+          final snap = await cgQuery.get();
+          if (snap.docs.isNotEmpty) {
+            debugPrint('[OrderRepository] fetched ${snap.docs.length} orders from collectionGroup(users/*/orders) for worker=$workerId');
+            orders = snap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+          }
+        } catch (e) {
+          debugPrint('[OrderRepository] collectionGroup("orders") query for worker failed or is disallowed by rules: $e');
         }
-      } catch (e) {
-        debugPrint('[OrderRepository] collectionGroup("orders") query for worker failed or is disallowed by rules: $e');
       }
 
-      // 3) Final fallback: top-level `orders` collection where workerId == workerId
-      try {
-        final topSnap = await _firestore.collection('orders').where('workerId', isEqualTo: workerId).orderBy('scheduledAt', descending: false).get();
-        if (topSnap.docs.isNotEmpty) {
-          debugPrint('[OrderRepository] fetched ${topSnap.docs.length} orders from top-level orders for worker=$workerId');
-          return topSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+      // 3) Final fallback: top-level
+      if (orders.isEmpty) {
+        try {
+          final topSnap = await _firestore
+              .collection('orders')
+              .where('workerId', isEqualTo: workerId)
+              .orderBy('scheduledAt', descending: false)
+              .get();
+          if (topSnap.docs.isNotEmpty) {
+            debugPrint('[OrderRepository] fetched ${topSnap.docs.length} orders from top-level orders for worker=$workerId');
+            orders = topSnap.docs.map((d) => OrderModel.fromFirestore(d)).toList();
+          }
+        } catch (e) {
+          debugPrint('[OrderRepository] top-level orders query for worker failed: $e');
         }
-      } catch (e) {
-        debugPrint('[OrderRepository] top-level orders query for worker failed: $e');
       }
 
-      // Nothing found
-      return [];
+      if (orders.isNotEmpty) {
+        orders = await _populateOrderDetailsForOrders(orders);
+      }
+
+      return orders;
     } catch (e) {
       debugPrint('[OrderRepository] fetchOrdersForWorker failed: $e');
       return [];
@@ -816,6 +891,75 @@ class OrderRepositoryImpl implements OrderRepository {
     }
   }
 
+  /// Fetch name/phone for a user from users collection.
+  Future<Map<String, String?>> _fetchUserNamePhone(String uid) async {
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get();
+      if (doc.exists) {
+        final data = doc.data() ?? {};
+        return {
+          'name': data['name'] as String?,
+          'phone': data['phoneNumber'] as String? ?? data['phone'] as String?,
+        };
+      }
+    } catch (e) {
+      debugPrint('[OrderRepository] _fetchUserNamePhone failed for $uid: $e');
+    }
+    return {'name': null, 'phone': null};
+  }
+
+  /// Fetch name/phone for a worker, trying workers/ then users/ as fallback.
+  Future<Map<String, String?>> _fetchWorkerNamePhone(String uid) async {
+    try {
+      var doc = await _firestore.collection('workers').doc(uid).get();
+      if (!doc.exists) {
+        doc = await _firestore.collection('users').doc(uid).get();
+      }
+      if (doc.exists) {
+        final data = doc.data() ?? {};
+        return {
+          'name': data['name'] as String? ?? data['workerName'] as String?,
+          'phone': data['phoneNumber'] as String? ?? data['phone'] as String?,
+        };
+      }
+    } catch (e) {
+      debugPrint('[OrderRepository] _fetchWorkerNamePhone failed for $uid: $e');
+    }
+    return {'name': null, 'phone': null};
+  }
+
+  /// Populate user and worker name/phone across a batch of orders.
+  Future<List<OrderModel>> _populateOrderDetailsForOrders(List<OrderModel> orders) async {
+    if (orders.isEmpty) return orders;
+
+    // Collect ids
+    final userIds = orders.map((o) => o.userId).where((id) => id.isNotEmpty).toSet();
+    final workerIds = orders.map((o) => o.workerId ?? '').where((id) => id.isNotEmpty).toSet();
+
+    // Fetch users in parallel
+    final Map<String, Map<String, String?>> usersMap = {};
+    await Future.wait(userIds.map((uid) async {
+      usersMap[uid] = await _fetchUserNamePhone(uid);
+    }));
+
+    // Fetch workers in parallel
+    final Map<String, Map<String, String?>> workersMap = {};
+    await Future.wait(workerIds.map((wid) async {
+      workersMap[wid] = await _fetchWorkerNamePhone(wid);
+    }));
+
+    // Apply
+    return orders.map((o) {
+      final u = usersMap[o.userId];
+      final w = (o.workerId != null && o.workerId!.isNotEmpty) ? workersMap[o.workerId!] : null;
+      return o.copyWith(
+        userName: u?['name'],
+        userPhone: u?['phone'],
+        workerName: w?['name'],
+        workerPhone: w?['phone'],
+      );
+    }).toList();
+  }
 } // end class OrderRepositoryImpl
 
 // End of file

@@ -204,8 +204,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(child: _buildServiceRatingRow()),
-                const SizedBox(width: 12),
-                Text(widget.service.category, style: Theme.of(context).textTheme.bodyMedium),
+                // const SizedBox(width: 12),
+                // Text(widget.service.category, style: Theme.of(context).textTheme.bodyMedium),
               ],
             ),
             const SizedBox(height: 16),
@@ -279,7 +279,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
             if (hasSubscriptions && _isSubscriptionMode) const Divider(height: 48),
 
             const SizedBox(height: 8),
-            Text('Details', style: Theme.of(context).textTheme.titleMedium),
+            Text('Details', style: TextStyle(fontWeight: FontWeight.bold ,fontSize: 18),),
             const SizedBox(height: 8),
             Text(widget.service.description),
             const SizedBox(height: 16),
@@ -292,7 +292,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
   }
 
   Widget _buildPriceAndAction() {
-    final buttonText = !_isSubscriptionMode ? 'ADD' : 'SUBSCRIBE';
+    final buttonText = !_isSubscriptionMode ? 'ADD' : 'ADD';
     final originalTotalPrice = (_selectedOption.price * max(1, _selectedSubscription?.durationInMonths ?? 1)).round();
 
     return Row(
@@ -375,7 +375,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Reviews', style: Theme.of(context).textTheme.titleMedium),
+            Text('Reviews',style: TextStyle(fontWeight: FontWeight.bold ,fontSize: 18),),
             // Removed write-review button: repository is read-only and reviews are submitted elsewhere
           ],
         ),

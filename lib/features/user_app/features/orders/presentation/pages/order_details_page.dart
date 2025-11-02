@@ -228,13 +228,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
 
   /// Groups statuses for the timeline
   OrderStatus _getCanonicalStatus(OrderStatus status) {
-    switch (status) {
-      case OrderStatus.on_my_way:
-      case OrderStatus.arrived:
-        return OrderStatus.assigned;
-      default:
-        return status;
-    }
+    // Keep canonicalization simple for now — no grouping so each status gets its own step.
+    return status;
   }
 
   /// Gets the current step index for the timeline
@@ -245,10 +240,14 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         return 0;
       case OrderStatus.assigned:
         return 1;
-      case OrderStatus.in_progress:
+      case OrderStatus.on_my_way:
         return 2;
-      case OrderStatus.completed:
+      case OrderStatus.arrived:
         return 3;
+      case OrderStatus.in_progress:
+        return 4;
+      case OrderStatus.completed:
+        return 5;
       default:
         if (status == OrderStatus.cancelled) return -1; // Cancelled
         return 0;
@@ -282,12 +281,21 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
       );
     }
 
-    final statuses = ['Pending', 'Assigned', 'In Progress', 'Completed'];
+    final statuses = [
+      'Pending',
+      'Assigned',
+      'On Way',
+      'Arrived',
+      'In Progress',
+      'Completed'
+    ];
     final icons = [
-      Icons.schedule,
-      Icons.person_pin,
-      Icons.construction,
-      Icons.check_circle
+      Icons.schedule, // Pending
+      Icons.person_pin, // Assigned
+      Icons.directions_bike_outlined, // On Way (vehicle)
+      Icons.location_on, // Arrived
+      Icons.hourglass_bottom, // In Progress (changed icon)
+      Icons.check_circle // Completed
     ];
 
     // Build a list of widgets: step, divider, step, divider, ...
@@ -308,9 +316,10 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
               Text(
                 statuses[i],
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: color,
-                      fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                    ),
+                  color: color,
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                ),
+                textAlign: TextAlign.center,
               ),
             ],
           ),
@@ -340,12 +349,10 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
       ),
     );
   }
-
   /// **NEW:** Builds the main summary card
   Widget _buildSummaryCard(
       OrderModel order, DateTime createdDate, ThemeData theme) {
     final orderId = order.orderNumber.isNotEmpty ? order.orderNumber : order.id;
-
     return Card(
       elevation: 2.0,
       child: Column(

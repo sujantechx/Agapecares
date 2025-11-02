@@ -343,7 +343,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 prefixIcon: const Icon(Icons.phone_outlined),
               ),
               keyboardType: TextInputType.phone,
-              validator: (v) => (v == null || v.isEmpty) ? 'Enter phone' : null,
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'Enter phone';
+                final digitsOnly = v.replaceAll(RegExp(r'\D'), '');
+                if (digitsOnly.length != 10) return 'Enter 10 digit phone number';
+                return null;
+              },
             ),
           ],
         ),

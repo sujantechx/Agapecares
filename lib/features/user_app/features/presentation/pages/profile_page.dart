@@ -102,16 +102,24 @@ class _UserProfilePageState extends State<UserProfilePage> {
       isScrollControlled: true,
       builder: (ctx) {
         // We pass the user and the reload function to the sheet
+
         return _EditProfileSheet(
           user: user,
           onSave: (String newName, String newPhone) async {
-            // This logic runs when the sheet's "Save" button is pressed
+            // Normalize phone: keep only digits, require exactly 10 digits and store with +91 prefix
             final uid = user.uid;
             final userDoc = FirebaseFirestore.instance.collection('users').doc(uid);
-            await userDoc.set(
-              {'name': newName, 'phoneNumber': newPhone},
-              SetOptions(merge: true),
-            );
+
+            String digits = newPhone.replaceAll(RegExp(r'\D'), '');
+            if (digits.length == 10) {
+              final phoneToSave = '$digits';
+              await userDoc.set(
+                {'name': newName, 'phoneNumber': phoneToSave},
+                SetOptions(merge: true),
+              );
+            } else {
+              throw Exception('Enter 10 digit number only');
+            }
             // Refresh main page data
             await _loadInitialData();
           },

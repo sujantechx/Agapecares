@@ -203,6 +203,53 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> with TickerProvider
     }
   }
 
+  // Robust address extraction helper for the worker UI (keeps logic local and tolerant)
+  String _extractAddressFromData(Map<String, dynamic> data) {
+    try {
+      final snapRaw = data['addressSnapshot'];
+      if (snapRaw is Map) {
+        final snap = Map<String, dynamic>.from(snapRaw);
+        final keys = ['address', 'line1', 'line_1', 'formatted', 'formattedAddress', 'formatted_address', 'fullAddress', 'street', 'streetAddress', 'addressLine', 'address_line', 'displayAddress'];
+        for (final k in keys) {
+          final v = snap[k];
+          if (v is String && v.trim().isNotEmpty) return v.trim();
+        }
+        if (snap['location'] is Map) {
+          final loc = Map<String, dynamic>.from(snap['location'] as Map);
+          final lf = loc['address'] ?? loc['formatted_address'] ?? loc['formatted'];
+          if (lf is String && lf.trim().isNotEmpty) return lf.trim();
+        }
+      }
+
+      final topKeys = ['address', 'line1', 'formattedAddress', 'formatted_address', 'fullAddress', 'addressLine', 'streetAddress', 'displayAddress'];
+      for (final k in topKeys) {
+        final v = data[k];
+        if (v is String && v.trim().isNotEmpty) return v.trim();
+      }
+
+      if (data['userAddresses'] is List && (data['userAddresses'] as List).isNotEmpty) {
+        final first = (data['userAddresses'] as List).first;
+        if (first is Map) {
+          final m = Map<String, dynamic>.from(first);
+          final candidates = ['address', 'line1', 'formatted', 'formattedAddress', 'displayAddress', 'streetAddress'];
+          for (final k in candidates) {
+            final v = m[k];
+            if (v is String && v.trim().isNotEmpty) return v.trim();
+          }
+          final parts = <String>[];
+          if (m['line1'] is String && (m['line1'] as String).trim().isNotEmpty) parts.add((m['line1'] as String).trim());
+          if (m['city'] is String && (m['city'] as String).trim().isNotEmpty) parts.add((m['city'] as String).trim());
+          if (m['state'] is String && (m['state'] as String).trim().isNotEmpty) parts.add((m['state'] as String).trim());
+          if (m['postalCode'] is String && (m['postalCode'] as String).trim().isNotEmpty) parts.add((m['postalCode'] as String).trim());
+          if (parts.isNotEmpty) return parts.join(', ');
+        }
+      }
+    } catch (e) {
+      debugPrint('[WorkerOrdersPage] _extractAddressFromData error: $e');
+    }
+    return '';
+  }
+
   JobModel? _mapDocToJobModel(QueryDocumentSnapshot<Map<String, dynamic>> d) {
     try {
       final data = d.data();
@@ -222,11 +269,11 @@ class _WorkerOrdersPageState extends State<WorkerOrdersPage> with TickerProvider
         jobMap['serviceName'] = data['serviceName'] ?? '';
         jobMap['inclusions'] = data['inclusions'] ?? [];
       }
-      if (data['addressSnapshot'] is Map && (data['addressSnapshot'] as Map).containsKey('address')) {
-        jobMap['address'] = (data['addressSnapshot'] as Map)['address'] ?? data['address'] ?? '';
-      } else {
-        jobMap['address'] = data['address'] ?? '';
-      }
+
+      // Resolve address robustly
+      final extracted = _extractAddressFromData(data);
+      jobMap['address'] = extracted.isNotEmpty ? extracted : (data['address'] ?? '');
+
       jobMap['customerName'] = data['userName'] ?? data['customerName'] ?? '';
       jobMap['customerPhone'] = data['userPhone'] ?? data['customerPhone'] ?? '';
       jobMap['scheduledAt'] = data['scheduledAt'] ?? data['scheduled_at'] ?? data['scheduledAtAt'];

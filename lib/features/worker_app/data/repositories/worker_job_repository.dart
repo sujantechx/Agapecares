@@ -12,6 +12,83 @@ class WorkerJobRepository {
       : _firestore = firestore ?? FirebaseFirestore.instance,
         _auth = auth ?? FirebaseAuth.instance;
 
+  /// Robustly extract a human-readable address string from an order document map.
+  /// Checks common keys in `addressSnapshot`, top-level address fields, and
+  /// attempts to build from a `user.addresses` list when available.
+  String _extractAddressFromData(Map<String, dynamic> data) {
+    try {
+      // 1) addressSnapshot map (preferred)
+      final snapRaw = data['addressSnapshot'];
+      if (snapRaw is Map) {
+        final snap = Map<String, dynamic>.from(snapRaw);
+        final keys = [
+          'address',
+          'line1',
+          'line_1',
+          'formatted',
+          'formattedAddress',
+          'formatted_address',
+          'fullAddress',
+          'street',
+          'streetAddress',
+          'addressLine',
+          'address_line',
+          'displayAddress'
+        ];
+        for (final k in keys) {
+          final v = snap[k];
+          if (v is String && v.trim().isNotEmpty) return v.trim();
+        }
+        // nested 'location' or 'geo' with formatted address
+        if (snap['location'] is Map) {
+          final loc = Map<String, dynamic>.from(snap['location'] as Map);
+          final lf = loc['address'] ?? loc['formatted_address'] ?? loc['formatted'];
+          if (lf is String && lf.trim().isNotEmpty) return lf.trim();
+        }
+      }
+
+      // 2) top-level address-like fields on the order doc
+      final topKeys = [
+        'address',
+        'line1',
+        'formattedAddress',
+        'formatted_address',
+        'fullAddress',
+        'addressLine',
+        'streetAddress',
+        'displayAddress'
+      ];
+      for (final k in topKeys) {
+        final v = data[k];
+        if (v is String && v.trim().isNotEmpty) return v.trim();
+      }
+
+      // 3) If the order references a user and that user document contains saved addresses,
+      // the caller may populate 'userAddresses' on the data map before calling this helper.
+      if (data['userAddresses'] is List && (data['userAddresses'] as List).isNotEmpty) {
+        final first = (data['userAddresses'] as List).first;
+        if (first is Map) {
+          final m = Map<String, dynamic>.from(first);
+          final candidates = ['address', 'line1', 'formatted', 'formattedAddress', 'displayAddress', 'streetAddress'];
+          for (final k in candidates) {
+            final v = m[k];
+            if (v is String && v.trim().isNotEmpty) return v.trim();
+          }
+          // Compose from components if available
+          final parts = <String>[];
+          if (m['line1'] is String && (m['line1'] as String).trim().isNotEmpty) parts.add((m['line1'] as String).trim());
+          if (m['city'] is String && (m['city'] as String).trim().isNotEmpty) parts.add((m['city'] as String).trim());
+          if (m['state'] is String && (m['state'] as String).trim().isNotEmpty) parts.add((m['state'] as String).trim());
+          if (m['postalCode'] is String && (m['postalCode'] as String).trim().isNotEmpty) parts.add((m['postalCode'] as String).trim());
+          if (parts.isNotEmpty) return parts.join(', ');
+        }
+      }
+    } catch (e) {
+      debugPrint('[WorkerJobRepository] _extractAddressFromData error: $e');
+    }
+    return '';
+  }
+
   Future<String?> _resolveWorkerId() async {
     // Try session service first (caller may provide it via Provider)
     try {
@@ -80,14 +157,31 @@ class WorkerJobRepository {
             jobMap['inclusions'] = data['inclusions'] ?? [];
           }
 
-          if (data['addressSnapshot'] is Map && (data['addressSnapshot'] as Map).containsKey('address')) {
-            jobMap['address'] = (data['addressSnapshot'] as Map)['address'] ?? data['address'] ?? '';
-          } else {
-            jobMap['address'] = data['address'] ?? '';
-          }
+          // Use robust address extraction helper
+          final extractedAddress = _extractAddressFromData(data);
+          jobMap['address'] = extractedAddress.isNotEmpty ? extractedAddress : (data['address'] ?? '');
 
           jobMap['customerName'] = data['userName'] ?? data['customerName'] ?? '';
           jobMap['customerPhone'] = data['userPhone'] ?? data['customerPhone'] ?? '';
+
+          // If name/phone/address are empty, try fetching from user document
+          if ((jobMap['customerName'] == null || (jobMap['customerName'] as String).isEmpty || jobMap['customerPhone'] == null || (jobMap['customerPhone'] as String).isEmpty || (jobMap['address'] == null || (jobMap['address'] as String).isEmpty)) && data['userId'] != null) {
+            try {
+              final udoc = await _firestore.collection('users').doc(data['userId']).get();
+              if (udoc.exists) {
+                final ud = udoc.data();
+                jobMap['customerName'] = (ud?['name'] as String?) ?? jobMap['customerName'];
+                jobMap['customerPhone'] = (ud?['phoneNumber'] as String?) ?? jobMap['customerPhone'];
+                // Try user's saved addresses
+                if ((jobMap['address'] == null || (jobMap['address'] as String).isEmpty) && ud?['addresses'] is List && (ud?['addresses'] as List).isNotEmpty) {
+                  // Add userAddresses to data then re-run extractor
+                  data['userAddresses'] = ud?['addresses'];
+                  final fromUser = _extractAddressFromData(data);
+                  if (fromUser.isNotEmpty) jobMap['address'] = fromUser;
+                }
+              }
+            } catch (_) {}
+          }
 
           jobMap['scheduledAt'] = data['scheduledAt'] ?? data['scheduled_at'] ?? data['scheduledAtAt'];
           jobMap['scheduledEnd'] = data['scheduledEnd'] ?? data['scheduled_end'] ?? data['scheduledAtEnd'];
@@ -95,17 +189,6 @@ class WorkerJobRepository {
           jobMap['isCod'] = data['paymentStatus'] == 'cod' || (data['isCod'] ?? data['is_cod'] ?? false);
           jobMap['specialInstructions'] = data['specialInstructions'] ?? data['special_instructions'] ?? '';
           jobMap['rating'] = data['rating'] ?? null;
-
-          if ((jobMap['customerName'] == null || (jobMap['customerName'] as String).isEmpty || jobMap['customerPhone'] == null || (jobMap['customerPhone'] as String).isEmpty) && data['userId'] != null) {
-            try {
-              final udoc = await _firestore.collection('users').doc(data['userId']).get();
-              if (udoc.exists) {
-                final ud = udoc.data();
-                jobMap['customerName'] = (ud?['name'] as String?) ?? jobMap['customerName'];
-                jobMap['customerPhone'] = (ud?['phoneNumber'] as String?) ?? jobMap['customerPhone'];
-              }
-            } catch (_) {}
-          }
 
           try {
             out.add(JobModel.fromMap(jobMap, id: d.id));
@@ -155,6 +238,26 @@ class WorkerJobRepository {
           final Map<String, dynamic> data = Map<String, dynamic>.from(raw);
           final jobMap = Map<String, dynamic>.from(data);
           jobMap['id'] = d.id;
+
+          // Ensure address is resolved into jobMap
+          final extracted = _extractAddressFromData(data);
+          jobMap['address'] = (jobMap['address'] as String?)?.isNotEmpty == true ? jobMap['address'] : (extracted.isNotEmpty ? extracted : (data['address'] ?? ''));
+
+          // If still missing, and user exists, try to fetch user's addresses (best-effort)
+          if ((jobMap['address'] == null || (jobMap['address'] as String).isEmpty) && data['userId'] != null) {
+            try {
+              final udoc = await _firestore.collection('users').doc(data['userId']).get();
+              if (udoc.exists) {
+                final ud = udoc.data();
+                if (ud?['addresses'] is List && (ud?['addresses'] as List).isNotEmpty) {
+                  data['userAddresses'] = ud?['addresses'];
+                  final fromUser = _extractAddressFromData(data);
+                  if (fromUser.isNotEmpty) jobMap['address'] = fromUser;
+                }
+              }
+            } catch (_) {}
+          }
+
           try {
             out.add(JobModel.fromMap(jobMap, id: d.id));
           } catch (e) {
@@ -201,6 +304,11 @@ class WorkerJobRepository {
           final Map<String, dynamic> data = Map<String, dynamic>.from(raw);
           final jobMap = Map<String, dynamic>.from(data);
           jobMap['id'] = d.id;
+
+          // Ensure address is resolved
+          final extracted = _extractAddressFromData(data);
+          jobMap['address'] = (jobMap['address'] as String?)?.isNotEmpty == true ? jobMap['address'] : (extracted.isNotEmpty ? extracted : (data['address'] ?? ''));
+
           try {
             out.add(JobModel.fromMap(jobMap, id: d.id));
           } catch (e) {
@@ -225,6 +333,9 @@ class WorkerJobRepository {
         final map = top.data() ?? {};
         final jobMap = Map<String, dynamic>.from(map);
         jobMap['id'] = top.id;
+        // Ensure address resolved
+        final extracted = _extractAddressFromData(jobMap);
+        jobMap['address'] = (jobMap['address'] as String?)?.isNotEmpty == true ? jobMap['address'] : (extracted.isNotEmpty ? extracted : (map['address'] ?? ''));
         return JobModel.fromMap(jobMap, id: top.id);
       }
       // Try per-worker mirror under current worker
@@ -234,6 +345,8 @@ class WorkerJobRepository {
         if (d.exists) {
           final jobMap = Map<String, dynamic>.from(d.data() ?? {});
           jobMap['id'] = d.id;
+          final extracted = _extractAddressFromData(jobMap);
+          jobMap['address'] = (jobMap['address'] as String?)?.isNotEmpty == true ? jobMap['address'] : (extracted.isNotEmpty ? extracted : (jobMap['address'] ?? ''));
           return JobModel.fromMap(jobMap, id: d.id);
         }
       }
@@ -254,6 +367,8 @@ class WorkerJobRepository {
           if (raw is Map) {
             final jobMap = Map<String, dynamic>.from(raw);
             jobMap['id'] = doc.id;
+            final extracted = _extractAddressFromData(jobMap);
+            jobMap['address'] = (jobMap['address'] as String?)?.isNotEmpty == true ? jobMap['address'] : (extracted.isNotEmpty ? extracted : (jobMap['address'] ?? ''));
             return JobModel.fromMap(jobMap, id: doc.id);
           }
         }

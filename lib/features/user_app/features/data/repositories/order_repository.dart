@@ -275,6 +275,16 @@ class OrderRepositoryImpl implements OrderRepository {
       } catch (e) {
         debugPrint('[OrderRepository] Failed to update mirrored user order doc: $e');
       }
+
+      // Also update the worker's mirror if assigned
+      if (order.workerId != null && order.workerId!.isNotEmpty) {
+        try {
+          final workerDoc = _firestore.collection('workers').doc(order.workerId!).collection('orders').doc(order.id);
+          await workerDoc.set(cleanedData, SetOptions(merge: true));
+        } catch (e) {
+          debugPrint('[OrderRepository] Failed to update mirrored worker order doc: $e');
+        }
+      }
     } catch (e) {
       debugPrint('[OrderRepository] updateOrder failed: $e');
       rethrow;

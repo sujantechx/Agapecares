@@ -533,6 +533,21 @@ class WorkerJobRepository {
                 'workerId': wid,
                 'updatedAt': FieldValue.serverTimestamp()
               });
+              // Also try to update the user's subcollection mirror
+              final userId = topData2['userId'] ?? topData2['orderOwner'];
+              if (userId != null && userId is String && userId.isNotEmpty) {
+                try {
+                  final userOrderRef = _firestore.collection('users').doc(userId).collection('orders').doc(id);
+                  await userOrderRef.update({
+                    'status': status,
+                    'orderStatus': status,
+                    'workerId': wid,
+                    'updatedAt': FieldValue.serverTimestamp()
+                  });
+                } catch (e) {
+                  debugPrint('[WorkerJobRepository] failed to update user subcollection in last-resort: $e');
+                }
+              }
               return await _jobFromRef(topRef2);
             } catch (e, st) {
               debugPrint('[WorkerJobRepository] last-resort top-level update failed: $e');
